@@ -343,6 +343,7 @@ struct proxy_base {
 
 	double diff;
 
+	char baseurl[128];
 	char url[128];
 	char auth[128];
 	char pass[128];
@@ -3198,9 +3199,11 @@ static void update_subscribe(ckpool_t *ckp, const char *cmd)
 	proxy->userid = userid;
 	proxy->subscribed = true;
 	proxy->diff = ckp->startdiff;
+	memset(proxy->baseurl, 0, 128);
 	memset(proxy->url, 0, 128);
 	memset(proxy->auth, 0, 128);
 	memset(proxy->pass, 0, 128);
+	strncpy(proxy->baseurl, json_string_value(json_object_get(val, "baseurl")), 127);
 	strncpy(proxy->url, json_string_value(json_object_get(val, "url")), 127);
 	strncpy(proxy->auth, json_string_value(json_object_get(val, "auth")), 127);
 	strncpy(proxy->pass, json_string_value(json_object_get(val, "pass")), 127);
@@ -4669,9 +4672,10 @@ static json_t *json_proxyinfo(const proxy_t *proxy)
 	const proxy_t *parent = proxy->parent;
 	json_t *val;
 
-	JSON_CPACK(val, "{si,si,si,sf,ss,ss,ss,ss,si,si,si,si,sb,sb,sI,sI,sI,sI,si,si,sb,sb,si}",
+	JSON_CPACK(val, "{si,si,si,sf,ss,ss,ss,ss,ss,si,si,si,si,sb,sb,sI,sI,sI,sI,si,si,sb,sb,si}",
 	    "id", proxy->id, "subid", proxy->subid, "priority", proxy_prio(parent),
-	    "diff", proxy->diff, "url", proxy->url, "auth", proxy->auth, "pass", proxy->pass,
+	    "diff", proxy->diff, "baseurl", proxy->baseurl, "url", proxy->url,
+	    "auth", proxy->auth, "pass", proxy->pass,
 	    "enonce1", proxy->enonce1, "enonce1constlen", proxy->enonce1constlen,
 	    "enonce1varlen", proxy->enonce1varlen, "nonce2len", proxy->nonce2len,
 	    "enonce2varlen", proxy->enonce2varlen, "subscribed", proxy->subscribed,

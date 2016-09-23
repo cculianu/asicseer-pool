@@ -92,6 +92,7 @@ struct proxy_instance {
 	int subid; /* Subproxy id */
 	int userid; /* User id if this proxy is bound to a user */
 
+	char *baseurl;
 	char *url;
 	char *auth;
 	char *pass;
@@ -1046,7 +1047,7 @@ static void prepare_proxy(proxy_instance_t *proxi);
 /* Creates a duplicate instance or proxi to be used as a subproxy, ignoring
  * fields we don't use in the subproxy. */
 static proxy_instance_t *create_subproxy(ckpool_t *ckp, gdata_t *gdata, proxy_instance_t *proxi,
-					 const char *url)
+					 const char *url, const char *baseurl)
 {
 	proxy_instance_t *subproxy;
 
@@ -1072,6 +1073,7 @@ static proxy_instance_t *create_subproxy(ckpool_t *ckp, gdata_t *gdata, proxy_in
 	subproxy->userid = proxi->userid;
 	subproxy->global = proxi->global;
 	subproxy->url = strdup(url);
+	subproxy->baseurl = strdup(baseurl);
 	subproxy->auth = strdup(proxi->auth);
 	subproxy->pass = strdup(proxi->pass);
 	subproxy->parent = proxi;
@@ -1104,6 +1106,7 @@ static void store_proxy(gdata_t *gdata, proxy_instance_t *proxy)
 	mutex_lock(&gdata->lock);
 	dealloc(proxy->enonce1);
 	dealloc(proxy->url);
+	dealloc(proxy->baseurl);
 	dealloc(proxy->auth);
 	dealloc(proxy->pass);
 	DL_APPEND(gdata->dead_proxies, proxy);
@@ -1226,7 +1229,7 @@ static bool parse_reconnect(proxy_instance_t *proxy, json_t *val)
 		 * the url has changed. Otherwise automated recruiting will
 		 * take care of creating one if needed. */
 		if (!sameurl)
-			create_subproxy(ckp, gdata, parent, url);
+			create_subproxy(ckp, gdata, parent, url, parent->baseurl);
 		goto out;
 	}
 
@@ -1238,7 +1241,8 @@ static bool parse_reconnect(proxy_instance_t *proxy, json_t *val)
 
 		proxy->url = url;
 		free(oldurl);
-	}
+	} else
+		free(url);
 out:
 	return ret;
 }
@@ -1486,7 +1490,8 @@ static void send_subscribe(ckpool_t *ckp, proxy_instance_t *proxi)
 	json_t *json_msg;
 	char *msg, *buf;
 
-	JSON_CPACK(json_msg, "{ss,ss,ss,sI,si,ss,si,sb,si}",
+	JSON_CPACK(json_msg, "{ss,ss,ss,ss,sI,si,ss,si,sb,si}",
+		   "baseurl", proxi->baseurl,
 		   "url", proxi->url, "auth", proxi->auth, "pass", proxi->pass,
 		   "proxy", proxi->id, "subproxy", proxi->subid,
 		   "enonce1", proxi->enonce1, "nonce2len", proxi->nonce2len,
@@ -2059,7 +2064,7 @@ static void *proxy_recruit(void *arg)
 
 retry:
 	recruit = false;
-	proxy = create_subproxy(ckp, gdata, parent, parent->url);
+	proxy = create_subproxy(ckp, gdata, parent, parent->url, parent->baseurl);
 	alive = proxy_alive(ckp, proxy, &proxy->cs, false);
 	if (!alive) {
 		LOGNOTICE("Subproxy failed proxy_alive testing");
@@ -2602,6 +2607,7 @@ static proxy_instance_t *__add_userproxy(ckpool_t *ckp, gdata_t *gdata, const in
 	proxy->id = id;
 	proxy->userid = userid;
 	proxy->url = url;
+	proxy->baseurl = strdup(url);
 	proxy->auth = auth;
 	proxy->pass = pass;
 	proxy->ckp = proxy->cs.ckp = ckp;
@@ -2738,8 +2744,8 @@ static void parse_delproxy(ckpool_t *ckp, gdata_t *gdata, const int sockd, const
 		res = json_errormsg("Proxy id %d not found", id);
 		goto out;
 	}
-	JSON_CPACK(res, "{si,ss,ss,ss}", "id", proxy->id, "url", proxy->url,
-		   "auth", proxy->auth, "pass", proxy->pass);
+	JSON_CPACK(res, "{si,ss,ss,ss,ss}", "id", proxy->id, "url", proxy->url,
+		   "baseurl", proxy->baseurl,"auth", proxy->auth, "pass", proxy->pass);
 
 	LOGNOTICE("Deleting proxy %d:%s", proxy->id, proxy->url);
 	delete_proxy(ckp, gdata, proxy);
@@ -2860,6 +2866,7 @@ static json_t *proxystats(proxy_instance_t *proxy)
 
 	json_set_int(val, "id", proxy->id);
 	json_set_int(val, "userid", proxy->userid);
+	json_set_string(val, "baseurl", proxy->baseurl);
 	json_set_string(val, "url", proxy->url);
 	json_set_string(val, "auth", proxy->auth);
 	json_set_string(val, "pass", proxy->pass);
@@ -3155,6 +3162,7 @@ static proxy_instance_t *__add_proxy(ckpool_t *ckp, gdata_t *gdata, const int id
 	proxy = ckzalloc(sizeof(proxy_instance_t));
 	proxy->id = id;
 	proxy->url = strdup(ckp->proxyurl[id]);
+	proxy->baseurl = strdup(proxy->url);
 	proxy->auth = strdup(ckp->proxyauth[id]);
 	if (ckp->proxypass[id])
 		proxy->pass = strdup(ckp->proxypass[id]);
