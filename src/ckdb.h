@@ -3283,16 +3283,6 @@ extern void sequence_report(bool lock);
 // *** ckdb_data.c ***
 // ***
 
-/* Blocks after 334106 were set to 5xN
- *  however, they cannot count back to include the workinfoid of 333809
- *  due to the markersummaries that were created.
- * Code checks that if the block is after FIVExSTT then it must stop
- *  counting back shares at - and not include - FIVExWID */
-#define FIVExSTT 334106
-#define FIVExLIM 333809
-// 333809 workinfoid
-#define FIVExWID 6085620100361140756
-
 // optioncontrol names for PPLNS N diff calculation
 #define PPLNSDIFFTIMES "pplns_diff_times"
 #define PPLNSDIFFADD "pplns_diff_add"

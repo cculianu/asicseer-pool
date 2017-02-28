@@ -4555,7 +4555,7 @@ bool process_pplns(int32_t height, char *blockhash, tv_t *addr_cd)
 {
 	K_TREE_CTX b_ctx[1], ss_ctx[1], wm_ctx[1], ms_ctx[1], pay_ctx[1], mu_ctx[1];
 	bool allow_aged = true, conned = false, begun = false;
-	bool countbacklimit, ok = false;
+	bool ok = false;
 	PGconn *conn = NULL;
 	MININGPAYOUTS *miningpayouts;
 	OPTIONCONTROL *optioncontrol;
@@ -4683,13 +4683,7 @@ bool process_pplns(int32_t height, char *blockhash, tv_t *addr_cd)
 		goto oku;
 	}
 
-	// Check for the hard coded limit
-	if (blocks->height > FIVExSTT)
-		countbacklimit = true;
-	else
-		countbacklimit = false;
-	LOGDEBUG("%s(): ndiff %.1f limit %c",
-		 __func__, ndiff, countbacklimit ? 'Y' : 'N');
+	LOGDEBUG("%s(): ndiff %.1f", __func__, ndiff);
 
 	// add up all the shares ...
 	begin_workinfoid = end_workinfoid = 0;
@@ -4742,10 +4736,6 @@ bool process_pplns(int32_t height, char *blockhash, tv_t *addr_cd)
 					TFSTR(allow_aged));
 				goto shazbot;
 		}
-
-		// Stop before FIVExWID if necessary
-		if (countbacklimit && sharesummary->workinfoid <= FIVExWID)
-			break;
 
 		ss_count++;
 		total_share_count += sharesummary->sharecount;
@@ -4814,10 +4804,6 @@ bool process_pplns(int32_t height, char *blockhash, tv_t *addr_cd)
 		LOGDEBUG("%s(): workmarkers < %"PRId64, __func__, lookworkmarkers.workinfoidend);
 		while (total_diff < diff_want && wm_item && CURRENT(&(workmarkers->expirydate))) {
 			if (WMPROCESSED(workmarkers->status)) {
-				// Stop before FIVExWID if necessary
-				if (countbacklimit && workmarkers->workinfoidstart <= FIVExWID)
-					break;
-
 				wm_count++;
 				lookmarkersummary.markerid = workmarkers->markerid;
 				lookmarkersummary.userid = MAXID;

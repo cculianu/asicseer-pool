@@ -4344,7 +4344,7 @@ static char *cmd_pplns(__maybe_unused PGconn *conn, char *cmd, char *id,
 	double diff_times = 1.0;
 	double diff_add = 0.0;
 	double diff_want;
-	bool allow_aged = false, countbacklimit;
+	bool allow_aged = false;
 	size_t len, off;
 	int rows;
 
@@ -4443,13 +4443,7 @@ static char *cmd_pplns(__maybe_unused PGconn *conn, char *cmd, char *id,
 		return strdup(reply);
 	}
 
-	if (blocks->height > FIVExSTT)
-		countbacklimit = true;
-	else
-		countbacklimit = false;
-	LOGDEBUG("%s(): ndiff %.0f limit=%s",
-		 __func__, ndiff,
-		 countbacklimit ? "true" : "false");
+	LOGDEBUG("%s(): ndiff %.0f", __func__, ndiff);
 	begin_workinfoid = end_workinfoid = 0;
 	total_share_count = acc_share_count = 0;
 	total_diff = 0;
@@ -4485,10 +4479,6 @@ static char *cmd_pplns(__maybe_unused PGconn *conn, char *cmd, char *id,
 			default:
 				share_status = "Not ready1";
 		}
-
-		// Stop before FIVExWID if necessary
-		if (countbacklimit && sharesummary->workinfoid <= FIVExWID)
-			break;
 
 		ss_count++;
 		total_share_count += sharesummary->sharecount;
@@ -4545,10 +4535,6 @@ static char *cmd_pplns(__maybe_unused PGconn *conn, char *cmd, char *id,
 		LOGDEBUG("%s(): workmarkers < %"PRId64, __func__, lookworkmarkers.workinfoidend);
 		while (total_diff < diff_want && wm_item && CURRENT(&(workmarkers->expirydate))) {
 			if (WMPROCESSED(workmarkers->status)) {
-				// Stop before FIVExWID if necessary
-				if (countbacklimit && workmarkers->workinfoidstart <= FIVExWID)
-					break;
-
 				wm_count++;
 				lookmarkersummary.markerid = workmarkers->markerid;
 				lookmarkersummary.userid = MAXID;
