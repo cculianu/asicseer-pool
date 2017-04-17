@@ -84,10 +84,12 @@ struct pool_stats {
 	 * HERP - Hash Extracted Rate Product - total sqrt(share diff)
 	 * DERP - Difficulty Extrapolated Reward Payment
 	 */
+	uint64_t network_diff;
 	uint64_t herp_window; /* Last N HERP score window - 10 x network diff */
 	long double rolling_herp; /* Rolling score total - bound to herp_window */
 	double unaccounted_herp; /* Accumulated per minute herp */
 	int64_t block_diff; /* Total diff shares since last block solve */
+	double reward; /* Current coinbase reward in satoshis */
 };
 
 typedef struct pool_stats pool_stats_t;
@@ -1079,9 +1081,13 @@ static void add_base(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb, bool *new_bl
 	ts_realtime(&wb->gentime);
 	wb->network_diff = diff_from_nbits(wb->headerbin + 72);
 	if (!ckp->proxy) {
+		double reward = wb->coinbasevalue;
+
 		/* Set the herp window */
 		mutex_lock(&ckp_sdata->stats_lock);
+		ckp_sdata->stats.network_diff = wb->network_diff;
 		ckp_sdata->stats.herp_window = wb->network_diff * HERP_N;
+		ckp_sdata->stats.reward = reward;
 		mutex_unlock(&ckp_sdata->stats_lock);
 	}
 
@@ -3684,6 +3690,8 @@ static void reset_bestshares(sdata_t *sdata)
 {
 	user_instance_t *user, *tmpuser;
 	stratum_instance_t *client, *tmp;
+
+	sdata->stats.accounted_diff_shares = sdata->stats.accounted_rejects = 0;
 
 	ck_rlock(&sdata->instance_lock);
 	HASH_ITER(hh, sdata->stratum_instances, client, tmp) {
@@ -8160,7 +8168,8 @@ static void *statsupdate(void *arg)
 	sleep(1);
 
 	while (42) {
-		double ghs, ghs1, ghs5, ghs15, ghs60, ghs360, ghs1440, ghs10080, per_tdiff, mul = 1;
+		double ghs, ghs1, ghs5, ghs15, ghs60, ghs360, ghs1440, ghs10080,
+			per_tdiff, mul = 1, rolling_herp, reward, derp, percent;
 		char suffix1[16], suffix5[16], suffix15[16], suffix60[16], cdfield[64];
 		char suffix360[16], suffix1440[16], suffix10080[16];
 		int remote_users = 0, remote_workers = 0, idle_workers = 0;
@@ -8197,6 +8206,8 @@ static void *statsupdate(void *arg)
 			mul = herp_mul;
 		}
 		stats->rolling_herp += herp;
+		rolling_herp = stats->rolling_herp;
+		reward = stats->reward;
 		mutex_unlock(&sdata->stats_lock);
 
 		ck_wlock(&sdata->instance_lock);
@@ -8334,7 +8345,10 @@ static void *statsupdate(void *arg)
 			user->ua_herp = 0;
 			mutex_unlock(&user->stats_lock);
 
-			JSON_CPACK(val, "{ss,ss,ss,ss,ss,si,si,sI,sf,sf}",
+			/* Round to satoshi, removing fee */
+			derp = floor(reward * user->herp / rolling_herp * 0.995) / 100000000;
+
+			JSON_CPACK(val, "{ss,ss,ss,ss,ss,si,si,sI,sf,sf,sf}",
 					"hashrate1m", suffix1,
 					"hashrate5m", suffix5,
 					"hashrate1hr", suffix60,
@@ -8344,7 +8358,8 @@ static void *statsupdate(void *arg)
 					"workers", user->workers + user->remote_workers,
 					"shares", user->shares,
 					"bestshare", user->best_diff,
-				        "herp", user->herp);
+				        "herp", user->herp,
+				        "derp", derp);
 
 			if (user->remote_workers) {
 				remote_workers += user->remote_workers;
@@ -8435,7 +8450,13 @@ static void *statsupdate(void *arg)
 		fprintf(fp, "%s\n", s);
 		dealloc(s);
 
-		JSON_CPACK(val, "{sf,sf,sf,sf}",
+		percent = round(stats->accounted_diff_shares * 1000 / stats->network_diff) / 100;
+		JSON_CPACK(val, "{sf,sI,sI,sf,sf,sf,sf,sf,sf}",
+			        "diff", percent,
+				"accepted", stats->accounted_diff_shares,
+			        "rejected", stats->accounted_rejects,
+			        "herp", rolling_herp,
+			        "reward", reward / 100000000,
 				"SPS1m", stats->sps1,
 				"SPS5m", stats->sps5,
 				"SPS15m", stats->sps15,
@@ -8656,6 +8677,8 @@ static void read_poolstats(ckpool_t *ckp, int *tvsec_diff)
 		LOGINFO("Failed to json decode sps line from pool logfile: %s", dsps);
 		return;
 	}
+	json_get_int64(&stats->accounted_diff_shares, val, "accepted");
+	json_get_int64(&stats->accounted_rejects, val, "rejected");
 	json_get_double(&stats->sps1, val, "SPS1m");
 	json_get_double(&stats->sps5, val, "SPS5m");
 	json_get_double(&stats->sps15, val, "SPS15m");
@@ -8771,6 +8794,7 @@ void *stratifier(void *arg)
 
 	/* Set HERP window to impossibly large until we know the network diff */
 	sdata->stats.herp_window = ~0ULL;
+	sdata->stats.network_diff = ~0ULL;
 
 	cklock_init(&sdata->txn_lock);
 	cklock_init(&sdata->workbase_lock);
