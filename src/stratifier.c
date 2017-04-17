@@ -5139,11 +5139,11 @@ static worker_instance_t *get_create_worker(sdata_t *sdata, user_instance_t *use
 /* Load the statistics of and create all known users at startup */
 static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 {
+	int ret, len, users = 0, workers = 0;
 	char dnam[512], s[512], *username;
 	user_instance_t *user;
 	struct dirent *dir;
 	bool new_user;
-	int ret, len;
 	json_t *val;
 	FILE *fp;
 	tv_t now;
@@ -5170,6 +5170,7 @@ static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 			LOGWARNING("Duplicate user in read_userstats %s", username);
 			continue;
 		}
+		users++;
 		snprintf(s, 511, "%s/%s", dnam, username);
 		fp = fopen(s, "re");
 		if (unlikely(!fp)) {
@@ -5246,6 +5247,7 @@ static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 			LOGWARNING("Duplicate worker in read_userstats %s", workername);
 			continue;
 		}
+		workers++;
 		snprintf(s, 511, "%s/%s", dnam, workername);
 		fp = fopen(s, "re");
 		if (unlikely(!fp)) {
@@ -5285,6 +5287,8 @@ static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 	}
 	closedir(d);
 
+	if (likely(users || workers))
+		LOGWARNING("Loaded %d users and %d workers", users, workers);
 }
 
 #define DEFAULT_AUTH_BACKOFF	(3)  /* Set initial backoff to 3 seconds */
@@ -8450,17 +8454,24 @@ static void *statsupdate(void *arg)
 		fprintf(fp, "%s\n", s);
 		dealloc(s);
 
+		JSON_CPACK(val, "{sf,sf,sf,sf}",
+			        "SPS1m", stats->sps1,
+				"SPS5m", stats->sps5,
+				"SPS15m", stats->sps15,
+				"SPS1h", stats->sps60);
+		s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER);
+		json_decref(val);
+		LOGNOTICE("Pool:%s", s);
+		fprintf(fp, "%s\n", s);
+		dealloc(s);
+
 		percent = round(stats->accounted_diff_shares * 1000 / stats->network_diff) / 100;
-		JSON_CPACK(val, "{sf,sI,sI,sf,sf,sf,sf,sf,sf}",
+		JSON_CPACK(val, "{sf,sI,sI,sf,sf}",
 			        "diff", percent,
 				"accepted", stats->accounted_diff_shares,
 			        "rejected", stats->accounted_rejects,
 			        "herp", rolling_herp,
-			        "reward", reward / 100000000,
-				"SPS1m", stats->sps1,
-				"SPS5m", stats->sps5,
-				"SPS15m", stats->sps15,
-				"SPS1h", stats->sps60);
+			        "reward", reward / 100000000);
 		s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER);
 		json_decref(val);
 		LOGNOTICE("Pool:%s", s);
@@ -8617,7 +8628,7 @@ static void *ckdb_heartbeat(void *arg)
 
 static void read_poolstats(ckpool_t *ckp, int *tvsec_diff)
 {
-	char *s = alloca(4096), *pstats, *dsps, *sps;
+	char *s = alloca(4096), *pstats, *dsps, *sps, *splns;
 	sdata_t *sdata = ckp->sdata;
 	pool_stats_t *stats = &sdata->stats;
 	tv_t now, last;
@@ -8642,6 +8653,7 @@ static void read_poolstats(ckpool_t *ckp, int *tvsec_diff)
 	pstats = strsep(&s, "\n");
 	dsps = strsep(&s, "\n");
 	sps = strsep(&s, "\n");
+	splns = strsep(&s, "\n");
 	if (!s) {
 		LOGINFO("Failed to find EOL in pool logfile");
 		return;
@@ -8660,7 +8672,7 @@ static void read_poolstats(ckpool_t *ckp, int *tvsec_diff)
 	val = json_loads(dsps, 0, NULL);
 	if (!val) {
 		LOGINFO("Failed to json decode dsps line from pool logfile: %s", sps);
-		return;
+		goto out;
 	}
 	stats->dsps1 = dsps_from_key(val, "hashrate1m");
 	stats->dsps5 = dsps_from_key(val, "hashrate5m");
@@ -8675,10 +8687,8 @@ static void read_poolstats(ckpool_t *ckp, int *tvsec_diff)
 	val = json_loads(sps, 0, NULL);
 	if (!val) {
 		LOGINFO("Failed to json decode sps line from pool logfile: %s", dsps);
-		return;
+		goto out;
 	}
-	json_get_int64(&stats->accounted_diff_shares, val, "accepted");
-	json_get_int64(&stats->accounted_rejects, val, "rejected");
 	json_get_double(&stats->sps1, val, "SPS1m");
 	json_get_double(&stats->sps5, val, "SPS5m");
 	json_get_double(&stats->sps15, val, "SPS15m");
@@ -8686,6 +8696,16 @@ static void read_poolstats(ckpool_t *ckp, int *tvsec_diff)
 	json_decref(val);
 
 	LOGINFO("Successfully read pool sps: %s", sps);
+
+	val = json_loads(splns, 0, NULL);
+	if (!val) {
+		LOGINFO("Failed to json decode splns line from pool logfile: %s", sps);
+		goto out;
+	}
+	json_get_int64(&stats->accounted_diff_shares, val, "accepted");
+	json_get_int64(&stats->accounted_rejects, val, "rejected");
+
+out:
 	if (last.tv_sec)
 		*tvsec_diff = now.tv_sec - last.tv_sec - 60;
 	if (*tvsec_diff > 60) {
