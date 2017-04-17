@@ -36,6 +36,8 @@ static const char *scriptsig_header = "01000000010000000000000000000000000000000
 static uchar scriptsig_header_bin[41];
 static const double nonces = 4294967296;
 
+#define HERP_N	10 /* 10 * network diff score = 5 * network diff PPLNS */
+
 /* Add unaccounted shares when they arrive, remove them with each update of
  * rolling stats. */
 struct pool_stats {
@@ -64,8 +66,9 @@ struct pool_stats {
 
 	/* Diff shares stats */
 	int64_t unaccounted_diff_shares;
-	int64_t accounted_diff_shares;
 	int64_t unaccounted_rejects;
+
+	int64_t accounted_diff_shares;
 	int64_t accounted_rejects;
 
 	/* Diff shares per second for 1/5/15... minute rolling averages */
@@ -76,6 +79,15 @@ struct pool_stats {
 	double dsps360;
 	double dsps1440;
 	double dsps10080;
+
+	/* Score Per Last N Shares stats.
+	 * HERP - Hash Extracted Rate Product - total sqrt(share diff)
+	 * DERP - Difficulty Extrapolated Reward Payment
+	 */
+	uint64_t herp_window; /* Last N HERP score window - 10 x network diff */
+	long double rolling_herp; /* Rolling score total - bound to herp_window */
+	double unaccounted_herp; /* Accumulated per minute herp */
+	int64_t block_diff; /* Total diff shares since last block solve */
 };
 
 typedef struct pool_stats pool_stats_t;
@@ -196,7 +208,12 @@ struct user_instance {
 	int workers;
 	int remote_workers;
 
+	mutex_t stats_lock; /* Protects all user and worker stats */
+
 	double best_diff; /* Best share found by this user */
+
+	double herp; /* Rolling HERP value */
+	double ua_herp; /* Unaccounted HERP */
 
 	int64_t shares;
 	double dsps1; /* Diff shares per second, 1 minute rolling average */
@@ -234,6 +251,9 @@ struct worker_instance {
 	tv_t last_share;
 	tv_t last_decay;
 	time_t start_time;
+
+	double herp; /* Rolling HERP value */
+	double ua_herp; /* Unaccounted HERP */
 
 	double best_diff; /* Best share found by this worker */
 	int mindiff; /* User chosen mindiff */
@@ -1058,6 +1078,12 @@ static void add_base(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb, bool *new_bl
 
 	ts_realtime(&wb->gentime);
 	wb->network_diff = diff_from_nbits(wb->headerbin + 72);
+	if (!ckp->proxy) {
+		/* Set the herp window */
+		mutex_lock(&ckp_sdata->stats_lock);
+		ckp_sdata->stats.herp_window = wb->network_diff * HERP_N;
+		mutex_unlock(&ckp_sdata->stats_lock);
+	}
 
 	len = strlen(ckp->logdir) + 8 + 1 + 16 + 1;
 	wb->logdir = ckzalloc(len);
@@ -5165,13 +5191,15 @@ static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 		user->dsps10080 = dsps_from_key(val, "hashrate7d");
 		json_get_int64(&user->shares, val, "shares");
 		json_get_double(&user->best_diff, val, "bestshare");
-		LOGDEBUG("Successfully read user %s stats %f %f %f %f %f %f", username,
+		json_get_double(&user->herp, val, "herp");
+		LOGDEBUG("Successfully read user %s stats %f %f %f %f %f %f %f", username,
 			user->dsps1, user->dsps5, user->dsps60, user->dsps1440,
-			user->dsps10080, user->best_diff);
+			user->dsps10080, user->best_diff, user->herp);
 		json_decref(val);
 		if (tvsec_diff > 60)
 			decay_user(user, 0, &now);
-
+		/* Add the pool stats here so it always adds up to user stats */
+		sdata->stats.rolling_herp += user->herp;
 	}
 	closedir(d);
 
@@ -5239,8 +5267,10 @@ static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 		worker->dsps10080 = dsps_from_key(val, "hashrate7d");
 		json_get_double(&worker->best_diff, val, "bestshare");
 		json_get_int64(&worker->shares, val, "shares");
-		LOGDEBUG("Successfully read worker %s stats %f %f %f %f %f", worker->workername,
-			worker->dsps1, worker->dsps5, worker->dsps60, worker->dsps1440, worker->best_diff);
+		json_get_double(&worker->herp, val, "herp");
+		LOGDEBUG("Successfully read worker %s stats %f %f %f %f %f %f", worker->workername,
+			worker->dsps1, worker->dsps5, worker->dsps60, worker->dsps1440, worker->best_diff,
+		        worker->herp);
 		json_decref(val);
 		if (tvsec_diff > 60)
 			decay_worker(worker, 0, &now);
@@ -5275,6 +5305,9 @@ static user_instance_t *get_create_user(sdata_t *sdata, const char *username, bo
 		*new_user = true;
 	}
 	ck_wunlock(&sdata->instance_lock);
+
+	if (*new_user)
+		mutex_init(&user->stats_lock);
 
 	return user;
 }
@@ -5763,28 +5796,38 @@ static double time_bias(const double tdiff, const double period)
 }
 
 /* Needs to be entered with client holding a ref count. */
-static void add_submit(ckpool_t *ckp, stratum_instance_t *client, const double diff, const bool valid,
-		       const bool submit)
+static void add_submit(ckpool_t *ckp, stratum_instance_t *client, const double sdiff,
+		       const double diff, const bool valid, const bool submit)
 {
 	sdata_t *ckp_sdata = ckp->sdata, *sdata = client->sdata;
 	worker_instance_t *worker = client->worker_instance;
 	double tdiff, bdiff, dsps, drr, network_diff, bias;
 	user_instance_t *user = client->user_instance;
+	double herp;
 	int64_t next_blockid, optimal, mindiff;
 	tv_t now_t;
+
+	if (valid)
+		herp = sqrt(sdiff) + sqrt(diff - 1);
 
 	mutex_lock(&ckp_sdata->uastats_lock);
 	if (valid) {
 		ckp_sdata->stats.unaccounted_shares++;
 		ckp_sdata->stats.unaccounted_diff_shares += diff;
+		ckp_sdata->stats.unaccounted_herp += herp;
 	} else
 		ckp_sdata->stats.unaccounted_rejects += diff;
 	mutex_unlock(&ckp_sdata->uastats_lock);
 
 	/* Count only accepted and stale rejects in diff calculation. */
 	if (valid) {
+		/* These are the critical stats */
+		mutex_lock(&user->stats_lock);
+		worker->ua_herp += herp;
+		user->ua_herp += herp;
 		worker->shares += diff;
 		user->shares += diff;
+		mutex_unlock(&user->stats_lock);
 	} else if (!submit)
 		return;
 
@@ -6256,7 +6299,7 @@ out_nowb:
 		submit_share(client, id, nonce2, ntime, nonce);
 	}
 
-	add_submit(ckp, client, diff, result, submit);
+	add_submit(ckp, client, sdiff, diff, result, submit);
 
 	/* Now write to the pool's sharelog. */
 	val = json_object();
@@ -6848,9 +6891,9 @@ static void parse_remote_share(ckpool_t *ckp, sdata_t *sdata, json_t *val, const
 			       const int64_t client_id)
 {
 	json_t *workername_val = json_object_get(val, "workername");
+	double diff, sdiff = 0, herp;
 	worker_instance_t *worker;
 	const char *workername;
-	double diff, sdiff = 0;
 	user_instance_t *user;
 	tv_t now_t;
 
@@ -6864,6 +6907,7 @@ static void parse_remote_share(ckpool_t *ckp, sdata_t *sdata, json_t *val, const
 		return;
 	}
 	json_get_double(&sdiff, val, "sdiff");
+	herp = sqrt(sdiff) + sqrt(diff - 1);
 	user = generate_remote_user(ckp, workername);
 	user->authorised = true;
 	worker = get_worker(sdata, user, workername);
@@ -6874,8 +6918,13 @@ static void parse_remote_share(ckpool_t *ckp, sdata_t *sdata, json_t *val, const
 	sdata->stats.unaccounted_diff_shares += diff;
 	mutex_unlock(&sdata->uastats_lock);
 
+	mutex_lock(&user->stats_lock);
+	worker->ua_herp += herp;
+	user->ua_herp += herp;
 	worker->shares += diff;
 	user->shares += diff;
+	mutex_unlock(&user->stats_lock);
+
 	tv_time(&now_t);
 
 	decay_worker(worker, diff, &now_t);
@@ -8111,10 +8160,11 @@ static void *statsupdate(void *arg)
 	sleep(1);
 
 	while (42) {
-		double ghs, ghs1, ghs5, ghs15, ghs60, ghs360, ghs1440, ghs10080, per_tdiff;
+		double ghs, ghs1, ghs5, ghs15, ghs60, ghs360, ghs1440, ghs10080, per_tdiff, mul = 1;
 		char suffix1[16], suffix5[16], suffix15[16], suffix60[16], cdfield[64];
 		char suffix360[16], suffix1440[16], suffix10080[16];
 		int remote_users = 0, remote_workers = 0, idle_workers = 0;
+		long double herp;
 		log_entry_t *log_entries = NULL;
 		char_entry_t *char_list = NULL;
 		stratum_instance_t *client;
@@ -8128,6 +8178,26 @@ static void *statsupdate(void *arg)
 
 		tv_time(&now);
 		timersub(&now, &stats->start_time, &diff);
+
+		mutex_lock(&sdata->uastats_lock);
+		herp = stats->unaccounted_herp;
+		stats->unaccounted_herp = 0;
+		mutex_unlock(&sdata->uastats_lock);
+
+		/* Add new herp value to stats, decaying any older ones, thereby
+		 * scoring newest herp values more for derp once per minute */
+		mutex_lock(&sdata->stats_lock);
+		if (stats->rolling_herp + herp > stats->herp_window) {
+			long double numer, herp_diff, herp_mul;
+
+			herp_diff = stats->rolling_herp + herp - stats->herp_window;
+			numer = stats->rolling_herp - herp_diff;
+			herp_mul = numer / stats->rolling_herp;
+			stats->rolling_herp *= herp_mul;
+			mul = herp_mul;
+		}
+		stats->rolling_herp += herp;
+		mutex_unlock(&sdata->stats_lock);
 
 		ck_wlock(&sdata->instance_lock);
 		/* Grab the first entry */
@@ -8212,7 +8282,14 @@ static void *statsupdate(void *arg)
 				ghs = worker->dsps10080 * nonces;
 				suffix_string(ghs, suffix10080, 16, 0);
 
-				JSON_CPACK(val, "{ss,ss,ss,ss,ss,si,sI,sf}",
+				mutex_lock(&user->stats_lock);
+				if (mul != 1)
+					worker->herp *= mul;
+				worker->herp += worker->ua_herp;
+				worker->ua_herp = 0;
+				mutex_unlock(&user->stats_lock);
+
+				JSON_CPACK(val, "{ss,ss,ss,ss,ss,si,sI,sf,sf}",
 						"hashrate1m", suffix1,
 						"hashrate5m", suffix5,
 						"hashrate1hr", suffix60,
@@ -8220,14 +8297,12 @@ static void *statsupdate(void *arg)
 						"hashrate7d", suffix10080,
 						"lastupdate", now.tv_sec,
 						"shares", worker->shares,
-						"bestshare", worker->best_diff);
+						"bestshare", worker->best_diff,
+					        "herp", worker->herp);
 
-				/* Only log workers of authorised users */
-				if (user->authorised) {
-					ASPRINTF(&fname, "%s/workers/%s", ckp->logdir, worker->workername);
-					s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER | JSON_EOL);
-					add_log_entry(&log_entries, &fname, &s);
-				}
+				ASPRINTF(&fname, "%s/workers/%s", ckp->logdir, worker->workername);
+				s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER | JSON_EOL);
+				add_log_entry(&log_entries, &fname, &s);
 				json_decref(val);
 			}
 
@@ -8252,7 +8327,14 @@ static void *statsupdate(void *arg)
 			ghs = user->dsps10080 * nonces;
 			suffix_string(ghs, suffix10080, 16, 0);
 
-			JSON_CPACK(val, "{ss,ss,ss,ss,ss,si,si,sI,sf}",
+			mutex_lock(&user->stats_lock);
+			if (mul != 1)
+				user->herp *= mul;
+			user->herp += user->ua_herp;
+			user->ua_herp = 0;
+			mutex_unlock(&user->stats_lock);
+
+			JSON_CPACK(val, "{ss,ss,ss,ss,ss,si,si,sI,sf,sf}",
 					"hashrate1m", suffix1,
 					"hashrate5m", suffix5,
 					"hashrate1hr", suffix60,
@@ -8261,7 +8343,8 @@ static void *statsupdate(void *arg)
 					"lastupdate", now.tv_sec,
 					"workers", user->workers + user->remote_workers,
 					"shares", user->shares,
-					"bestshare", user->best_diff);
+					"bestshare", user->best_diff,
+				        "herp", user->herp);
 
 			if (user->remote_workers) {
 				remote_workers += user->remote_workers;
@@ -8273,16 +8356,14 @@ static void *statsupdate(void *arg)
 					remote_users++;
 			}
 
-			if (user->authorised) {
-				ASPRINTF(&fname, "%s/users/%s", ckp->logdir, user->username);
-				s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER | JSON_EOL);
-				add_log_entry(&log_entries, &fname, &s);
-				if (!idle) {
-					s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER);
-					ASPRINTF(&sp, "User %s:%s", user->username, s);
-					dealloc(s);
-					add_msg_entry(&char_list, &sp);
-				}
+			ASPRINTF(&fname, "%s/users/%s", ckp->logdir, user->username);
+			s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER | JSON_EOL);
+			add_log_entry(&log_entries, &fname, &s);
+			if (!idle) {
+				s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER);
+				ASPRINTF(&sp, "User %s:%s", user->username, s);
+				dealloc(s);
+				add_msg_entry(&char_list, &sp);
 			}
 			json_decref(val);
 			if (ckp->remote)
@@ -8687,6 +8768,9 @@ void *stratifier(void *arg)
 	create_pthread(&pth_heartbeat, ckdb_heartbeat, ckp);
 	read_poolstats(ckp, &tvsec_diff);
 	read_userstats(ckp, sdata, tvsec_diff);
+
+	/* Set HERP window to impossibly large until we know the network diff */
+	sdata->stats.herp_window = ~0ULL;
 
 	cklock_init(&sdata->txn_lock);
 	cklock_init(&sdata->workbase_lock);
