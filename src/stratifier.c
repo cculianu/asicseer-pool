@@ -5808,7 +5808,7 @@ static double time_bias(const double tdiff, const double period)
 }
 
 /* Needs to be entered with client holding a ref count. */
-static void add_submit(ckpool_t *ckp, stratum_instance_t *client, const double sdiff,
+static void add_submit(ckpool_t *ckp, stratum_instance_t *client, double sdiff,
 		       const double diff, const bool valid, const bool submit)
 {
 	sdata_t *ckp_sdata = ckp->sdata, *sdata = client->sdata;
@@ -5819,8 +5819,17 @@ static void add_submit(ckpool_t *ckp, stratum_instance_t *client, const double s
 	int64_t next_blockid, optimal, mindiff;
 	tv_t now_t;
 
+	ck_rlock(&sdata->workbase_lock);
+	next_blockid = sdata->workbase_id + 1;
+	if (ckp->proxy)
+		network_diff = sdata->current_workbase->diff;
+	else
+		network_diff = sdata->current_workbase->network_diff;
+	ck_runlock(&sdata->workbase_lock);
+
+	/* Cap herp to network_diff max in case of a block solve */
 	if (valid)
-		herp = sqrt(sdiff) + sqrt(diff - 1);
+		herp = sqrt(MAX(sdiff, network_diff)) + sqrt(diff - 1);
 
 	mutex_lock(&ckp_sdata->uastats_lock);
 	if (valid) {
@@ -5844,14 +5853,6 @@ static void add_submit(ckpool_t *ckp, stratum_instance_t *client, const double s
 		return;
 
 	tv_time(&now_t);
-
-	ck_rlock(&sdata->workbase_lock);
-	next_blockid = sdata->workbase_id + 1;
-	if (ckp->proxy)
-		network_diff = sdata->current_workbase->diff;
-	else
-		network_diff = sdata->current_workbase->network_diff;
-	ck_runlock(&sdata->workbase_lock);
 
 	if (unlikely(!client->first_share.tv_sec)) {
 		copy_tv(&client->first_share, &now_t);
@@ -6903,7 +6904,7 @@ static void parse_remote_share(ckpool_t *ckp, sdata_t *sdata, json_t *val, const
 			       const int64_t client_id)
 {
 	json_t *workername_val = json_object_get(val, "workername");
-	double diff, sdiff = 0, herp;
+	double diff, sdiff = 0, network_diff, herp;
 	worker_instance_t *worker;
 	const char *workername;
 	user_instance_t *user;
@@ -6919,7 +6920,15 @@ static void parse_remote_share(ckpool_t *ckp, sdata_t *sdata, json_t *val, const
 		return;
 	}
 	json_get_double(&sdiff, val, "sdiff");
-	herp = sqrt(sdiff) + sqrt(diff - 1);
+
+	ck_rlock(&sdata->workbase_lock);
+	if (ckp->proxy)
+		network_diff = sdata->current_workbase->diff;
+	else
+		network_diff = sdata->current_workbase->network_diff;
+	ck_runlock(&sdata->workbase_lock);
+
+	herp = sqrt(MAX(network_diff, sdiff)) + sqrt(diff - 1);
 	user = generate_remote_user(ckp, workername);
 	user->authorised = true;
 	worker = get_worker(sdata, user, workername);
