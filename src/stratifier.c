@@ -8319,7 +8319,7 @@ static void *statsupdate(void *arg)
 						"hashrate1hr", suffix60,
 						"hashrate1d", suffix1440,
 						"hashrate7d", suffix10080,
-						"lastupdate", now.tv_sec,
+						"lastshare", worker->last_share.tv_sec,
 						"shares", worker->shares,
 						"bestshare", worker->best_diff,
 					        "herp", worker->herp);
@@ -8367,7 +8367,7 @@ static void *statsupdate(void *arg)
 					"hashrate1hr", suffix60,
 					"hashrate1d", suffix1440,
 					"hashrate7d", suffix10080,
-					"lastupdate", now.tv_sec,
+					"lastshare", user->last_share.tv_sec,
 					"workers", user->workers + user->remote_workers,
 					"shares", user->shares,
 					"bestshare", user->best_diff,
