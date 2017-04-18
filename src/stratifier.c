@@ -1456,6 +1456,11 @@ static void wb_merkle_bins(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb, json_t
 	} else
 		wb->txn_hashes = ckzalloc(1);
 	wb->merkle_array = json_array();
+	if (cbspace) {
+		/* Readjust binlens if we've trimmed txns */
+		binlen = wb->txns * 32 + 32;
+		binleft = binlen / 32;
+	}
 	if (binleft > 1) {
 		while (42) {
 			if (binleft == 1)
