@@ -721,8 +721,8 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 	mutex_unlock(&sdata->stats_lock);
 
 	/* Set fixed length coinb1 arrays to be more than enough */
-	wb->coinb1 = ckzalloc(256 + cbspace * 2);
-	wb->coinb1bin = ckzalloc(128 + cbspace);
+	wb->coinb1 = ckzalloc(256);
+	wb->coinb1bin = ckzalloc(128);
 
 	/* Strings in wb should have been zero memset prior. Generate binary
 	 * templates first, then convert to hex */
@@ -761,7 +761,7 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 	len += wb->enonce1varlen;
 	len += wb->enonce2varlen;
 
-	wb->coinb2bin = ckzalloc(256);
+	wb->coinb2bin = ckzalloc(256 + cbspace);
 	memcpy(wb->coinb2bin, "\x0a\x63\x6b\x70\x6f\x6f\x6c", 7);
 	wb->coinb2len = 7;
 	if (ckp->btcsig) {
