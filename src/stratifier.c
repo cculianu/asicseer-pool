@@ -684,7 +684,7 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 		derp = floor(g64 * gen->herp / herp);
 		reward = derp;
 		total -= reward;
-LOGWARNING("User reward %"PRId64, reward);
+		LOGINFO("User %s reward %"PRId64, user->username, reward);
 		/* Set the user's coinbase reward */
 		u64 = (uint64_t *)&wb->coinb2bin[wb->coinb2len];
 		*u64 = htole64(reward);
@@ -1533,6 +1533,8 @@ static void wb_merkle_bins(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb, json_t
 				 * including */
 				int fee = json_integer_value(json_object_get(arr_val, "fee"));
 
+				/* Remove the transaction from the array */
+				json_array_remove(txn_array, i);
 				subtract_fee += fee;
 				continue;
 			}
@@ -1710,7 +1712,7 @@ retry:
 				continue;
 			if (*rule == '!')
 				rule++;
-			if (safecmp(rule, "segwit")) {
+			if (!sdata->stats.cbspace && safecmp(rule, "segwit")) {
 				witnessdata_check = json_string_value(json_object_get(val, "default_witness_commitment"));
 				gbt_witness_data(wb, txn_array);
 				// Verify against the pre-calculated value if it exists. Skip the size/OP_RETURN bytes.
@@ -5460,6 +5462,12 @@ static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 
 #define DEFAULT_AUTH_BACKOFF	(3)  /* Set initial backoff to 3 seconds */
 
+/* Braindead check to see if this btcaddress is an M of N script address. */
+static bool script_address(const char *btcaddress)
+{
+	return btcaddress[0] == '3';
+}
+
 static user_instance_t *__create_user(sdata_t *sdata, const char *username)
 {
 	user_instance_t *user = ckzalloc(sizeof(user_instance_t));
@@ -5475,6 +5483,8 @@ static user_instance_t *__create_user(sdata_t *sdata, const char *username)
 /* Find user by username or create one if it doesn't already exist */
 static user_instance_t *get_create_user(sdata_t *sdata, const char *username, bool *new_user)
 {
+	int len = strlen(username);
+	ckpool_t *ckp = sdata->ckp;
 	user_instance_t *user;
 
 	ck_wlock(&sdata->instance_lock);
@@ -5489,6 +5499,21 @@ static user_instance_t *get_create_user(sdata_t *sdata, const char *username, bo
 		mutex_init(&user->stats_lock);
 		/* Sanity to save checking for / 0 */
 		user->herp = user->lns = 0.1;
+	}
+
+	/* Is this a btc address based username? */
+	if (!ckp->proxy && (*new_user || !user->btcaddress) && (len > 26 && len < 35)) {
+		user->btcaddress = generator_checkaddr(ckp, username);
+		if (user->btcaddress) {
+			/* Cache the transaction for use in generation */
+			if (script_address(username)) {
+				address_to_scripttxn(user->pubkeytxnbin, username);
+				user->pubkeytxnlen = 23;
+			} else {
+				address_to_pubkeytxn(user->pubkeytxnbin, username);
+				user->pubkeytxnlen = 25;
+			}
+		}
 	}
 
 	return user;
@@ -5585,9 +5610,6 @@ static user_instance_t *generate_user(ckpool_t *ckp, stratum_instance_t *client,
 	__inc_worker(sdata,user, worker);
 	ck_wunlock(&sdata->instance_lock);
 
-	/* Is this a btc address based username? */
-	if (!ckp->proxy && (new_user || !user->btcaddress) && (len > 26 && len < 35))
-		user->btcaddress = generator_checkaddr(ckp, username);
 	if (new_user) {
 		LOGNOTICE("Added new user %s%s", username, user->btcaddress ?
 			  " as address based registration" : "");
@@ -5851,12 +5873,6 @@ static void client_auth(ckpool_t *ckp, stratum_instance_t *client, user_instance
 	client->authorising = false;
 }
 
-/* Braindead check to see if this btcaddress is an M of N script address. */
-static bool script_address(const char *btcaddress)
-{
-	return btcaddress[0] == '3';
-}
-
 /* Needs to be entered with client holding a ref count. */
 static json_t *parse_authorise(stratum_instance_t *client, const json_t *params_val,
 			       json_t **err_val, int *errnum)
@@ -5926,21 +5942,9 @@ static json_t *parse_authorise(stratum_instance_t *client, const json_t *params_
 			goto out;
 		}
 	}
-	if (CKP_STANDALONE(ckp)) {
-		if (user->btcaddress) {
-			char *btcaddress = user->username;
-
-			/* Cache the transaction for use in generation */
-			if (script_address(btcaddress)) {
-				address_to_scripttxn(user->pubkeytxnbin, btcaddress);
-				user->pubkeytxnlen = 23;
-			} else {
-				address_to_pubkeytxn(user->pubkeytxnbin, btcaddress);
-				user->pubkeytxnlen = 25;
-			}
-			ret = true;
-		}
-	} else {
+	if (CKP_STANDALONE(ckp))
+		ret = user->btcaddress;
+	else {
 		/* Preauth workers for the first 10 minutes after the user is
 		 * first authorised by ckdb to avoid floods of worker auths.
 		 * *errnum is implied zero already so ret will be set true */
@@ -7084,9 +7088,6 @@ static user_instance_t *generate_remote_user(ckpool_t *ckp, const char *workerna
 
 	user = get_create_user(sdata, username, &new_user);
 
-	/* Is this a btc address based username? */
-	if (!ckp->proxy && (new_user || !user->btcaddress) && (len > 26 && len < 35))
-		user->btcaddress = generator_checkaddr(ckp, username);
 	if (new_user) {
 		LOGNOTICE("Added new remote user %s%s", username, user->btcaddress ?
 			  " as address based registration" : "");
