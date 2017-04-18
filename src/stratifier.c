@@ -80,9 +80,10 @@ struct pool_stats {
 	double dsps1440;
 	double dsps10080;
 
-	/* Score Per Last N Shares stats.
-	 * HERP - Hash Extracted Rate Product - total (sqrt(share diff) / 2)
-	 * DERP - Difficulty Extrapolated Reward Payment
+	/*
+	 * Score Per Last N Shares stats.
+	 * HERP - Hash Extracted Rate Product - total {sqrt(share diff / work diff) * work diff / 2}
+	 * DERP - Difficulty Extrapolated Reward Payment - user herp / pool herp
 	 */
 	uint64_t network_diff;
 	uint64_t herp_window; /* Last N HERP score window - 5 x network diff */
@@ -5224,9 +5225,9 @@ static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 
 	/* Saves testing for / 0 in statsupdate every update */
 	if (!sdata->stats.rolling_herp)
-		sdata->stats.rolling_herp = 1;
+		sdata->stats.rolling_herp = 0.1;
 	if (!sdata->stats.rolling_lns)
-		sdata->stats.rolling_lns = 1;
+		sdata->stats.rolling_lns = 0.1;
 
 	/* Now get all the worker stats */
 	snprintf(dnam, 511, "%sworkers", ckp->logdir);
@@ -5336,8 +5337,11 @@ static user_instance_t *get_create_user(sdata_t *sdata, const char *username, bo
 	}
 	ck_wunlock(&sdata->instance_lock);
 
-	if (*new_user)
+	if (*new_user) {
 		mutex_init(&user->stats_lock);
+		/* Sanity to save checking for / 0 */
+		user->herp = user->lns = 0.1;
+	}
 
 	return user;
 }
@@ -5387,6 +5391,9 @@ static worker_instance_t *get_create_worker(sdata_t *sdata, user_instance_t *use
 		*new_worker = true;
 	}
 	ck_wunlock(&sdata->instance_lock);
+
+	if (*new_worker)
+		worker->herp = worker->lns = 0.1;
 
 	return worker;
 }
@@ -5848,7 +5855,7 @@ static void add_submit(ckpool_t *ckp, stratum_instance_t *client, double sdiff,
 
 	/* Cap herp to network_diff max in case of a block solve */
 	if (valid)
-		herp = (sqrt(MIN(sdiff, network_diff)) + sqrt(diff - 1)) / 2;
+		herp = sqrt(MIN(sdiff, network_diff) / diff) * diff / 2;
 
 	mutex_lock(&ckp_sdata->uastats_lock);
 	if (valid) {
@@ -6942,6 +6949,11 @@ static void parse_remote_share(ckpool_t *ckp, sdata_t *sdata, json_t *val, const
 		return;
 	}
 	json_get_double(&sdiff, val, "sdiff");
+	if (unlikely(diff < 1 || sdiff < 1)) {
+		LOGWARNING("Invalid diff passed to parse_remote_share diff %lf sdiff %lf",
+			   diff, sdiff);
+		return;
+	}
 
 	ck_rlock(&sdata->workbase_lock);
 	if (ckp->proxy)
@@ -6950,7 +6962,7 @@ static void parse_remote_share(ckpool_t *ckp, sdata_t *sdata, json_t *val, const
 		network_diff = sdata->current_workbase->network_diff;
 	ck_runlock(&sdata->workbase_lock);
 
-	herp = (sqrt(MIN(network_diff, sdiff)) + sqrt(diff - 1)) / 2;
+	herp = sqrt(MIN(sdiff, network_diff) / diff) * diff / 2;
 	user = generate_remote_user(ckp, workername);
 	user->authorised = true;
 	worker = get_worker(sdata, user, workername);
@@ -8408,8 +8420,8 @@ static void *statsupdate(void *arg)
 			user->ua_lns = 0;
 			mutex_unlock(&user->stats_lock);
 
-			/* Round to satoshi, removing fee */
-			derp = floor(reward * user->herp / rolling_herp * 0.995) / 100000000;
+			/* Change to BTC, removing fee */
+			derp = reward * user->herp / rolling_herp * 0.995 / 100000000;
 
 			percent = user->herp / user->lns;
 			suffix_string(percent, suffix, 16, 3);
