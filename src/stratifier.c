@@ -36,7 +36,7 @@ static const char *scriptsig_header = "01000000010000000000000000000000000000000
 static uchar scriptsig_header_bin[41];
 static const double nonces = 4294967296;
 
-#define HERP_N	10 /* 10 * network diff score = 5 * network diff PPLNS */
+#define HERP_N	5 /* 5 * network diff SPLNS */
 
 /* Add unaccounted shares when they arrive, remove them with each update of
  * rolling stats. */
@@ -81,13 +81,16 @@ struct pool_stats {
 	double dsps10080;
 
 	/* Score Per Last N Shares stats.
-	 * HERP - Hash Extracted Rate Product - total sqrt(share diff)
+	 * HERP - Hash Extracted Rate Product - total (sqrt(share diff) / 2)
 	 * DERP - Difficulty Extrapolated Reward Payment
 	 */
 	uint64_t network_diff;
-	uint64_t herp_window; /* Last N HERP score window - 10 x network diff */
+	uint64_t herp_window; /* Last N HERP score window - 5 x network diff */
 	long double rolling_herp; /* Rolling score total - bound to herp_window */
 	double unaccounted_herp; /* Accumulated per minute herp */
+	long double rolling_lns; /* Rolling share total - bound to herp_window */
+	double unaccounted_lns;
+
 	int64_t block_diff; /* Total diff shares since last block solve */
 	double reward; /* Current coinbase reward in satoshis */
 };
@@ -216,6 +219,8 @@ struct user_instance {
 
 	double herp; /* Rolling HERP value */
 	double ua_herp; /* Unaccounted HERP */
+	double lns; /* Rolling Last N shares */
+	double ua_lns; /* Unaccounted LNS */
 
 	int64_t shares;
 	double dsps1; /* Diff shares per second, 1 minute rolling average */
@@ -256,6 +261,8 @@ struct worker_instance {
 
 	double herp; /* Rolling HERP value */
 	double ua_herp; /* Unaccounted HERP */
+	double lns; /* Rolling LNS */
+	double ua_lns; /* Unaccounted LNS */
 
 	double best_diff; /* Best share found by this worker */
 	int mindiff; /* User chosen mindiff */
@@ -1081,13 +1088,14 @@ static void add_base(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb, bool *new_bl
 	ts_realtime(&wb->gentime);
 	wb->network_diff = diff_from_nbits(wb->headerbin + 72);
 	if (!ckp->proxy) {
+		pool_stats_t *stats = &ckp_sdata->stats;
 		double reward = wb->coinbasevalue;
 
 		/* Set the herp window */
 		mutex_lock(&ckp_sdata->stats_lock);
-		ckp_sdata->stats.network_diff = wb->network_diff;
-		ckp_sdata->stats.herp_window = wb->network_diff * HERP_N;
-		ckp_sdata->stats.reward = reward;
+		stats->network_diff = wb->network_diff;
+		stats->herp_window = wb->network_diff * HERP_N;
+		stats->reward = reward;
 		mutex_unlock(&ckp_sdata->stats_lock);
 	}
 
@@ -5201,16 +5209,24 @@ static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 		json_get_int64(&user->shares, val, "shares");
 		json_get_double(&user->best_diff, val, "bestshare");
 		json_get_double(&user->herp, val, "herp");
-		LOGDEBUG("Successfully read user %s stats %f %f %f %f %f %f %f", username,
+		json_get_double(&user->lns, val, "lns");
+		LOGDEBUG("Successfully read user %s stats %f %f %f %f %f %f %f %f", username,
 			user->dsps1, user->dsps5, user->dsps60, user->dsps1440,
-			user->dsps10080, user->best_diff, user->herp);
+			user->dsps10080, user->best_diff, user->herp, user->lns);
 		json_decref(val);
 		if (tvsec_diff > 60)
 			decay_user(user, 0, &now);
 		/* Add the pool stats here so it always adds up to user stats */
 		sdata->stats.rolling_herp += user->herp;
+		sdata->stats.rolling_lns += user->lns;
 	}
 	closedir(d);
+
+	/* Saves testing for / 0 in statsupdate every update */
+	if (!sdata->stats.rolling_herp)
+		sdata->stats.rolling_herp = 1;
+	if (!sdata->stats.rolling_lns)
+		sdata->stats.rolling_lns = 1;
 
 	/* Now get all the worker stats */
 	snprintf(dnam, 511, "%sworkers", ckp->logdir);
@@ -5229,6 +5245,7 @@ static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 			continue;
 
 		base_username = strdupa(workername);
+		username = strsep(&base_username, "._");
 		if (!username || !strlen(username))
 			username = base_username;
 		len = strlen(username);
@@ -5278,9 +5295,10 @@ static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 		json_get_double(&worker->best_diff, val, "bestshare");
 		json_get_int64(&worker->shares, val, "shares");
 		json_get_double(&worker->herp, val, "herp");
-		LOGDEBUG("Successfully read worker %s stats %f %f %f %f %f %f", worker->workername,
-			worker->dsps1, worker->dsps5, worker->dsps60, worker->dsps1440, worker->best_diff,
-		        worker->herp);
+		json_get_double(&worker->lns, val, "lns");
+		LOGDEBUG("Successfully read worker %s stats %f %f %f %f %f %f %f",
+			 worker->workername, worker->dsps1, worker->dsps5, worker->dsps60,
+		         worker->dsps1440, worker->best_diff, worker->herp, worker->lns);
 		json_decref(val);
 		if (tvsec_diff > 60)
 			decay_worker(worker, 0, &now);
@@ -5815,6 +5833,7 @@ static void add_submit(ckpool_t *ckp, stratum_instance_t *client, double sdiff,
 	worker_instance_t *worker = client->worker_instance;
 	double tdiff, bdiff, dsps, drr, network_diff, bias;
 	user_instance_t *user = client->user_instance;
+	pool_stats_t *stats = &ckp_sdata->stats;
 	double herp;
 	int64_t next_blockid, optimal, mindiff;
 	tv_t now_t;
@@ -5829,15 +5848,16 @@ static void add_submit(ckpool_t *ckp, stratum_instance_t *client, double sdiff,
 
 	/* Cap herp to network_diff max in case of a block solve */
 	if (valid)
-		herp = sqrt(MAX(sdiff, network_diff)) + sqrt(diff - 1);
+		herp = (sqrt(MIN(sdiff, network_diff)) + sqrt(diff - 1)) / 2;
 
 	mutex_lock(&ckp_sdata->uastats_lock);
 	if (valid) {
-		ckp_sdata->stats.unaccounted_shares++;
-		ckp_sdata->stats.unaccounted_diff_shares += diff;
-		ckp_sdata->stats.unaccounted_herp += herp;
+		stats->unaccounted_shares++;
+		stats->unaccounted_diff_shares += diff;
+		stats->unaccounted_herp += herp;
+		stats->unaccounted_lns += diff;
 	} else
-		ckp_sdata->stats.unaccounted_rejects += diff;
+		stats->unaccounted_rejects += diff;
 	mutex_unlock(&ckp_sdata->uastats_lock);
 
 	/* Count only accepted and stale rejects in diff calculation. */
@@ -5846,6 +5866,8 @@ static void add_submit(ckpool_t *ckp, stratum_instance_t *client, double sdiff,
 		mutex_lock(&user->stats_lock);
 		worker->ua_herp += herp;
 		user->ua_herp += herp;
+		worker->ua_lns += diff;
+		user->ua_lns += diff;
 		worker->shares += diff;
 		user->shares += diff;
 		mutex_unlock(&user->stats_lock);
@@ -6928,7 +6950,7 @@ static void parse_remote_share(ckpool_t *ckp, sdata_t *sdata, json_t *val, const
 		network_diff = sdata->current_workbase->network_diff;
 	ck_runlock(&sdata->workbase_lock);
 
-	herp = sqrt(MAX(network_diff, sdiff)) + sqrt(diff - 1);
+	herp = (sqrt(MIN(network_diff, sdiff)) + sqrt(diff - 1)) / 2;
 	user = generate_remote_user(ckp, workername);
 	user->authorised = true;
 	worker = get_worker(sdata, user, workername);
@@ -6942,6 +6964,8 @@ static void parse_remote_share(ckpool_t *ckp, sdata_t *sdata, json_t *val, const
 	mutex_lock(&user->stats_lock);
 	worker->ua_herp += herp;
 	user->ua_herp += herp;
+	worker->ua_lns += diff;
+	user->ua_lns += diff;
 	worker->shares += diff;
 	user->shares += diff;
 	mutex_unlock(&user->stats_lock);
@@ -8182,11 +8206,12 @@ static void *statsupdate(void *arg)
 
 	while (42) {
 		double ghs, ghs1, ghs5, ghs15, ghs60, ghs360, ghs1440, ghs10080,
-			per_tdiff, mul = 1, rolling_herp, reward, derp, percent;
+			per_tdiff, hmul = 1, lmul = 1, rolling_herp, rolling_lns,
+			reward, derp, percent;
 		char suffix1[16], suffix5[16], suffix15[16], suffix60[16], cdfield[64];
-		char suffix360[16], suffix1440[16], suffix10080[16];
+		char suffix360[16], suffix1440[16], suffix10080[16], suffix[16];
 		int remote_users = 0, remote_workers = 0, idle_workers = 0;
-		long double herp;
+		long double herp, lns;
 		log_entry_t *log_entries = NULL;
 		char_entry_t *char_list = NULL;
 		stratum_instance_t *client;
@@ -8204,6 +8229,8 @@ static void *statsupdate(void *arg)
 		mutex_lock(&sdata->uastats_lock);
 		herp = stats->unaccounted_herp;
 		stats->unaccounted_herp = 0;
+		lns = stats->unaccounted_lns;
+		stats->unaccounted_lns = 0;
 		mutex_unlock(&sdata->uastats_lock);
 
 		/* Add new herp value to stats, decaying any older ones, thereby
@@ -8216,10 +8243,21 @@ static void *statsupdate(void *arg)
 			numer = stats->rolling_herp - herp_diff;
 			herp_mul = numer / stats->rolling_herp;
 			stats->rolling_herp *= herp_mul;
-			mul = herp_mul;
+			hmul = herp_mul;
 		}
 		stats->rolling_herp += herp;
 		rolling_herp = stats->rolling_herp;
+		if (stats->rolling_lns + lns > stats->herp_window) {
+			long double numer, lns_diff, lns_mul;
+
+			lns_diff = stats->rolling_lns + lns - stats->herp_window;
+			numer = stats->rolling_lns - lns_diff;
+			lns_mul = numer / stats->rolling_lns;
+			stats->rolling_lns *= lns_mul;
+			lmul = lns_mul;
+		}
+		stats->rolling_lns += lns;
+		rolling_lns = stats->rolling_lns;
 		reward = stats->reward;
 		mutex_unlock(&sdata->stats_lock);
 
@@ -8307,13 +8345,19 @@ static void *statsupdate(void *arg)
 				suffix_string(ghs, suffix10080, 16, 0);
 
 				mutex_lock(&user->stats_lock);
-				if (mul != 1)
-					worker->herp *= mul;
+				if (hmul != 1)
+					worker->herp *= hmul;
 				worker->herp += worker->ua_herp;
 				worker->ua_herp = 0;
+				if (lmul != 1)
+					worker->lns *= lmul;
+				worker->lns += worker->ua_lns;
+				worker->ua_lns = 0;
 				mutex_unlock(&user->stats_lock);
 
-				JSON_CPACK(val, "{ss,ss,ss,ss,ss,si,sI,sf,sf}",
+				percent = worker->herp / worker->lns;
+				suffix_string(percent, suffix, 16, 3);
+				JSON_CPACK(val, "{ss,ss,ss,ss,ss,si,sI,sf,sf,ss,sf}",
 						"hashrate1m", suffix1,
 						"hashrate5m", suffix5,
 						"hashrate1hr", suffix60,
@@ -8322,6 +8366,8 @@ static void *statsupdate(void *arg)
 						"lastshare", worker->last_share.tv_sec,
 						"shares", worker->shares,
 						"bestshare", worker->best_diff,
+					        "lns", worker->lns,
+					        "luck", suffix,
 					        "herp", worker->herp);
 
 				ASPRINTF(&fname, "%s/workers/%s", ckp->logdir, worker->workername);
@@ -8352,16 +8398,22 @@ static void *statsupdate(void *arg)
 			suffix_string(ghs, suffix10080, 16, 0);
 
 			mutex_lock(&user->stats_lock);
-			if (mul != 1)
-				user->herp *= mul;
+			if (hmul != 1)
+				user->herp *= hmul;
 			user->herp += user->ua_herp;
 			user->ua_herp = 0;
+			if (lmul != 1)
+				user->lns *= lmul;
+			user->lns += user->ua_lns;
+			user->ua_lns = 0;
 			mutex_unlock(&user->stats_lock);
 
 			/* Round to satoshi, removing fee */
 			derp = floor(reward * user->herp / rolling_herp * 0.995) / 100000000;
 
-			JSON_CPACK(val, "{ss,ss,ss,ss,ss,si,si,sI,sf,sf,sf}",
+			percent = user->herp / user->lns;
+			suffix_string(percent, suffix, 16, 3);
+			JSON_CPACK(val, "{ss,ss,ss,ss,ss,si,si,sI,sf,sf,ss,sf,sf}",
 					"hashrate1m", suffix1,
 					"hashrate5m", suffix5,
 					"hashrate1hr", suffix60,
@@ -8371,6 +8423,8 @@ static void *statsupdate(void *arg)
 					"workers", user->workers + user->remote_workers,
 					"shares", user->shares,
 					"bestshare", user->best_diff,
+				        "lns", user->lns,
+				        "luck", suffix,
 				        "herp", user->herp,
 				        "derp", derp);
 
@@ -8475,10 +8529,11 @@ static void *statsupdate(void *arg)
 		dealloc(s);
 
 		percent = round(stats->accounted_diff_shares * 1000 / stats->network_diff) / 100;
-		JSON_CPACK(val, "{sf,sI,sI,sf,sf}",
+		JSON_CPACK(val, "{sf,sI,sI,sf,sf,sf}",
 			        "diff", percent,
 				"accepted", stats->accounted_diff_shares,
 			        "rejected", stats->accounted_rejects,
+			        "lns", rolling_lns,
 			        "herp", rolling_herp,
 			        "reward", reward / 100000000);
 		s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER);
