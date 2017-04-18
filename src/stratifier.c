@@ -1712,11 +1712,13 @@ retry:
 				continue;
 			if (*rule == '!')
 				rule++;
-			if (!sdata->stats.cbspace && safecmp(rule, "segwit")) {
+			if (safecmp(rule, "segwit")) {
 				witnessdata_check = json_string_value(json_object_get(val, "default_witness_commitment"));
 				gbt_witness_data(wb, txn_array);
 				// Verify against the pre-calculated value if it exists. Skip the size/OP_RETURN bytes.
-				if (wb->insert_witness && witnessdata_check[0] && safecmp(witnessdata_check + 4, wb->witnessdata) != 0)
+				if (!sdata->stats.cbspace && wb->insert_witness &&
+				    witnessdata_check[0] && safecmp(witnessdata_check + 4,
+				    wb->witnessdata) != 0)
 					LOGERR("Witness from btcd: %s. Calculated Witness: %s", witnessdata_check + 4, wb->witnessdata);
 				break;
 			}
