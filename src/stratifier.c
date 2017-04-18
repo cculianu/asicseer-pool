@@ -5352,6 +5352,8 @@ static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 			continue;
 		}
 
+		/* Assume any user with logs was authorised */
+		user->authorised = true;
 		copy_tv(&user->last_share, &now);
 		copy_tv(&user->last_decay, &now);
 		user->dsps1 = dsps_from_key(val, "hashrate1m");
