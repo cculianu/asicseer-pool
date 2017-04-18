@@ -1367,7 +1367,7 @@ static void update_txns(ckpool_t *ckp, sdata_t *sdata, txntable_t *txns, bool lo
 static void wb_merkle_bins(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb, json_t *txn_array,
 			   bool local)
 {
-	int i, j, binleft, binlen, cbspace = 0;
+	int i, j, binleft, binlen, cbspace = 0, max_txns = 0, subtract_fee = 0;
 	txntable_t *txns = NULL;
 	json_t *arr_val;
 	uchar *hashbin;
@@ -1431,11 +1431,14 @@ static void wb_merkle_bins(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb, json_t
 			length = json_integer_value(json_object_get(arr_val, "length"));
 			len += length;
 			if (len > max_len) {
-				LOGINFO("Including only %d of %d transactions for cbspace",
-					i, wb->txns);
-				wb->txns = i;
-				break;
+				/* Remove the fee from txns we're no longer
+				 * including */
+				int fee = json_integer_value(json_object_get(arr_val, "fee"));
+
+				subtract_fee += fee;
+				continue;
 			}
+			max_txns++;
 			if (!txid)
 				txid = hash;
 			if (unlikely(!txid)) {
@@ -1458,8 +1461,11 @@ static void wb_merkle_bins(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb, json_t
 	wb->merkle_array = json_array();
 	if (cbspace) {
 		/* Readjust binlens if we've trimmed txns */
+		wb->txns = max_txns;
 		binlen = wb->txns * 32 + 32;
 		binleft = binlen / 32;
+		wb->coinbasevalue -= subtract_fee;
+		LOGINFO("Subtracting %d fee from reward for cbspace", subtract_fee);
 	}
 	if (binleft > 1) {
 		while (42) {
