@@ -2514,7 +2514,7 @@ static void update_base(sdata_t *sdata, const int prio)
 
 	uprio = ckalloc(sizeof(int));
 	*uprio = prio;
-	ckmsgq_add(sdata->updateq, NULL);
+	ckmsgq_add(sdata->updateq, uprio);
 }
 
 /* Instead of removing the client instance, we add it to a list of recycled
