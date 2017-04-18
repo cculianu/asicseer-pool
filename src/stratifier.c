@@ -37,6 +37,7 @@ static uchar scriptsig_header_bin[41];
 static const double nonces = 4294967296;
 
 #define HERP_N	5 /* 5 * network diff SPLNS */
+#define CBGENLEN	26 /* Maximum extra space required per user in coinbase */
 
 /* Add unaccounted shares when they arrive, remove them with each update of
  * rolling stats. */
@@ -92,8 +93,8 @@ struct pool_stats {
 	long double rolling_lns; /* Rolling share total - bound to herp_window */
 	double unaccounted_lns;
 
-	int64_t block_diff; /* Total diff shares since last block solve */
 	double reward; /* Current coinbase reward in satoshis */
+	int cbspace; /* Space required in coinbase for user txn generation */
 };
 
 typedef struct pool_stats pool_stats_t;
@@ -1366,7 +1367,7 @@ static void update_txns(ckpool_t *ckp, sdata_t *sdata, txntable_t *txns, bool lo
 static void wb_merkle_bins(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb, json_t *txn_array,
 			   bool local)
 {
-	int i, j, binleft, binlen;
+	int i, j, binleft, binlen, cbspace = 0;
 	txntable_t *txns = NULL;
 	json_t *arr_val;
 	uchar *hashbin;
@@ -1378,8 +1379,16 @@ static void wb_merkle_bins(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb, json_t
 	memset(hashbin, 0, 32);
 	binleft = binlen / 32;
 	if (wb->txns) {
-		int len = 1, ofs = 0;
+		int len = 1, ofs = 0, length, max_len;
 		const char *txn;
+
+		/* Find out how much space we need to leave for coinbase
+		 * generation of user txns */
+		if (local) {
+			mutex_lock(&sdata->stats_lock);
+			cbspace = sdata->stats.cbspace;
+			mutex_unlock(&sdata->stats_lock);
+		}
 
 		for (i = 0; i < wb->txns; i++) {
 			arr_val = json_array_get(txn_array, i);
@@ -1388,12 +1397,27 @@ static void wb_merkle_bins(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb, json_t
 				LOGWARNING("json_string_value fail - cannot find transaction data");
 				return;
 			}
-			len += strlen(txn);
+			length = strlen(txn);
+			len += length;
+			/* Store the length so we can decide when to start
+			 * trimming transactions off the end */
+			json_set_int(arr_val, "length", length);
+		}
+		/* Find the total transaction space used, and then remove
+		 * transactions off the end of at least cbspace bytes, thereby
+		 * preserving max block size from btcd */
+		max_len = len - cbspace;
+		if (unlikely(max_len < 1)) {
+			LOGWARNING("Inadequate space to remove %d bytes of txns for cbspace",
+				   cbspace);
+			max_len = 1;
+			wb->txns = 0;
 		}
 
-		wb->txn_data = ckzalloc(len + 1);
+		wb->txn_data = ckzalloc(max_len + 1);
 		wb->txn_hashes = ckzalloc(wb->txns * 65 + 1);
 		memset(wb->txn_hashes, 0x20, wb->txns * 65); // Spaces
+		len = 1;
 
 		for (i = 0; i < wb->txns; i++) {
 			const char *txid, *hash;
@@ -1404,6 +1428,14 @@ static void wb_merkle_bins(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb, json_t
 			// Post-segwit, txid returns the tx hash without witness data
 			txid = json_string_value(json_object_get(arr_val, "txid"));
 			hash = json_string_value(json_object_get(arr_val, "hash"));
+			length = json_integer_value(json_object_get(arr_val, "length"));
+			len += length;
+			if (len > max_len) {
+				LOGINFO("Including only %d of %d transactions for cbspace",
+					i, wb->txns);
+				wb->txns = i;
+				break;
+			}
 			if (!txid)
 				txid = hash;
 			if (unlikely(!txid)) {
@@ -1412,9 +1444,8 @@ static void wb_merkle_bins(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb, json_t
 			}
 			txn = json_string_value(json_object_get(arr_val, "data"));
 			add_txn(ckp, sdata, &txns, hash, txn, local);
-			len = strlen(txn);
-			memcpy(wb->txn_data + ofs, txn, len);
-			ofs += len;
+			memcpy(wb->txn_data + ofs, txn, length);
+			ofs += length;
 			if (!hex2bin(binswap, txid, 32)) {
 				LOGERR("Failed to hex2bin hash in gbt_merkle_bins");
 				return;
@@ -1445,8 +1476,13 @@ static void wb_merkle_bins(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb, json_t
 			binlen = binleft * 32;
 		}
 	}
-	LOGNOTICE("Stored %s workbase with %d transactions", local ? "local" : "remote",
-		  wb->txns);
+	if (cbspace) {
+		LOGNOTICE("Stored local workbase with %d transactions leaving %d bytes for user generation txns",
+			  wb->txns, cbspace);
+	} else {
+		LOGNOTICE("Stored %s workbase with %d transactions", local ? "local" : "remote",
+			  wb->txns);
+	}
 
 	update_txns(ckp, sdata, txns, true);
 }
@@ -8222,7 +8258,8 @@ static void *statsupdate(void *arg)
 			reward, derp, percent;
 		char suffix1[16], suffix5[16], suffix15[16], suffix60[16], cdfield[64];
 		char suffix360[16], suffix1440[16], suffix10080[16], suffix[16];
-		int remote_users = 0, remote_workers = 0, idle_workers = 0;
+		int remote_users = 0, remote_workers = 0, idle_workers = 0,
+			cbspace = 0;
 		long double herp, lns;
 		log_entry_t *log_entries = NULL;
 		char_entry_t *char_list = NULL;
@@ -8420,8 +8457,14 @@ static void *statsupdate(void *arg)
 			user->ua_lns = 0;
 			mutex_unlock(&user->stats_lock);
 
-			/* Change to BTC, removing fee */
-			derp = reward * user->herp / rolling_herp * 0.995 / 100000000;
+			/* Round to satoshi, change to BTC, removing fee */
+			derp = floor(reward * user->herp / rolling_herp * 0.995);
+			if (derp) {
+				/* Needs payout, leave more space in coinbase
+				 * for generation txn to this user */
+				cbspace += CBGENLEN;
+				derp /= 100000000;
+			}
 
 			percent = user->herp / user->lns;
 			suffix_string(percent, suffix, 16, 3);
@@ -8464,12 +8507,16 @@ static void *statsupdate(void *arg)
 				upstream_workers(ckp, user);
 		}
 
+		LOGINFO("Leaving %d bytes free in coinbase for user txn generation",
+			cbspace);
+
+		mutex_lock(&sdata->stats_lock);
+		stats->cbspace = cbspace;
 		if (remote_workers) {
-			mutex_lock(&sdata->stats_lock);
 			stats->remote_workers = remote_workers;
 			stats->remote_users = remote_users;
-			mutex_unlock(&sdata->stats_lock);
 		}
+		mutex_unlock(&sdata->stats_lock);
 
 		/* Dump log entries out of instance_lock */
 		dump_log_entries(&log_entries);
