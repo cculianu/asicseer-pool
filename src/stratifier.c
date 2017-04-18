@@ -712,13 +712,17 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 {
 	uint64_t *u64, g64, d64 = 0, *gentxns;
 	sdata_t *sdata = ckp->sdata;
+	int len, ofs = 0, cbspace;
 	char header[228];
-	int len, ofs = 0;
 	ts_t now;
 
+	mutex_lock(&sdata->stats_lock);
+	cbspace = sdata->stats.cbspace;
+	mutex_unlock(&sdata->stats_lock);
+
 	/* Set fixed length coinb1 arrays to be more than enough */
-	wb->coinb1 = ckzalloc(256);
-	wb->coinb1bin = ckzalloc(128);
+	wb->coinb1 = ckzalloc(256 + cbspace * 2);
+	wb->coinb1bin = ckzalloc(128 + cbspace);
 
 	/* Strings in wb should have been zero memset prior. Generate binary
 	 * templates first, then convert to hex */
