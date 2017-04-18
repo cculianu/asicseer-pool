@@ -205,6 +205,8 @@ struct user_instance {
 	int id;
 	char *secondaryuserid;
 	bool btcaddress;
+	char pubkeytxnbin[25];
+	int pubkeytxnlen;
 
 	/* A linked list of all connected instances of this user */
 	stratum_instance_t *clients;
@@ -620,9 +622,95 @@ static void info_msg_entries(char_entry_t **entries)
 
 static const int witnessdata_size = 36; // commitment header + hash
 
+typedef struct generation generation_t;
+
+struct generation {
+	generation_t *next;
+	generation_t *prev;
+	user_instance_t *user;
+	double herp;
+};
+
+/* Add generation transactions to the coinbase for each user, return any spare
+ * change. */
+static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
+				   uint64_t *gentxns)
+{
+	generation_t *gen, *gens = NULL, *tmpgen;
+	double rolling_herp, derp, herp = 0;
+	user_instance_t *user, *tmpuser;
+	int64_t total = g64;
+	uint64_t *u64;
+
+	/* Estimate first if a user is going to have a payout before adding it
+	 * to the generation lists */
+	mutex_lock(&sdata->stats_lock);
+	rolling_herp = sdata->stats.rolling_herp;
+	mutex_unlock(&sdata->stats_lock);
+
+	ck_rlock(&sdata->instance_lock);
+	HASH_ITER(hh, sdata->user_instances, user, tmpuser) {
+		if (!user->btcaddress)
+			continue;
+		derp = floor(g64 * user->herp / rolling_herp);
+		if (!derp)
+			continue;
+		gen = ckzalloc(sizeof(generation_t));
+		gen->user = user;
+		DL_APPEND(gens, gen);
+	}
+	ck_runlock(&sdata->instance_lock);
+
+	/* Now go through and accurately summate their herps which won't change,
+	 * avoids recursive lock with instance_lock. */
+	DL_FOREACH(gens, gen) {
+		user = gen->user;
+
+		mutex_lock(&user->stats_lock);
+		gen->herp = user->herp;
+		mutex_unlock(&user->stats_lock);
+
+		/* Calculate the total herp */
+		herp += gen->herp;
+	}
+
+	/* Now calculate each user's reward, adding a transaction to the
+	 * coinbase and remove the generation structure */
+	DL_FOREACH_SAFE(gens, gen, tmpgen) {
+		uint64_t reward;
+
+		user = gen->user;
+		/* Calculate reward in satoshis */
+		derp = floor(g64 * gen->herp / herp);
+		reward = derp;
+		total -= reward;
+LOGWARNING("User reward %"PRId64, reward);
+		/* Set the user's coinbase reward */
+		u64 = (uint64_t *)&wb->coinb2bin[wb->coinb2len];
+		*u64 = htole64(reward);
+		wb->coinb2len += 8;
+
+		/* Add the user's cached transaction */
+		wb->coinb2bin[wb->coinb2len++] = user->pubkeytxnlen;
+		memcpy(wb->coinb2bin + wb->coinb2len, user->pubkeytxnbin, user->pubkeytxnlen);
+		wb->coinb2len += user->pubkeytxnlen;
+
+		/* Increment number of generation transactions */
+		(*gentxns)++;
+
+		DL_DELETE(gens, gen);
+		free(gen);
+	}
+
+	if (total < 0)
+		LOGWARNING("Negative change in add_user_generation of %"PRId64, total);
+
+	return total;
+}
+
 static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 {
-	uint64_t *u64, g64, d64 = 0;
+	uint64_t *u64, g64, d64 = 0, *gentxns;
 	sdata_t *sdata = ckp->sdata;
 	char header[228];
 	int len, ofs = 0;
@@ -692,24 +780,32 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 	memcpy(wb->coinb2bin + wb->coinb2len, "\xff\xff\xff\xff", 4);
 	wb->coinb2len += 4;
 
+	gentxns = (uint64_t *)&wb->coinb2bin[wb->coinb2len++];
 	// Generation value
 	g64 = wb->coinbasevalue;
 	if (ckp->donvalid) {
 		d64 = g64 / 200; // 0.5% donation
 		g64 -= d64; // To guarantee integers add up to the original coinbasevalue
-		wb->coinb2bin[wb->coinb2len++] = 2 + wb->insert_witness;
-	} else
-		wb->coinb2bin[wb->coinb2len++] = 1 + wb->insert_witness;
+	}
 
-	u64 = (uint64_t *)&wb->coinb2bin[wb->coinb2len];
-	*u64 = htole64(g64);
-	wb->coinb2len += 8;
+	/* Add any change left over from user gen to donation */
+	if (CKP_STANDALONE(ckp))
+		d64 += add_user_generation(sdata, wb, g64, gentxns);
+	else {
+		(*gentxns)++;
 
-	wb->coinb2bin[wb->coinb2len++] = sdata->pubkeytxnlen;
-	memcpy(wb->coinb2bin + wb->coinb2len, sdata->pubkeytxnbin, sdata->pubkeytxnlen);
-	wb->coinb2len += sdata->pubkeytxnlen;
+		u64 = (uint64_t *)&wb->coinb2bin[wb->coinb2len];
+		*u64 = htole64(g64);
+		wb->coinb2len += 8;
+
+		wb->coinb2bin[wb->coinb2len++] = sdata->pubkeytxnlen;
+		memcpy(wb->coinb2bin + wb->coinb2len, sdata->pubkeytxnbin, sdata->pubkeytxnlen);
+		wb->coinb2len += sdata->pubkeytxnlen;
+	}
 
 	if (wb->insert_witness) {
+		(*gentxns)++;
+
 		// 0 value
 		wb->coinb2len += 8;
 
@@ -722,6 +818,8 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 	}
 
 	if (ckp->donvalid) {
+		(*gentxns)++;
+
 		u64 = (uint64_t *)&wb->coinb2bin[wb->coinb2len];
 		*u64 = htole64(d64);
 		wb->coinb2len += 8;
@@ -1594,6 +1692,9 @@ retry:
 	json_intcpy(&wb->height, val, "height");
 	json_strdup(&wb->flags, val, "flags");
 	txn_array = json_object_get(val, "transactions");
+
+	/* This function will trim transactions and coinbasevalue to leave room
+	 * for user generation transactions */
 	wb_merkle_bins(ckp, sdata, wb, txn_array, true);
 
 	wb->insert_witness = false;
@@ -5750,6 +5851,12 @@ static void client_auth(ckpool_t *ckp, stratum_instance_t *client, user_instance
 	client->authorising = false;
 }
 
+/* Braindead check to see if this btcaddress is an M of N script address. */
+static bool script_address(const char *btcaddress)
+{
+	return btcaddress[0] == '3';
+}
+
 /* Needs to be entered with client holding a ref count. */
 static json_t *parse_authorise(stratum_instance_t *client, const json_t *params_val,
 			       json_t **err_val, int *errnum)
@@ -5819,9 +5926,21 @@ static json_t *parse_authorise(stratum_instance_t *client, const json_t *params_
 			goto out;
 		}
 	}
-	if (CKP_STANDALONE(ckp))
-		ret = true;
-	else {
+	if (CKP_STANDALONE(ckp)) {
+		if (user->btcaddress) {
+			char *btcaddress = user->username;
+
+			/* Cache the transaction for use in generation */
+			if (script_address(btcaddress)) {
+				address_to_scripttxn(user->pubkeytxnbin, btcaddress);
+				user->pubkeytxnlen = 23;
+			} else {
+				address_to_pubkeytxn(user->pubkeytxnbin, btcaddress);
+				user->pubkeytxnlen = 25;
+			}
+			ret = true;
+		}
+	} else {
 		/* Preauth workers for the first 10 minutes after the user is
 		 * first authorised by ckdb to avoid floods of worker auths.
 		 * *errnum is implied zero already so ret will be set true */
@@ -8858,13 +8977,6 @@ out:
 		decay_time(&stats->dsps1440, 0, *tvsec_diff, DAY);
 		decay_time(&stats->dsps10080, 0, *tvsec_diff, WEEK);
 	}
-}
-
-/* Braindead check to see if this btcaddress is an M of N script address which
- * is currently unsupported as a generation address. */
-static bool script_address(const char *btcaddress)
-{
-	return btcaddress[0] == '3';
 }
 
 void *stratifier(void *arg)
