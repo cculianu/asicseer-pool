@@ -5386,6 +5386,8 @@ static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 		sdata->stats.rolling_herp = 0.1;
 	if (!sdata->stats.rolling_lns)
 		sdata->stats.rolling_lns = 0.1;
+	/* Start out with more than enough space */
+	sdata->stats.cbspace = users * CBGENLEN;
 
 	/* Now get all the worker stats */
 	snprintf(dnam, 511, "%sworkers", ckp->logdir);
