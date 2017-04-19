@@ -36,8 +36,9 @@ static const char *scriptsig_header = "01000000010000000000000000000000000000000
 static uchar scriptsig_header_bin[41];
 static const double nonces = 4294967296;
 
-#define HERP_N	5 /* 5 * network diff SPLNS */
+#define HERP_N		5 /* 5 * network diff SPLNS */
 #define CBGENLEN	26 /* Maximum extra space required per user in coinbase */
+#define DERP_DUST	5460 /* Minimum payout not dust */
 
 /* Add unaccounted shares when they arrive, remove them with each update of
  * rolling stats. */
@@ -225,6 +226,7 @@ struct user_instance {
 	double ua_herp; /* Unaccounted HERP */
 	double lns; /* Rolling Last N shares */
 	double ua_lns; /* Unaccounted LNS */
+	bool dust; /* Is this user's derp below the dust limit? */
 
 	int64_t shares;
 	double dsps1; /* Diff shares per second, 1 minute rolling average */
@@ -653,8 +655,12 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 		if (!user->btcaddress)
 			continue;
 		derp = floor(g64 * user->herp / rolling_herp);
-		if (!derp)
+		/*Is this user's payout below the dust limit? */
+		if (derp < DERP_DUST) {
+			user->dust = true;
 			continue;
+		}
+		user->dust = false;
 		gen = ckzalloc(sizeof(generation_t));
 		gen->user = user;
 		DL_APPEND(gens, gen);
@@ -3851,10 +3857,12 @@ static void request_reconnect(sdata_t *sdata, const char *cmd)
 	ck_wunlock(&sdata->instance_lock);
 }
 
+/* Reset best shares on a successful block solve */
 static void reset_bestshares(sdata_t *sdata)
 {
-	user_instance_t *user, *tmpuser;
 	stratum_instance_t *client, *tmp;
+	user_instance_t *user, *tmpuser;
+	double ua_herp = 0;
 
 	sdata->stats.accounted_diff_shares = sdata->stats.accounted_rejects = 0;
 
@@ -3864,13 +3872,31 @@ static void reset_bestshares(sdata_t *sdata)
 	}
 	HASH_ITER(hh, sdata->user_instances, user, tmpuser) {
 		worker_instance_t *worker;
+		double herp;
 
+		/* If a user has dust only rewards, add the herp from the
+		 * previous block solve in case they can break the dust
+		 * threshold in the next one */
+		if (user->dust) {
+			/* Minimise risk of corruption doing this unlocked */
+			herp = user->herp;
+			ua_herp += herp;
+			herp += user->ua_herp;
+			user->ua_herp = herp;
+		}
 		user->best_diff = 0;
 		DL_FOREACH(user->worker_instances, worker) {
 			worker->best_diff = 0;
 		}
 	}
 	ck_runlock(&sdata->instance_lock);
+
+	/* Add extra herp generated to pool as well */
+	if (ua_herp) {
+		mutex_lock(&sdata->uastats_lock);
+		sdata->stats.unaccounted_herp += ua_herp;
+		mutex_unlock(&sdata->uastats_lock);
+	}
 }
 
 static user_instance_t *get_user(sdata_t *sdata, const char *username);
