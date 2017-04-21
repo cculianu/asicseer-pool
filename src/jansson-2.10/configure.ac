@@ -1,12 +1,11 @@
 AC_PREREQ([2.60])
-AC_INIT([jansson], [2.6], [petri@digip.org])
-AC_CONFIG_MACRO_DIR([m4])
+AC_INIT([jansson], [2.10], [petri@digip.org])
 
+AC_CONFIG_AUX_DIR([.])
 AM_INIT_AUTOMAKE([1.10 foreign])
-m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
 AC_CONFIG_SRCDIR([src/value.c])
-AC_CONFIG_HEADERS([config.h])
+AC_CONFIG_HEADERS([jansson_private_config.h])
 
 # Checks for programs.
 AC_PROG_CC
@@ -21,6 +20,8 @@ AC_CHECK_HEADERS([endian.h fcntl.h locale.h sched.h unistd.h sys/param.h sys/sta
 # Checks for typedefs, structures, and compiler characteristics.
 AC_TYPE_INT32_T
 AC_TYPE_UINT32_T
+AC_TYPE_UINT16_T
+AC_TYPE_UINT8_T
 AC_TYPE_LONG_LONG_INT
 
 AC_C_INLINE
@@ -49,7 +50,7 @@ AC_MSG_RESULT([$have_sync_builtins])
 AC_MSG_CHECKING([for gcc __atomic builtins])
 have_atomic_builtins=no
 AC_TRY_LINK(
-  [], [char l; unsigned long v; __atomic_test_and_set(&l, __ATOMIC_RELAXED); __atomic_store_n(&v, 1, __ATOMIC_ACQ_REL); __atomic_load_n(&v, __ATOMIC_ACQUIRE);],
+  [], [char l; unsigned long v; __atomic_test_and_set(&l, __ATOMIC_RELAXED); __atomic_store_n(&v, 1, __ATOMIC_RELEASE); __atomic_load_n(&v, __ATOMIC_ACQUIRE);],
   [have_atomic_builtins=yes],
 )
 if test "x$have_atomic_builtins" = "xyes"; then
@@ -91,7 +92,20 @@ AC_DEFINE([USE_WINDOWS_CRYPTOAPI], [1],
   [Define to 1 if CryptGenRandom should be used for seeding the hash function])
 fi
 
+AC_ARG_ENABLE([initial-hashtable-order],
+  [AS_HELP_STRING([--enable-initial-hashtable-order=VAL],
+    [Number of buckets new object hashtables contain is 2 raised to this power. The default is 3, so empty hashtables contain 2^3 = 8 buckets.])],
+  [initial_hashtable_order=$enableval], [initial_hashtable_order=3])
+AC_DEFINE_UNQUOTED([INITIAL_HASHTABLE_ORDER], [$initial_hashtable_order],
+  [Number of buckets new object hashtables contain is 2 raised to this power. E.g. 3 -> 2^3 = 8.])
+
+if test x$GCC = xyes; then
+    AM_CFLAGS="-Wall -Wextra -Wdeclaration-after-statement"
+fi
+AC_SUBST([AM_CFLAGS])
+
 AC_CONFIG_FILES([
+        jansson.pc
         Makefile
         src/Makefile
         src/jansson_config.h

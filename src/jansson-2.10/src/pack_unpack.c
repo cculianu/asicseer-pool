@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2013 Petri Lehtinen <petri@digip.org>
+ * Copyright (c) 2009-2016 Petri Lehtinen <petri@digip.org>
  * Copyright (c) 2011-2012 Graeme Smecher <graeme.smecher@mail.mcgill.ca>
  *
  * Jansson is free software; you can redistribute it and/or modify
@@ -47,7 +47,6 @@ static const char * const type_names[] = {
 #define type_name(x) type_names[json_typeof(x)]
 
 static const char unpack_value_starters[] = "{[siIbfFOon";
-
 
 static void scanner_init(scanner_t *s, json_error_t *error,
                          size_t flags, const char *fmt)
@@ -125,19 +124,18 @@ static json_t *pack(scanner_t *s, va_list *ap);
 /* ours will be set to 1 if jsonp_free() must be called for the result
    afterwards */
 static char *read_string(scanner_t *s, va_list *ap,
-                         const char *purpose, int *ours)
+                         const char *purpose, size_t *out_len, int *ours)
 {
     char t;
     strbuffer_t strbuff;
     const char *str;
     size_t length;
-    char *result;
 
     next_token(s);
     t = token(s);
     prev_token(s);
 
-    if(t != '#' && t != '+') {
+    if(t != '#' && t != '%' && t != '+') {
         /* Optimize the simple case */
         str = va_arg(*ap, const char *);
 
@@ -146,11 +144,14 @@ static char *read_string(scanner_t *s, va_list *ap,
             return NULL;
         }
 
-        if(!utf8_check_string(str, -1)) {
+        length = strlen(str);
+
+        if(!utf8_check_string(str, length)) {
             set_error(s, "<args>", "Invalid UTF-8 %s", purpose);
             return NULL;
         }
 
+        *out_len = length;
         *ours = 0;
         return (char *)str;
     }
@@ -170,6 +171,9 @@ static char *read_string(scanner_t *s, va_list *ap,
         if(token(s) == '#') {
             length = va_arg(*ap, int);
         }
+        else if(token(s) == '%') {
+            length = va_arg(*ap, size_t);
+        }
         else {
             prev_token(s);
             length = strlen(str);
@@ -188,15 +192,15 @@ static char *read_string(scanner_t *s, va_list *ap,
         }
     }
 
-    result = strbuffer_steal_value(&strbuff);
-
-    if(!utf8_check_string(result, -1)) {
+    if(!utf8_check_string(strbuff.value, strbuff.length)) {
         set_error(s, "<args>", "Invalid UTF-8 %s", purpose);
+        strbuffer_close(&strbuff);
         return NULL;
     }
 
+    *out_len = strbuff.length;
     *ours = 1;
-    return result;
+    return strbuffer_steal_value(&strbuff);
 }
 
 static json_t *pack_object(scanner_t *s, va_list *ap)
@@ -206,6 +210,7 @@ static json_t *pack_object(scanner_t *s, va_list *ap)
 
     while(token(s) != '}') {
         char *key;
+        size_t len;
         int ours;
         json_t *value;
 
@@ -219,21 +224,25 @@ static json_t *pack_object(scanner_t *s, va_list *ap)
             goto error;
         }
 
-        key = read_string(s, ap, "object key", &ours);
+        key = read_string(s, ap, "object key", &len, &ours);
         if(!key)
             goto error;
 
         next_token(s);
 
         value = pack(s, ap);
-        if(!value)
-            goto error;
-
-        if(json_object_set_new_nocheck(object, key, value)) {
+        if(!value) {
             if(ours)
                 jsonp_free(key);
 
+            goto error;
+        }
+
+        if(json_object_set_new_nocheck(object, key, value)) {
             set_error(s, "<internal>", "Unable to add key \"%s\"", key);
+            if(ours)
+                jsonp_free(key);
+
             goto error;
         }
 
@@ -281,6 +290,28 @@ error:
     return NULL;
 }
 
+static json_t *pack_string(scanner_t *s, va_list *ap)
+{
+    char *str;
+    size_t len;
+    int ours;
+    int nullable;
+
+    next_token(s);
+    nullable = token(s) == '?';
+    if (!nullable)
+        prev_token(s);
+
+    str = read_string(s, ap, "string", &len, &ours);
+    if (!str) {
+        return nullable ? json_null() : NULL;
+    } else if (ours) {
+        return jsonp_stringn_nocheck_own(str, len);
+    } else {
+        return json_stringn_nocheck(str, len);
+    }
+}
+
 static json_t *pack(scanner_t *s, va_list *ap)
 {
     switch(token(s)) {
@@ -290,21 +321,8 @@ static json_t *pack(scanner_t *s, va_list *ap)
         case '[':
             return pack_array(s, ap);
 
-        case 's': { /* string */
-            char *str;
-            int ours;
-            json_t *result;
-
-            str = read_string(s, ap, "string", &ours);
-            if(!str)
-                return NULL;
-
-            result = json_string_nocheck(str);
-            if(ours)
-                jsonp_free(str);
-
-            return result;
-        }
+        case 's': /* string */
+            return pack_string(s, ap);
 
         case 'n': /* null */
             return json_null();
@@ -322,10 +340,40 @@ static json_t *pack(scanner_t *s, va_list *ap)
             return json_real(va_arg(*ap, double));
 
         case 'O': /* a json_t object; increments refcount */
-            return json_incref(va_arg(*ap, json_t *));
+        {
+            int nullable;
+            json_t *json;
+
+            next_token(s);
+            nullable = token(s) == '?';
+            if (!nullable)
+                prev_token(s);
+
+            json = va_arg(*ap, json_t *);
+            if (!json && nullable) {
+                return json_null();
+            } else {
+                return json_incref(json);
+            }
+        }
 
         case 'o': /* a json_t object; doesn't increment refcount */
-            return va_arg(*ap, json_t *);
+        {
+            int nullable;
+            json_t *json;
+
+            next_token(s);
+            nullable = token(s) == '?';
+            if (!nullable)
+                prev_token(s);
+
+            json = va_arg(*ap, json_t *);
+            if (!json && nullable) {
+                return json_null();
+            } else {
+                return json;
+            }
+        }
 
         default:
             set_error(s, "<format>", "Unexpected format character '%c'",
@@ -340,6 +388,7 @@ static int unpack_object(scanner_t *s, json_t *root, va_list *ap)
 {
     int ret = -1;
     int strict = 0;
+    int gotopt = 0;
 
     /* Use a set (emulated by a hashtable) to check that all object
        keys are accessed. Checking that the correct number of keys
@@ -396,7 +445,7 @@ static int unpack_object(scanner_t *s, json_t *root, va_list *ap)
         next_token(s);
 
         if(token(s) == '?') {
-            opt = 1;
+            opt = gotopt = 1;
             next_token(s);
         }
 
@@ -415,17 +464,61 @@ static int unpack_object(scanner_t *s, json_t *root, va_list *ap)
         if(unpack(s, value, ap))
             goto out;
 
-        hashtable_set(&key_set, key, 0, json_null());
+        hashtable_set(&key_set, key, json_null());
         next_token(s);
     }
 
     if(strict == 0 && (s->flags & JSON_STRICT))
         strict = 1;
 
-    if(root && strict == 1 && key_set.size != json_object_size(root)) {
-        long diff = (long)json_object_size(root) - (long)key_set.size;
-        set_error(s, "<validation>", "%li object item(s) left unpacked", diff);
-        goto out;
+    if(root && strict == 1) {
+        /* We need to check that all non optional items have been parsed */
+        const char *key;
+        int have_unrecognized_keys = 0;
+        strbuffer_t unrecognized_keys;
+        json_t *value;
+        long unpacked = 0;
+        if (gotopt) {
+            /* We have optional keys, we need to iter on each key */
+            json_object_foreach(root, key, value) {
+                if(!hashtable_get(&key_set, key)) {
+                    unpacked++;
+
+                    /* Save unrecognized keys for the error message */
+                    if (!have_unrecognized_keys) {
+                        strbuffer_init(&unrecognized_keys);
+                        have_unrecognized_keys = 1;
+                    } else {
+                        strbuffer_append_bytes(&unrecognized_keys, ", ", 2);
+                    }
+                    strbuffer_append_bytes(&unrecognized_keys, key, strlen(key));
+                }
+            }
+        } else {
+            /* No optional keys, we can just compare the number of items */
+            unpacked = (long)json_object_size(root) - (long)key_set.size;
+        }
+        if (unpacked) {
+            if (!gotopt) {
+                /* Save unrecognized keys for the error message */
+                json_object_foreach(root, key, value) {
+                    if(!hashtable_get(&key_set, key)) {
+                        if (!have_unrecognized_keys) {
+                            strbuffer_init(&unrecognized_keys);
+                            have_unrecognized_keys = 1;
+                        } else {
+                            strbuffer_append_bytes(&unrecognized_keys, ", ", 2);
+                        }
+                        strbuffer_append_bytes(&unrecognized_keys, key, strlen(key));
+                    }
+                }
+            }
+            set_error(s, "<validation>",
+                      "%li object item(s) left unpacked: %s",
+                      unpacked, strbuffer_value(&unrecognized_keys));
+            strbuffer_close(&unrecognized_keys);
+            goto out;
+        }
     }
 
     ret = 0;
@@ -523,16 +616,32 @@ static int unpack(scanner_t *s, json_t *root, va_list *ap)
             }
 
             if(!(s->flags & JSON_VALIDATE_ONLY)) {
-                const char **target;
+                const char **str_target;
+                size_t *len_target = NULL;
 
-                target = va_arg(*ap, const char **);
-                if(!target) {
+                str_target = va_arg(*ap, const char **);
+                if(!str_target) {
                     set_error(s, "<args>", "NULL string argument");
                     return -1;
                 }
 
-                if(root)
-                    *target = json_string_value(root);
+                next_token(s);
+
+                if(token(s) == '%') {
+                    len_target = va_arg(*ap, size_t *);
+                    if(!len_target) {
+                        set_error(s, "<args>", "NULL string length argument");
+                        return -1;
+                    }
+                }
+                else
+                    prev_token(s);
+
+                if(root) {
+                    *str_target = json_string_value(root);
+                    if(len_target)
+                        *len_target = json_string_length(root);
+                }
             }
             return 0;
 

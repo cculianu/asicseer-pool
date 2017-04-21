@@ -69,8 +69,8 @@ if test x$sse4 = xsse4_1; then
 	AC_DEFINE([USE_SSE4], [1], [Use sse4 assembly instructions for sha256])
 fi
 
-AC_CONFIG_SUBDIRS([src/jansson-2.6])
-JANSSON_LIBS="jansson-2.6/src/.libs/libjansson.a"
+AC_CONFIG_SUBDIRS([src/jansson-2.10])
+JANSSON_LIBS="jansson-2.10/src/.libs/libjansson.a"
 
 AC_SUBST(JANSSON_LIBS)
 

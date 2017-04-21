@@ -8748,7 +8748,7 @@ static void *statsupdate(void *arg)
 				"SPS5m", stats->sps5,
 				"SPS15m", stats->sps15,
 				"SPS1h", stats->sps60);
-		s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER);
+		s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER | JSON_REAL_PRECISION(3));
 		json_decref(val);
 		LOGNOTICE("Pool:%s", s);
 		fprintf(fp, "%s\n", s);

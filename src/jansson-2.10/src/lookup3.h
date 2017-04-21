@@ -37,7 +37,7 @@ on 1 byte), but shoehorning those bytes into integers efficiently is messy.
 #include <stdlib.h>
 
 #ifdef HAVE_CONFIG_H
-#include <config.h>
+#include <jansson_private_config.h>
 #endif
 
 #ifdef HAVE_STDINT_H
@@ -205,7 +205,24 @@ static uint32_t hashlittle(const void *key, size_t length, uint32_t initval)
   if (HASH_LITTLE_ENDIAN && ((u.i & 0x3) == 0)) {
     const uint32_t *k = (const uint32_t *)key;         /* read 32-bit chunks */
 
+/* Detect Valgrind or AddressSanitizer */
+#ifdef VALGRIND
+# define NO_MASKING_TRICK 1
+#else
+# if defined(__has_feature)  /* Clang */
+#  if __has_feature(address_sanitizer)  /* is ASAN enabled? */
+#   define NO_MASKING_TRICK 1
+#  endif
+# else
+#  if defined(__SANITIZE_ADDRESS__)  /* GCC 4.8.x, is ASAN enabled? */
+#   define NO_MASKING_TRICK 1
+#  endif
+# endif
+#endif
+
+#ifdef NO_MASKING_TRICK
     const uint8_t  *k8;
+#endif
 
     /*------ all but last block: aligned reads and affect 32 bits of (a,b,c) */
     while (length > 12)
@@ -219,6 +236,35 @@ static uint32_t hashlittle(const void *key, size_t length, uint32_t initval)
     }
 
     /*----------------------------- handle the last (probably partial) block */
+    /* 
+     * "k[2]&0xffffff" actually reads beyond the end of the string, but
+     * then masks off the part it's not allowed to read.  Because the
+     * string is aligned, the masked-off tail is in the same word as the
+     * rest of the string.  Every machine with memory protection I've seen
+     * does it on word boundaries, so is OK with this.  But VALGRIND will
+     * still catch it and complain.  The masking trick does make the hash
+     * noticably faster for short strings (like English words).
+     */
+#ifndef NO_MASKING_TRICK
+
+    switch(length)
+    {
+    case 12: c+=k[2]; b+=k[1]; a+=k[0]; break;
+    case 11: c+=k[2]&0xffffff; b+=k[1]; a+=k[0]; break;
+    case 10: c+=k[2]&0xffff; b+=k[1]; a+=k[0]; break;
+    case 9 : c+=k[2]&0xff; b+=k[1]; a+=k[0]; break;
+    case 8 : b+=k[1]; a+=k[0]; break;
+    case 7 : b+=k[1]&0xffffff; a+=k[0]; break;
+    case 6 : b+=k[1]&0xffff; a+=k[0]; break;
+    case 5 : b+=k[1]&0xff; a+=k[0]; break;
+    case 4 : a+=k[0]; break;
+    case 3 : a+=k[0]&0xffffff; break;
+    case 2 : a+=k[0]&0xffff; break;
+    case 1 : a+=k[0]&0xff; break;
+    case 0 : return c;              /* zero length strings require no mixing */
+    }
+
+#else /* make valgrind happy */
 
     k8 = (const uint8_t *)k;
     switch(length)
@@ -237,6 +283,8 @@ static uint32_t hashlittle(const void *key, size_t length, uint32_t initval)
     case 1 : a+=k8[0]; break;
     case 0 : return c;
     }
+
+#endif /* !valgrind */
 
   } else if (HASH_LITTLE_ENDIAN && ((u.i & 0x1) == 0)) {
     const uint16_t *k = (const uint16_t *)key;         /* read 16-bit chunks */
