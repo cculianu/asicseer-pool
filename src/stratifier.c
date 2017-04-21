@@ -6341,11 +6341,11 @@ static void check_best_diff(ckpool_t *ckp, sdata_t *sdata, user_instance_t *user
 	bool best_worker = false, best_user = false;
 
 	if (sdiff > worker->best_diff) {
-		worker->best_diff = sdiff;
+		worker->best_diff = floor(sdiff);
 		best_worker = true;
 	}
 	if (sdiff > user->best_diff) {
-		user->best_diff = sdiff;
+		user->best_diff = floor(sdiff);
 		best_user = true;
 	}
 	if (likely(!CKP_STANDALONE(ckp) || (!best_user && !best_worker) || !client))
@@ -6469,7 +6469,7 @@ static json_t *parse_submit(stratum_instance_t *client, json_t *json_msg,
 	if (sdiff > client->best_diff) {
 		worker_instance_t *worker = client->worker_instance;
 
-		client->best_diff = sdiff;
+		client->best_diff = floor(sdiff);
 		LOGINFO("User %s worker %s client %s new best diff %lf", user->username,
 			worker->workername, client->identity, sdiff);
 		check_best_diff(ckp, sdata, user, worker, sdiff, client);
@@ -8424,7 +8424,7 @@ static void *statsupdate(void *arg)
 			per_tdiff, hmul = 1, lmul = 1, rolling_herp, rolling_lns,
 			reward, derp, percent;
 		char suffix1[16], suffix5[16], suffix15[16], suffix60[16], cdfield[64];
-		char suffix360[16], suffix1440[16], suffix10080[16], suffix[16];
+		char suffix360[16], suffix1440[16], suffix10080[16];
 		int remote_users = 0, remote_workers = 0, idle_workers = 0,
 			cbspace = 0;
 		long double herp, lns;
@@ -8571,9 +8571,8 @@ static void *statsupdate(void *arg)
 				worker->ua_lns = 0;
 				mutex_unlock(&user->stats_lock);
 
-				percent = worker->herp / worker->lns;
-				suffix_string(percent, suffix, 16, 3);
-				JSON_CPACK(val, "{ss,ss,ss,ss,ss,si,sI,sf,sf,ss,sf}",
+				percent = round(worker->herp / worker->lns * 100) / 100;
+				JSON_CPACK(val, "{ss,ss,ss,ss,ss,si,sI,sf,sf,sf,sf}",
 						"hashrate1m", suffix1,
 						"hashrate5m", suffix5,
 						"hashrate1hr", suffix60,
@@ -8583,11 +8582,12 @@ static void *statsupdate(void *arg)
 						"shares", worker->shares,
 						"bestshare", worker->best_diff,
 					        "lns", worker->lns,
-					        "luck", suffix,
+					        "luck", percent,
 					        "herp", worker->herp);
 
 				ASPRINTF(&fname, "%s/workers/%s", ckp->logdir, worker->workername);
-				s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER | JSON_EOL);
+				s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER | JSON_EOL |
+					JSON_REAL_PRECISION(16) | JSON_INDENT(1));
 				add_log_entry(&log_entries, &fname, &s);
 				json_decref(val);
 			}
@@ -8633,9 +8633,8 @@ static void *statsupdate(void *arg)
 				derp /= 100000000;
 			}
 
-			percent = user->herp / user->lns;
-			suffix_string(percent, suffix, 16, 3);
-			JSON_CPACK(val, "{ss,ss,ss,ss,ss,si,si,sI,sf,sf,ss,sf,sf}",
+			percent = round(user->herp / user->lns * 100) / 100;
+			JSON_CPACK(val, "{ss,ss,ss,ss,ss,si,si,sI,sf,sf,sf,sf,sf}",
 					"hashrate1m", suffix1,
 					"hashrate5m", suffix5,
 					"hashrate1hr", suffix60,
@@ -8646,7 +8645,7 @@ static void *statsupdate(void *arg)
 					"shares", user->shares,
 					"bestshare", user->best_diff,
 				        "lns", user->lns,
-				        "luck", suffix,
+				        "luck", percent,
 				        "herp", user->herp,
 				        "derp", derp);
 
@@ -8661,10 +8660,12 @@ static void *statsupdate(void *arg)
 			}
 
 			ASPRINTF(&fname, "%s/users/%s", ckp->logdir, user->username);
-			s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER | JSON_EOL);
+			s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER | JSON_EOL |
+				 JSON_REAL_PRECISION(16) | JSON_INDENT(1));
 			add_log_entry(&log_entries, &fname, &s);
 			if (!idle) {
-				s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER);
+				s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER |
+					JSON_COMPACT | JSON_REAL_PRECISION(16));
 				ASPRINTF(&sp, "User %s:%s", user->username, s);
 				dealloc(s);
 				add_msg_entry(&char_list, &sp);
@@ -8754,7 +8755,7 @@ static void *statsupdate(void *arg)
 		fprintf(fp, "%s\n", s);
 		dealloc(s);
 
-		percent = round(stats->accounted_diff_shares * 1000 / stats->network_diff) / 100;
+		percent = round(stats->accounted_diff_shares * 1000 / stats->network_diff) / 10;
 		JSON_CPACK(val, "{sf,sI,sI,sf,sf,sf}",
 			        "diff", percent,
 				"accepted", stats->accounted_diff_shares,
@@ -8762,7 +8763,7 @@ static void *statsupdate(void *arg)
 			        "lns", rolling_lns,
 			        "herp", rolling_herp,
 			        "reward", reward / 100000000);
-		s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER);
+		s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER | JSON_REAL_PRECISION(16));
 		json_decref(val);
 		LOGNOTICE("Pool:%s", s);
 		fprintf(fp, "%s\n", s);
