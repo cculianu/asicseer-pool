@@ -5330,15 +5330,17 @@ static worker_instance_t *get_create_worker(sdata_t *sdata, user_instance_t *use
 /* Load the statistics of and create all known users at startup */
 static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 {
+	char dnam[512], s[512], *username, *buf;
 	int ret, len, users = 0, workers = 0;
-	char dnam[512], s[512], *username;
 	user_instance_t *user;
 	struct dirent *dir;
+	struct stat fdbuf;
 	bool new_user;
 	json_t *val;
 	FILE *fp;
 	tv_t now;
 	DIR *d;
+	int fd;
 
 	snprintf(dnam, 511, "%susers", ckp->logdir);
 	d = opendir(dnam);
@@ -5369,18 +5371,29 @@ static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 			LOGWARNING("Failed to load user %s logfile to read", username);
 			continue;
 		}
-		memset(s, 0, 512);
-		ret = fread(s, 1, 511, fp);
+		fd = fileno(fp);
+		if (unlikely(fstat(fd, &fdbuf))) {
+			LOGERR("Failed to fstat user %s logfile", username);
+			fclose(fp);
+			continue;
+		}
+		/* We don't know how big the logfile will be so allocate
+		 * according to file size */
+		buf = ckzalloc(fdbuf.st_size + 1);
+		ret = fread(buf, 1, fdbuf.st_size, fp);
 		fclose(fp);
 		if (ret < 1) {
 			LOGNOTICE("Failed to read user %s logfile", username);
+			dealloc(buf);
 			continue;
 		}
-		val = json_loads(s, 0, NULL);
+		val = json_loads(buf, 0, NULL);
 		if (!val) {
-			LOGNOTICE("Failed to json decode user %s logfile: %s", username, s);
+			LOGNOTICE("Failed to json decode user %s logfile: %s", username, buf);
+			dealloc(buf);
 			continue;
 		}
+		dealloc(buf);
 
 		/* Assume any user with logs was authorised */
 		user->authorised = true;
@@ -5458,17 +5471,25 @@ static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 			LOGWARNING("Failed to load worker %s logfile to read", workername);
 			continue;
 		}
-		memset(s, 0, 512);
-		ret = fread(s, 1, 511, fp);
+		fd = fileno(fp);
+		if (unlikely(fstat(fd, &fdbuf))) {
+			LOGERR("Failed to fstat user %s logfile", username);
+			fclose(fp);
+			continue;
+		}
+		buf = ckzalloc(fdbuf.st_size + 1);
+		ret = fread(buf, 1, fdbuf.st_size, fp);
 		fclose(fp);
 		if (ret < 1) {
 			LOGNOTICE("Failed to read worker %s logfile", workername);
+			dealloc(buf);
 			continue;
 		}
-		val = json_loads(s, 0, NULL);
+		val = json_loads(buf, 0, NULL);
 		if (!val) {
 			LOGNOTICE("Failed to json decode worker %s logfile: %s",
-				  workername, s);
+				  workername, buf);
+			dealloc(buf);
 			continue;
 		}
 
@@ -8531,10 +8552,12 @@ static void *statsupdate(void *arg)
 		while ((user = next_user(sdata, user)) != NULL) {
 			worker_instance_t *worker;
 			bool idle = false;
+			json_t *user_array;
 
 			if (!user->authorised)
 				continue;
 
+			user_array = json_array();
 			worker = NULL;
 			tv_time(&now);
 
@@ -8589,7 +8612,9 @@ static void *statsupdate(void *arg)
 				s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER | JSON_EOL |
 					JSON_REAL_PRECISION(16) | JSON_INDENT(1));
 				add_log_entry(&log_entries, &fname, &s);
-				json_decref(val);
+				json_set_string(val, "workername", worker->workername);
+				json_array_append_new(user_array, val);
+				val = NULL;
 			}
 
 			/* Decay times per user */
@@ -8659,10 +8684,6 @@ static void *statsupdate(void *arg)
 					remote_users++;
 			}
 
-			ASPRINTF(&fname, "%s/users/%s", ckp->logdir, user->username);
-			s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER | JSON_EOL |
-				 JSON_REAL_PRECISION(16) | JSON_INDENT(1));
-			add_log_entry(&log_entries, &fname, &s);
 			if (!idle) {
 				s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER |
 					JSON_COMPACT | JSON_REAL_PRECISION(16));
@@ -8670,6 +8691,11 @@ static void *statsupdate(void *arg)
 				dealloc(s);
 				add_msg_entry(&char_list, &sp);
 			}
+			json_object_set_new_nocheck(val, "worker", user_array);
+			ASPRINTF(&fname, "%s/users/%s", ckp->logdir, user->username);
+			s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER | JSON_EOL |
+				 JSON_REAL_PRECISION(16) | JSON_INDENT(1));
+			add_log_entry(&log_entries, &fname, &s);
 			json_decref(val);
 			if (ckp->remote)
 				upstream_workers(ckp, user);
