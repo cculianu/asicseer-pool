@@ -8899,6 +8899,7 @@ static void *statsupdate(void *arg)
 				JSON_REAL_PRECISION(12) | JSON_INDENT(1) | JSON_EOL);
 			json_decref(val);
 			fprintf(fp, "%s", s);
+			dealloc(s);
 			fclose(fp);
 		}
 
