@@ -172,6 +172,8 @@ struct workbase {
 	bool proxy; /* This workbase is proxied work */
 
 	bool incomplete; /* This is a remote workinfo without all the txn data */
+
+	json_t *payout; /* Current generation payout summary data */
 };
 
 typedef struct workbase workbase_t;
@@ -628,19 +630,25 @@ static const int witnessdata_size = 36; // commitment header + hash
 typedef struct generation generation_t;
 
 struct generation {
-	generation_t *next;
-	generation_t *prev;
+	UT_hash_handle hh;
+
 	user_instance_t *user;
 	double herp;
 };
+
+static double herp_sort(generation_t *a, generation_t *b)
+{
+	return (b->herp - a->herp);
+}
 
 /* Add generation transactions to the coinbase for each user, return any spare
  * change. */
 static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 				   uint64_t *gentxns)
 {
+	json_t *payout = json_object(), *user_entries = json_object();
+	double rolling_herp, derp, herp = 0, dreward;
 	generation_t *gen, *gens = NULL, *tmpgen;
-	double rolling_herp, derp, herp = 0;
 	user_instance_t *user, *tmpuser;
 	int64_t total = g64;
 	uint64_t *u64;
@@ -650,6 +658,12 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 	mutex_lock(&sdata->stats_lock);
 	rolling_herp = sdata->stats.rolling_herp;
 	mutex_unlock(&sdata->stats_lock);
+
+	json_set_int(payout, "height", wb->height);
+	dreward = wb->coinbasevalue;
+	dreward /= 100000000;
+	json_set_double(payout, "reward", dreward);
+	json_object_set(payout, "users", user_entries);
 
 	ck_rlock(&sdata->instance_lock);
 	HASH_ITER(hh, sdata->user_instances, user, tmpuser) {
@@ -664,13 +678,13 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 		user->dust = false;
 		gen = ckzalloc(sizeof(generation_t));
 		gen->user = user;
-		DL_APPEND(gens, gen);
+		HASH_ADD_STR(gens, user->username, gen);
 	}
 	ck_runlock(&sdata->instance_lock);
 
 	/* Now go through and accurately summate their herps which won't change,
 	 * avoids recursive lock with instance_lock. */
-	DL_FOREACH(gens, gen) {
+	HASH_ITER(hh, gens, gen, tmpgen) {
 		user = gen->user;
 
 		mutex_lock(&user->stats_lock);
@@ -681,15 +695,21 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 		herp += gen->herp;
 	}
 
+	/* Sort by reward */
+	HASH_SORT(gens, herp_sort);
+
 	/* Now calculate each user's reward, adding a transaction to the
 	 * coinbase and remove the generation structure */
-	DL_FOREACH_SAFE(gens, gen, tmpgen) {
+	HASH_ITER(hh, gens, gen, tmpgen) {
 		uint64_t reward;
 
 		user = gen->user;
 		/* Calculate reward in satoshis */
 		derp = floor(g64 * gen->herp / herp);
 		reward = derp;
+		dreward = reward;
+		dreward /= 100000000;
+		json_set_double(user_entries, user->username, dreward);
 		total -= reward;
 		LOGINFO("User %s reward %"PRId64, user->username, reward);
 		/* Set the user's coinbase reward */
@@ -705,9 +725,10 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 		/* Increment number of generation transactions */
 		(*gentxns)++;
 
-		DL_DELETE(gens, gen);
+		HASH_DEL(gens, gen);
 		free(gen);
 	}
+	wb->payout = payout;
 
 	if (total < 0)
 		LOGWARNING("Negative change in add_user_generation of %"PRId64, total);
@@ -800,9 +821,14 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 	}
 
 	/* Add any change left over from user gen to donation */
-	if (CKP_STANDALONE(ckp))
+	if (CKP_STANDALONE(ckp)) {
+		double dfee;
+
 		d64 += add_user_generation(sdata, wb, g64, gentxns);
-	else {
+		dfee = d64;
+		dfee /= 100000000;
+		json_set_double(wb->payout, "fee", dfee);
+	} else {
 		(*gentxns)++;
 
 		u64 = (uint64_t *)&wb->coinb2bin[wb->coinb2len];
@@ -869,6 +895,8 @@ static void clear_workbase(workbase_t *wb)
 	free(wb->coinb2bin);
 	free(wb->coinb2);
 	json_decref(wb->merkle_array);
+	if (wb->payout)
+		json_decref(wb->payout);
 	free(wb);
 }
 
@@ -8765,6 +8793,24 @@ static void *statsupdate(void *arg)
 		fprintf(fp, "%s\n", s);
 		dealloc(s);
 		fclose(fp);
+
+		ck_rlock(&sdata->workbase_lock);
+		if (likely(sdata->current_workbase && sdata->current_workbase->payout))
+			val = json_deep_copy(sdata->current_workbase->payout);
+		ck_runlock(&sdata->workbase_lock);
+
+		if (likely(val)) {
+			ASPRINTF(&fname, "%s/pool/pool.work", ckp->logdir);
+			fp = fopen(fname, "we");
+			if (unlikely(!fp))
+				LOGERR("Failed to fopen %s", fname);
+			dealloc(fname);
+			s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER |
+				JSON_REAL_PRECISION(12) | JSON_INDENT(1) | JSON_EOL);
+			json_decref(val);
+			fprintf(fp, "%s", s);
+			fclose(fp);
+		}
 
 		if (ckp->proxy && sdata->proxy) {
 			proxy_t *proxy, *proxytmp, *subproxy, *subtmp;
