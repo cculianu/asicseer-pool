@@ -6331,7 +6331,6 @@ test_blocksolve(const stratum_instance_t *client, const workbase_t *wb, const uc
 		double percent;
 		FILE *fp;
 
-		block_solve(ckp, val_copy);
 		blockval = json_copy(wb->payout);
 		json_set_string(blockval, "solvedby", client->user_instance->username);
 		get_timestamp(stamp);
@@ -6360,6 +6359,7 @@ test_blocksolve(const stratum_instance_t *client, const workbase_t *wb, const uc
 		json_decref(blockval);
 		fprintf(fp, "%s", s);
 		fclose(fp);
+		block_solve(ckp, val_copy);
 	} else
 		block_reject(val_copy);
 
