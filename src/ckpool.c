@@ -89,7 +89,7 @@ void get_timestamp(char *stamp)
 
 	tv_time(&now_tv);
 	ms = (int)(now_tv.tv_usec / 1000);
-	localtime_r(&(now_tv.tv_sec), &tm);
+	gmtime_r(&(now_tv.tv_sec), &tm);
 	sprintf(stamp, "[%d-%02d-%02d %02d:%02d:%02d.%03d]",
 			tm.tm_year + 1900,
 			tm.tm_mon + 1,
@@ -1787,7 +1787,7 @@ int main(int argc, char **argv)
 			ckp.btcdpass[i] = strdup("pass");
 	}
 
-	ckp.donaddress = "14BMjogz69qe8hk9thyzbmR5pg34mVKB1e";
+	ckp.donaddress = "mkbwPU5wRbc27Pva7A7BPPHNrJCkfBnuMn";
 	if (!ckp.btcaddress)
 		ckp.btcaddress = ckp.donaddress;
 	if (!ckp.blockpoll)
@@ -1840,6 +1840,11 @@ int main(int argc, char **argv)
 	ret = mkdir(buf, 0750);
 	if (ret && errno != EEXIST)
 		quit(1, "Failed to make pool log directory %s", buf);
+
+	sprintf(buf, "%s/pool/blocks", ckp.logdir);
+	ret = mkdir(buf, 0750);
+	if (ret && errno != EEXIST)
+		quit(1, "Failed to make pool blocks log directory %s", buf);
 
 	/* Create the logfile */
 	ASPRINTF(&ckp.logfilename, "%s%s.log", ckp.logdir, ckp.name);

@@ -41,6 +41,15 @@ static const double nonces = 4294967296;
 #define DERP_DUST	5460 /* Minimum payout not dust */
 #define DERP_SPACE	1000 /* Minimum derp to warrant leaving coinbase space */
 
+typedef struct json_entry json_entry_t;
+
+struct json_entry {
+	json_entry_t *next;
+	json_entry_t *prev;
+
+	json_t *val;
+};
+
 /* Add unaccounted shares when they arrive, remove them with each update of
  * rolling stats. */
 struct pool_stats {
@@ -97,6 +106,9 @@ struct pool_stats {
 
 	double reward; /* Current coinbase reward in satoshis */
 	int cbspace; /* Space required in coinbase for user txn generation */
+
+	/* DLL of Unconfirmed block solves, protected by stats_lock */
+	json_entry_t *unconfirmed;
 };
 
 typedef struct pool_stats pool_stats_t;
@@ -484,6 +496,7 @@ static const char *ckdb_seq_names[] = {
 
 #define ID_COUNT (sizeof(ckdb_ids)/sizeof(char *))
 
+
 struct stratifier_data {
 	ckpool_t *ckp;
 
@@ -575,14 +588,6 @@ struct stratifier_data {
 	proxy_t *proxies; /* Hashlist of all proxies */
 	mutex_t proxy_lock; /* Protects all proxy data */
 	proxy_t *subproxy; /* Which subproxy this sdata belongs to in proxy mode */
-};
-
-typedef struct json_entry json_entry_t;
-
-struct json_entry {
-	json_entry_t *next;
-	json_entry_t *prev;
-	json_t *val;
 };
 
 /* Priority levels for generator messages */
@@ -1689,6 +1694,49 @@ static void gbt_witness_data(workbase_t *wb, json_t *txn_array)
 	wb->insert_witness = true;
 }
 
+/* Find the first unconfirmed block that is 3 confirms ago and remove it
+ * from the list, declaring it confirmed or orphaned. */
+static void check_unconfirmed(ckpool_t *ckp, sdata_t *sdata, const int height)
+{
+	char heighthash[68] = {}, *rhash, *fname, *newname;
+	json_entry_t *blocksolve, *tmp, *found = NULL;
+	pool_stats_t *stats = &sdata->stats;
+	int solveheight = 0;
+	bool ret;
+
+	mutex_lock(&sdata->stats_lock);
+	DL_FOREACH_SAFE(stats->unconfirmed, blocksolve, tmp) {
+		json_t *val = blocksolve->val;
+
+		json_get_int(&solveheight, val, "height");
+		if (height - solveheight < 3)
+			continue;
+		DL_DELETE(stats->unconfirmed, blocksolve);
+		found = blocksolve;
+		break;
+	}
+	mutex_unlock(&sdata->stats_lock);
+
+	if (likely(!found))
+		return;
+
+	json_get_string(&rhash, found->val, "hash");
+	json_decref(found->val);
+	dealloc(found);
+	generator_get_blockhash(ckp, solveheight, heighthash);
+	ret = !strncmp(rhash, heighthash, 64);
+	dealloc(rhash);
+
+	LOGWARNING("Hash for block height %d confirms block was %s", solveheight,
+		   ret ? "CONFIRMED" : "ORPHANED");
+	ASPRINTF(&fname, "%s/pool/blocks/%d.unconfirmed", ckp->logdir, solveheight);
+	ASPRINTF(&newname, "%s/pool/blocks/%d.%s", ckp->logdir, solveheight, ret ?
+		"confirmed" : "orphaned");
+	rename(fname, newname);
+	dealloc(fname);
+	dealloc(newname);
+}
+
 /* This function assumes it will only receive a valid json gbt base template
  * since checking should have been done earlier, and creates the base template
  * for generating work templates. This is a ckmsgq so all uses of this function
@@ -1775,11 +1823,17 @@ retry:
 		now_t -= ckp->update_interval / 2;
 	sdata->update_time = now_t;
 
-	if (new_block)
-		LOGNOTICE("Block hash changed to %s", sdata->lastswaphash);
 	stratum_broadcast_update(sdata, wb, new_block);
 	ret = true;
 	LOGINFO("Broadcast updated stratum base");
+
+	if (new_block) {
+		LOGNOTICE("Block hash changed to %s", sdata->lastswaphash);
+		/* Checking existence of DL list lockless but not trying to
+		 * reference data */
+		if (sdata->stats.unconfirmed)
+			check_unconfirmed(ckp, sdata, wb->height);
+	}
 out:
 	cksem_post(&sdata->update_sem);
 
@@ -4062,7 +4116,7 @@ static void block_solve(ckpool_t *ckp, json_t *val)
 		char *s;
 
 		ASPRINTF(&msg, "Block %d solved by %s @ %s!", height, workername, ckp->name);
-		LOGWARNING("Solved and confirmed block %d by %s", height, workername);
+		LOGWARNING("Solved block %d by %s", height, workername);
 		user = user_by_workername(sdata, workername);
 		worker = get_worker(sdata, user, workername);
 
@@ -6268,9 +6322,45 @@ test_blocksolve(const stratum_instance_t *client, const workbase_t *wb, const uc
 	/* Submit block locally after sending it to remote locations avoiding
 	 * the delay of local verification */
 	ret = local_block_submit(ckp, gbt_block, flip32, wb->height);
-	if (ret)
+	if (ret) {
+		json_entry_t *blocksolve = ckzalloc(sizeof(json_entry_t));
+		char *fname, stamp[128], *s, rhash[68] = {};
+		uchar swap256[32];
+		json_t *blockval;
+		uint64_t shares;
+		double percent;
+		FILE *fp;
+
 		block_solve(ckp, val_copy);
-	else
+		blockval = json_copy(wb->payout);
+		json_set_string(blockval, "solvedby", client->user_instance->username);
+		get_timestamp(stamp);
+		json_set_string(blockval, "date", stamp);
+		swap_256(swap256, flip32);
+		__bin2hex(rhash, swap256, 32);
+		json_set_string(blockval, "hash", rhash);
+
+		mutex_lock(&sdata->stats_lock);
+		shares = sdata->stats.accounted_diff_shares;
+		json_set_int64(blockval, "shares", shares);
+		percent = round(shares * 1000 / wb->network_diff) / 10;
+		json_set_double(blockval, "diff", percent);
+		blocksolve->val = json_copy(blockval);
+		DL_APPEND(sdata->stats.unconfirmed, blocksolve);
+		mutex_unlock(&sdata->stats_lock);
+
+		/* Log to disk unlocked  with a dup of the json */
+		ASPRINTF(&fname, "%s/pool/blocks/%d.unconfirmed", ckp->logdir, wb->height);
+		fp = fopen(fname, "we");
+		if (unlikely(!fp))
+			LOGERR("Failed to fopen %s", fname);
+		dealloc(fname);
+		s = json_dumps(blockval, JSON_NO_UTF8 | JSON_PRESERVE_ORDER |
+			JSON_REAL_PRECISION(12) | JSON_INDENT(1) | JSON_EOL);
+		json_decref(blockval);
+		fprintf(fp, "%s", s);
+		fclose(fp);
+	} else
 		block_reject(val_copy);
 
 }
