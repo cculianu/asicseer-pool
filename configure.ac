@@ -74,10 +74,11 @@ JANSSON_LIBS="jansson-2.10/src/.libs/libjansson.a"
 
 AC_SUBST(JANSSON_LIBS)
 
-AC_ARG_WITH([ckdb],
-	[AC_HELP_STRING([--without-ckdb],[Compile ckpool without postgresql database support (default enabled)])],
-	[ckdb=$withval]
-	)
+ckdb=no
+#AC_ARG_WITH([ckdb],
+#	[AC_HELP_STRING([--without-ckdb],[Compile ckpool without postgresql database support (default enabled)])],
+#	[ckdb=$withval]
+#	)
 
 AC_SEARCH_LIBS(clock_nanosleep, rt, , "Error: Required library rt not found." && exit 1)
 AC_SEARCH_LIBS(exp, m, , echo "Error: Required library math not found." && exit 1)
