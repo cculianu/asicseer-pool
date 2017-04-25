@@ -8515,27 +8515,37 @@ static void *statsupdate(void *arg)
 			worker = NULL;
 			tv_time(&now);
 
+			LOGDEBUG("Storing user %s", user->username);
 			/* Decay times per worker */
 			while ((worker = next_worker(sdata, user, worker)) != NULL) {
+				bool store = false;
+
 				per_tdiff = tvdiff(&now, &worker->last_share);
 				if (per_tdiff > 60) {
 					decay_worker(worker, 0, &now);
 					worker->idle = true;
-				}
+				} else
+					store = true;
+
 				ghs = worker->dsps1 * nonces;
 				suffix_string(ghs, suffix1, 16, 0);
+				store |= ghs > 0;
 
 				ghs = worker->dsps5 * nonces;
 				suffix_string(ghs, suffix5, 16, 0);
+				store |= ghs > 0;
 
 				ghs = worker->dsps60 * nonces;
 				suffix_string(ghs, suffix60, 16, 0);
+				store |= ghs > 0;
 
 				ghs = worker->dsps1440 * nonces;
 				suffix_string(ghs, suffix1440, 16, 0);
+				store |= ghs > 0;
 
 				ghs = worker->dsps10080 * nonces;
 				suffix_string(ghs, suffix10080, 16, 0);
+				/* Do not store if hashrate for 7d exists only */
 
 				mutex_lock(&user->stats_lock);
 				if (hmul != 1)
@@ -8547,6 +8557,16 @@ static void *statsupdate(void *arg)
 				worker->lns += worker->ua_lns;
 				worker->ua_lns = 0;
 				mutex_unlock(&user->stats_lock);
+
+				store |= worker->herp > 1;
+
+				/* Drop storage of workers idle for many days
+				 * without significant Accumulated herp */
+				if (!store) {
+					LOGDEBUG("Skipping worker %s", worker->workername);
+					continue;
+				}
+				LOGDEBUG("Storing worker %s", worker->workername);
 
 				percent = round(worker->herp / worker->lns * 100) / 100;
 				JSON_CPACK(val, "{ss,ss,ss,ss,ss,ss,si,sI,sf,sf,sf,sf}",
