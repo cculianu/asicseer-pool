@@ -9127,6 +9127,7 @@ static void read_poolstats(ckpool_t *ckp, int *tvsec_diff)
 	}
 	json_get_int64(&stats->accounted_diff_shares, val, "accepted");
 	json_get_int64(&stats->accounted_rejects, val, "rejected");
+	json_decref(val);
 
 out:
 	if (last.tv_sec)
