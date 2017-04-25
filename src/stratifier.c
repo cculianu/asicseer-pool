@@ -39,6 +39,7 @@ static const double nonces = 4294967296;
 #define HERP_N		5 /* 5 * network diff SPLNS */
 #define CBGENLEN	26 /* Maximum extra space required per user in coinbase */
 #define DERP_DUST	5460 /* Minimum payout not dust */
+#define DERP_SPACE	1000 /* Minimum derp to warrant leaving coinbase space */
 
 /* Add unaccounted shares when they arrive, remove them with each update of
  * rolling stats. */
@@ -8620,7 +8621,7 @@ static void *statsupdate(void *arg)
 
 			/* Round to satoshi, change to BTC, removing fee */
 			derp = floor(reward * user->herp / rolling_herp * 0.995);
-			if (derp) {
+			if (derp > DERP_SPACE) {
 				/* Needs payout, leave more space in coinbase
 				 * for generation txn to this user */
 				cbspace += CBGENLEN;
