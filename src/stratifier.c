@@ -3885,9 +3885,9 @@ static void reset_bestshares(sdata_t *sdata)
 			herp += user->ua_herp;
 			user->ua_herp = herp;
 		}
-		user->best_diff = 0;
+		user->best_diff = user->shares = 0;
 		DL_FOREACH(user->worker_instances, worker) {
-			worker->best_diff = 0;
+			worker->best_diff = worker->shares = 0;
 		}
 	}
 	ck_runlock(&sdata->instance_lock);
