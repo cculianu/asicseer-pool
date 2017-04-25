@@ -745,13 +745,9 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 {
 	uint64_t *u64, g64, d64 = 0, *gentxns;
 	sdata_t *sdata = ckp->sdata;
-	int len, ofs = 0, cbspace;
+	int len, ofs = 0;
 	char header[228];
 	ts_t now;
-
-	mutex_lock(&sdata->stats_lock);
-	cbspace = sdata->stats.cbspace;
-	mutex_unlock(&sdata->stats_lock);
 
 	/* Set fixed length coinb1 arrays to be more than enough */
 	wb->coinb1 = ckzalloc(256);
@@ -794,8 +790,9 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 	len += wb->enonce1varlen;
 	len += wb->enonce2varlen;
 
-	/* Leave room for coinbase generation txns and witness data */
-	wb->coinb2bin = ckzalloc(256 + cbspace + 12);
+	/* FIXME Leave room for coinbase generation txns and witness - need to
+	 * cap number of generations to under 6k ~200 users */
+	wb->coinb2bin = ckzalloc(8192);
 	memcpy(wb->coinb2bin, "\x0a\x63\x6b\x70\x6f\x6f\x6c", 7);
 	wb->coinb2len = 7;
 	if (ckp->btcsig) {
