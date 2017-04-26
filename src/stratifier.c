@@ -241,6 +241,7 @@ struct user_instance {
 	double ua_herp; /* Unaccounted HERP */
 	double lns; /* Rolling Last N shares */
 	double ua_lns; /* Unaccounted LNS */
+	double accumulated; /* Accumulated herp */
 
 	int64_t shares;
 	double dsps1; /* Diff shares per second, 1 minute rolling average */
@@ -650,15 +651,15 @@ static double herp_sort(generation_t *a, generation_t *b)
 static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 				   uint64_t *gentxns)
 {
-	json_t *payout = json_object(), *user_entries = json_object();
-	double rolling_herp, derp, herp = 0, dreward;
+	json_t *payout = json_object(), *payout_entries = json_object(),
+		*postponed_entries = json_object();
+	double rolling_herp, derp, herp = 0, total_herp = 0, dreward;
 	generation_t *gen, *gens = NULL, *tmpgen;
 	user_instance_t *user, *tmpuser;
 	int64_t total = g64;
 	uint64_t *u64;
 
-	/* Estimate first if a user is going to have a payout before adding it
-	 * to the generation lists */
+	/* Accurately gauge the current rolling_herp */
 	mutex_lock(&sdata->stats_lock);
 	rolling_herp = sdata->stats.rolling_herp;
 	mutex_unlock(&sdata->stats_lock);
@@ -667,14 +668,15 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 	dreward = wb->coinbasevalue;
 	dreward /= 100000000;
 	json_set_double(payout, "reward", dreward);
-	json_object_set(payout, "users", user_entries);
+	json_object_set(payout, "payouts", payout_entries);
+	json_object_set(payout, "postponed", postponed_entries);
 
 	ck_rlock(&sdata->instance_lock);
 	HASH_ITER(hh, sdata->user_instances, user, tmpuser) {
 		if (!user->btcaddress)
 			continue;
-		derp = floor(g64 * user->herp / rolling_herp);
-		if (derp < DERP_DUST)
+		derp = floor(g64 * (user->herp + user->accumulated) / rolling_herp);
+		if (!derp)
 			continue;
 		gen = ckzalloc(sizeof(generation_t));
 		gen->user = user;
@@ -688,7 +690,7 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 		user = gen->user;
 
 		mutex_lock(&user->stats_lock);
-		gen->herp = user->herp;
+		gen->herp = user->herp + user->accumulated;
 		mutex_unlock(&user->stats_lock);
 
 		/* Calculate the total herp */
@@ -697,6 +699,21 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 
 	/* Sort by reward */
 	HASH_SORT(gens, herp_sort);
+
+	/* Now iterate in highest to lowest reward order */
+	HASH_ITER(hh, gens, gen, tmpgen) {
+		/* If it does not meet the dust limits, add this user to
+		 * the postponed list instead */
+		if (floor(g64 * gen->herp / herp) < DERP_DUST) {
+			json_set_double(postponed_entries, user->username, gen->herp);
+			HASH_DEL(gens, gen);
+			dealloc(gen);
+			continue;
+		}
+		/* Calculate the total herp we will be using for our final
+		 * derp calculations */
+		total_herp += gen->herp;
+	}
 
 	/* Now calculate each user's reward, adding a transaction to the
 	 * coinbase and remove the generation structure */
@@ -709,7 +726,7 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 		reward = derp;
 		dreward = reward;
 		dreward /= 100000000;
-		json_set_double(user_entries, user->username, dreward);
+		json_set_double(payout_entries, user->username, dreward);
 		total -= reward;
 		LOGINFO("User %s reward %"PRId64, user->username, reward);
 		/* Set the user's coinbase reward */
@@ -724,7 +741,6 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 
 		/* Increment number of generation transactions */
 		(*gentxns)++;
-
 		HASH_DEL(gens, gen);
 		free(gen);
 	}
