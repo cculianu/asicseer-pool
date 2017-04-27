@@ -681,6 +681,8 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 	dreward = wb->coinbasevalue;
 	dreward /= SATOSHIS;
 	json_set_double(payout, "reward", dreward);
+	/* Will be overwritten, just looks nicer in this position */
+	json_set_double(payout, "fee", 0);
 	json_object_set(payout, "payouts", payout_entries);
 	json_set_double(payout, "herp", rolling_herp);
 	json_object_set(payout, "postponed", postponed_entries);
