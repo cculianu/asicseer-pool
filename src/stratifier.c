@@ -40,6 +40,9 @@ static const double nonces = 4294967296;
 #define CBGENLEN	33 /* Maximum extra space required per user in coinbase */
 #define DERP_DUST	5460 /* Minimum payout not dust */
 #define DERP_SPACE	1000 /* Minimum derp to warrant leaving coinbase space */
+#define PAYOUT_USERS	100 /* Number of top users that get reward each block */
+#define PAYOUT_REWARDS	150 /* Max number of users rewarded each block */
+#define SATOSHIS	100000000 /* Satoshi to a BTC */
 
 typedef struct json_entry json_entry_t;
 
@@ -242,6 +245,7 @@ struct user_instance {
 	double lns; /* Rolling Last N shares */
 	double ua_lns; /* Unaccounted LNS */
 	double accumulated; /* Accumulated herp */
+	int postponed; /* Number of block solves reward has been postponed */
 
 	int64_t shares;
 	double dsps1; /* Diff shares per second, 1 minute rolling average */
@@ -638,12 +642,20 @@ struct generation {
 	UT_hash_handle hh;
 
 	user_instance_t *user;
+	int postponed;
 	double herp;
 };
 
+/* Sort from highest to lowest herp */
 static double herp_sort(generation_t *a, generation_t *b)
 {
 	return (b->herp - a->herp);
+}
+
+/* Sort by most postponed */
+static int postponed_sort(generation_t *a, generation_t *b)
+{
+	return (b->postponed - a->postponed);
 }
 
 /* Add generation transactions to the coinbase for each user, return any spare
@@ -654,9 +666,10 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 	json_t *payout = json_object(), *payout_entries = json_object(),
 		*postponed_entries = json_object();
 	double rolling_herp, derp, herp = 0, total_herp = 0, dreward;
-	generation_t *gen, *gens = NULL, *tmpgen;
+	generation_t *gen, *gens = NULL, *paygens = NULL, *tmpgen;
 	user_instance_t *user, *tmpuser;
 	int64_t total = g64;
+	int payouts = 0;
 	uint64_t *u64;
 
 	/* Accurately gauge the current rolling_herp */
@@ -666,9 +679,10 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 
 	json_set_int(payout, "height", wb->height);
 	dreward = wb->coinbasevalue;
-	dreward /= 100000000;
+	dreward /= SATOSHIS;
 	json_set_double(payout, "reward", dreward);
 	json_object_set(payout, "payouts", payout_entries);
+	json_set_double(payout, "herp", rolling_herp);
 	json_object_set(payout, "postponed", postponed_entries);
 
 	ck_rlock(&sdata->instance_lock);
@@ -691,6 +705,7 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 
 		mutex_lock(&user->stats_lock);
 		gen->herp = user->herp + user->accumulated;
+		gen->postponed = user->postponed;
 		mutex_unlock(&user->stats_lock);
 
 		/* Calculate the total herp */
@@ -711,14 +726,42 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 			dealloc(gen);
 			continue;
 		}
+
+		/* If we've reached PAYOUT_USERS top paid users, leave them in
+		 * the gen list to be further sorted. */
+		if (payouts >= PAYOUT_USERS)
+			continue;
+
+		payouts++;
+		/* Remove them from the genlist and add them to the paygens */
+		HASH_DEL(gens, gen);
+		HASH_ADD_STR(paygens, user->username, gen);
 		/* Calculate the total herp we will be using for our final
 		 * derp calculations */
 		total_herp += gen->herp;
 	}
 
+	/* Sort remaining users by number of times their payout has been
+	 * postponed */
+	HASH_SORT(gens, postponed_sort);
+
+	/* Now add as many more users we can up to PAYOUT_REWARDS */
+	HASH_ITER(hh, gens, gen, tmpgen) {
+		/* We're emptying this list out completely now */
+		HASH_DEL(gens, gen);
+		user = gen->user;
+		if (payouts++ >= PAYOUT_REWARDS) {
+			json_set_double(postponed_entries, user->username, gen->herp);
+			dealloc(gen);
+			continue;
+		}
+		HASH_ADD_STR(paygens, user->username, gen);
+		total_herp += gen->herp;
+	}
+
 	/* Now calculate each user's reward, adding a transaction to the
 	 * coinbase and remove the generation structure */
-	HASH_ITER(hh, gens, gen, tmpgen) {
+	HASH_ITER(hh, paygens, gen, tmpgen) {
 		uint64_t reward;
 
 		user = gen->user;
@@ -726,7 +769,7 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 		derp = floor(g64 * gen->herp / total_herp);
 		reward = derp;
 		dreward = reward;
-		dreward /= 100000000;
+		dreward /= SATOSHIS;
 		json_set_double(payout_entries, user->username, dreward);
 		total -= reward;
 		LOGINFO("User %s reward %"PRId64, user->username, reward);
@@ -742,7 +785,7 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 
 		/* Increment number of generation transactions */
 		(*gentxns)++;
-		HASH_DEL(gens, gen);
+		HASH_DEL(paygens, gen);
 		free(gen);
 	}
 	wb->payout = payout;
@@ -841,7 +884,7 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 
 		d64 += add_user_generation(sdata, wb, g64, gentxns);
 		dfee = d64;
-		dfee /= 100000000;
+		dfee /= SATOSHIS;
 		json_set_double(wb->payout, "fee", dfee);
 	} else {
 		(*gentxns)++;
@@ -1709,6 +1752,7 @@ static user_instance_t *get_user(sdata_t *sdata, const char *username);
 static void confirm_block(sdata_t *sdata, json_t *blocksolve_val)
 {
 	json_t *payouts, *postponed, *val;
+	double rolling_herp, dreward;
 	user_instance_t *user;
 	const char *username;
 
@@ -1720,10 +1764,19 @@ static void confirm_block(sdata_t *sdata, json_t *blocksolve_val)
 	/* Clear all accumulated herp from users paid out, lockless is fine for
 	 * zeroing. */
 	json_object_foreach(payouts, username, val) {
-		LOGWARNING("Resetting user %s accumulated", username);
+		LOGINFO("Resetting user %s accumulated and postponed", username);
 		user = get_user(sdata, username);
-		user->accumulated = 0;
+		user->accumulated = user->postponed = 0;
 	}
+
+	json_get_double(&rolling_herp, blocksolve_val, "herp");
+	json_get_double(&dreward, blocksolve_val, "reward");
+	if (unlikely(rolling_herp <= 0 || dreward <= 0)) {
+		LOGERR("Invalid rolling herp %f dreward %f in confirm_block", rolling_herp,
+			dreward);
+		return;
+	}
+	dreward *= SATOSHIS;
 
 	postponed = json_object_get(blocksolve_val, "postponed");
 	if (unlikely(!postponed)) {
@@ -1732,14 +1785,19 @@ static void confirm_block(sdata_t *sdata, json_t *blocksolve_val)
 	}
 	/* Add all postponed herp for each user to their accumulated */
 	json_object_foreach(postponed, username, val) {
-		double herp;
+		double herp, derp;
 
 		user = get_user(sdata, username);
 		herp = json_real_value(val);
-		LOGWARNING("Adding %f accumulated herp to user %s", herp, username);
+		LOGINFO("Setting %f accumulated herp to user %s", herp, username);
+		derp = herp / rolling_herp * dreward;
 
 		mutex_lock(&user->stats_lock);
-		user->accumulated += herp;
+		user->accumulated = herp;
+		/* Consider this user's payout postponed only if it's more than
+		 * dust. */
+		if (derp >= DERP_DUST)
+			user->postponed++;
 		mutex_unlock(&user->stats_lock);
 	}
 
@@ -5526,6 +5584,7 @@ static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 		json_get_int64(&user->shares, val, "shares");
 		json_get_double(&user->best_diff, val, "bestshare");
 		json_get_double(&user->accumulated, val, "accumulated");
+		json_get_int(&user->postponed, val, "postponed");
 		json_get_double(&user->herp, val, "herp");
 		json_get_double(&user->lns, val, "lns");
 		LOGDEBUG("Successfully read user %s stats %f %f %f %f %f %f %f %f", username,
@@ -8777,11 +8836,11 @@ static void *statsupdate(void *arg)
 				/* Needs payout, leave more space in coinbase
 				 * for generation txn to this user */
 				cbspace += CBGENLEN;
-				derp /= 100000000;
+				derp /= SATOSHIS;
 			}
 
 			percent = round(user->herp / user->lns * 100) / 100;
-			JSON_CPACK(val, "{ss,ss,ss,ss,ss,si,si,sI,sf,sf,sf,sf,sf,sf}",
+			JSON_CPACK(val, "{ss,ss,ss,ss,ss,si,si,sI,sf,sf,sf,sf,si,sf,sf}",
 					"hashrate1m", suffix1,
 					"hashrate5m", suffix5,
 					"hashrate1hr", suffix60,
@@ -8794,6 +8853,7 @@ static void *statsupdate(void *arg)
 				        "lns", user->lns,
 				        "luck", percent,
 				        "accumulated", user->accumulated,
+				        "postponed", user->postponed,
 				        "herp", user->herp,
 				        "derp", derp);
 
@@ -8911,7 +8971,7 @@ static void *statsupdate(void *arg)
 			        "rejected", stats->accounted_rejects,
 			        "lns", rolling_lns,
 			        "herp", rolling_herp,
-			        "reward", reward / 100000000);
+			        "reward", reward / SATOSHIS);
 		s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER | JSON_REAL_PRECISION(16));
 		json_decref(val);
 		LOGNOTICE("Pool:%s", s);
