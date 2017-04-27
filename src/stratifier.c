@@ -6451,6 +6451,7 @@ test_blocksolve(const stratum_instance_t *client, const workbase_t *wb, const uc
 			JSON_REAL_PRECISION(12) | JSON_INDENT(1) | JSON_EOL);
 		json_decref(blockval);
 		fprintf(fp, "%s", s);
+		free(s);
 		fclose(fp);
 		block_solve(ckp, val_copy);
 	} else
