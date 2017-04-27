@@ -722,7 +722,7 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 
 		user = gen->user;
 		/* Calculate reward in satoshis */
-		derp = floor(g64 * gen->herp / herp);
+		derp = floor(g64 * gen->herp / total_herp);
 		reward = derp;
 		dreward = reward;
 		dreward /= 100000000;
