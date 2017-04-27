@@ -1703,6 +1703,48 @@ static void gbt_witness_data(workbase_t *wb, json_t *txn_array)
 	wb->insert_witness = true;
 }
 
+static user_instance_t *get_user(sdata_t *sdata, const char *username);
+
+static void confirm_block(sdata_t *sdata, json_t *blocksolve_val)
+{
+	json_t *payouts, *postponed, *val;
+	user_instance_t *user;
+	const char *username;
+
+	payouts = json_object_get(blocksolve_val, "payouts");
+	if (unlikely(!payouts)) {
+		LOGERR("Failed to get payouts object in confirm_block");
+		return;
+	}
+	/* Clear all accumulated herp from users paid out, lockless is fine for
+	 * zeroing. */
+	json_object_foreach(payouts, username, val) {
+		LOGWARNING("Resetting user %s accumulated", username);
+		user = get_user(sdata, username);
+		user->accumulated = 0;
+	}
+
+	postponed = json_object_get(blocksolve_val, "postponed");
+	if (unlikely(!postponed)) {
+		LOGERR("Failed to get postponed object in confirm_block");
+		return;
+	}
+	/* Add all postponed herp for each user to their accumulated */
+	json_object_foreach(postponed, username, val) {
+		double herp;
+
+		user = get_user(sdata, username);
+		herp = json_real_value(val);
+		LOGWARNING("Adding %f accumulated herp to user %s", herp, username);
+
+		mutex_lock(&user->stats_lock);
+		user->accumulated += herp;
+		mutex_unlock(&user->stats_lock);
+	}
+
+
+}
+
 /* Find the first unconfirmed block that is 3 confirms ago and remove it
  * from the list, declaring it confirmed or orphaned. */
 static void check_unconfirmed(ckpool_t *ckp, sdata_t *sdata, const int height)
@@ -1730,11 +1772,11 @@ static void check_unconfirmed(ckpool_t *ckp, sdata_t *sdata, const int height)
 		return;
 
 	json_get_string(&rhash, found->val, "hash");
-	json_decref(found->val);
-	dealloc(found);
 	generator_get_blockhash(ckp, solveheight, heighthash);
 	ret = !strncmp(rhash, heighthash, 64);
 	dealloc(rhash);
+	if (ret)
+		confirm_block(sdata, found->val);
 
 	LOGWARNING("Hash for block height %d confirms block was %s", solveheight,
 		   ret ? "CONFIRMED" : "ORPHANED");
@@ -1744,6 +1786,8 @@ static void check_unconfirmed(ckpool_t *ckp, sdata_t *sdata, const int height)
 	rename(fname, newname);
 	dealloc(fname);
 	dealloc(newname);
+	json_decref(found->val);
+	dealloc(found);
 }
 
 /* This function assumes it will only receive a valid json gbt base template
@@ -3972,8 +4016,6 @@ static void reset_bestshares(sdata_t *sdata)
 	ck_runlock(&sdata->instance_lock);
 }
 
-static user_instance_t *get_user(sdata_t *sdata, const char *username);
-
 static user_instance_t *user_by_workername(sdata_t *sdata, const char *workername)
 {
 	char *username = strdupa(workername), *ignore;
@@ -5482,6 +5524,7 @@ static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 		user->dsps10080 = dsps_from_key(val, "hashrate7d");
 		json_get_int64(&user->shares, val, "shares");
 		json_get_double(&user->best_diff, val, "bestshare");
+		json_get_double(&user->accumulated, val, "accumulated");
 		json_get_double(&user->herp, val, "herp");
 		json_get_double(&user->lns, val, "lns");
 		LOGDEBUG("Successfully read user %s stats %f %f %f %f %f %f %f %f", username,
@@ -8737,7 +8780,7 @@ static void *statsupdate(void *arg)
 			}
 
 			percent = round(user->herp / user->lns * 100) / 100;
-			JSON_CPACK(val, "{ss,ss,ss,ss,ss,si,si,sI,sf,sf,sf,sf,sf}",
+			JSON_CPACK(val, "{ss,ss,ss,ss,ss,si,si,sI,sf,sf,sf,sf,sf,sf}",
 					"hashrate1m", suffix1,
 					"hashrate5m", suffix5,
 					"hashrate1hr", suffix60,
@@ -8749,6 +8792,7 @@ static void *statsupdate(void *arg)
 					"bestshare", user->best_diff,
 				        "lns", user->lns,
 				        "luck", percent,
+				        "accumulated", user->accumulated,
 				        "herp", user->herp,
 				        "derp", derp);
 
