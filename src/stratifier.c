@@ -704,6 +704,7 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 	HASH_ITER(hh, gens, gen, tmpgen) {
 		/* If it does not meet the dust limits, add this user to
 		 * the postponed list instead */
+		user = gen->user;
 		if (floor(g64 * gen->herp / herp) < DERP_DUST) {
 			json_set_double(postponed_entries, user->username, gen->herp);
 			HASH_DEL(gens, gen);
