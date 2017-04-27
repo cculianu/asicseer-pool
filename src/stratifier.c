@@ -8613,7 +8613,7 @@ static void *statsupdate(void *arg)
 		char suffix1[16], suffix5[16], suffix15[16], suffix60[16], cdfield[64];
 		char suffix360[16], suffix1440[16], suffix10080[16];
 		int remote_users = 0, remote_workers = 0, idle_workers = 0,
-			cbspace = 0;
+			cbspace = 0, payouts = 0;
 		long double herp, lns;
 		log_entry_t *log_entries = NULL;
 		char_entry_t *char_list = NULL;
@@ -8832,12 +8832,11 @@ static void *statsupdate(void *arg)
 
 			/* Round to satoshi, change to BTC, removing fee */
 			derp = floor(reward * user->herp / rolling_herp * 0.995);
-			if (derp > DERP_SPACE) {
-				/* Needs payout, leave more space in coinbase
-				 * for generation txn to this user */
+			/* Needs payout, leave more space in coinbase
+			 * for generation txn to this user */
+			if (derp > DERP_SPACE && payouts++ < PAYOUT_REWARDS)
 				cbspace += CBGENLEN;
-				derp /= SATOSHIS;
-			}
+			derp /= SATOSHIS;
 
 			percent = round(user->herp / user->lns * 100) / 100;
 			JSON_CPACK(val, "{ss,ss,ss,ss,ss,si,si,sI,sf,sf,sf,sf,si,sf,sf}",
