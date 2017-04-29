@@ -2529,16 +2529,17 @@ process_block(const workbase_t *wb, const char *coinbase, const int cblen,
 static bool local_block_submit(ckpool_t *ckp, char *gbt_block, const uchar *flip32, int height)
 {
 	bool ret = generator_submitblock(ckp, gbt_block);
+	char heighthash[68] = {}, rhash[68] = {};
+	uchar swap256[32];
 
 	free(gbt_block);
-	/* Check failures that may be inconclusive but were submitted via other
-	 * means. */
-	if (!ret) {
-		char heighthash[68] = {}, rhash[68] = {};
-		uchar swap256[32];
+	swap_256(swap256, flip32);
+	__bin2hex(rhash, swap256, 32);
+	generator_preciousblock(ckp, rhash);
 
-		swap_256(swap256, flip32);
-		__bin2hex(rhash, swap256, 32);
+	/* Check failures that may be inconclusive but were submitted via other
+	 * means or accepted due to precious block call. */
+	if (!ret) {
 		if (generator_get_blockhash(ckp, height, heighthash)) {
 			ret = !strncmp(rhash, heighthash, 64);
 			LOGWARNING("Hash for block height %d confirms block was %s",

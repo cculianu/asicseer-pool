@@ -312,7 +312,7 @@ static void clear_unix_msg(unix_msg_t **umsg)
 	}
 }
 
-bool generator_submitblock(ckpool_t *ckp, char *buf)
+bool generator_submitblock(ckpool_t *ckp, const char *buf)
 {
 	gdata_t *gdata = ckp->gdata;
 	server_instance_t *si;
@@ -328,6 +328,20 @@ bool generator_submitblock(ckpool_t *ckp, char *buf)
 	cs = &si->cs;
 	LOGNOTICE("Submitting block data!");
 	return submit_block(cs, buf);
+}
+
+void generator_preciousblock(ckpool_t *ckp, const char *hash)
+{
+	gdata_t *gdata = ckp->gdata;
+	server_instance_t *si;
+	connsock_t *cs;
+
+	if (unlikely(!(si = gdata->current_si))) {
+		LOGWARNING("No live current server in generator_get_blockhash");
+		return;
+	}
+	cs = &si->cs;
+	precious_block(cs, hash);
 }
 
 bool generator_get_blockhash(ckpool_t *ckp, int height, char *hash)

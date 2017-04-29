@@ -307,7 +307,7 @@ out:
 	return ret;
 }
 
-bool submit_block(connsock_t *cs, char *params)
+bool submit_block(connsock_t *cs, const char *params)
 {
 	json_t *val, *res_val;
 	int len, retries = 0;
@@ -353,6 +353,23 @@ retry:
 out:
 	json_decref(val);
 	return ret;
+}
+
+void precious_block(connsock_t *cs, const char *params)
+{
+	char *rpc_req;
+	int len;
+
+	if (unlikely(!cs->alive)) {
+		LOGDEBUG("Failed to submit_txn due to connsock dead");
+		return;
+	}
+
+	len = strlen(params) + 64;
+	rpc_req = ckalloc(len);
+	sprintf(rpc_req, "{\"method\": \"preciousblock\", \"params\": [\"%s\"]}\n", params);
+	json_rpc_msg(cs, rpc_req);
+	dealloc(rpc_req);
 }
 
 void submit_txn(connsock_t *cs, const char *params)
