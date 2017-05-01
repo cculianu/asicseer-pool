@@ -668,6 +668,7 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 	double rolling_herp, derp, herp = 0, total_herp = 0, dreward;
 	generation_t *gen, *gens = NULL, *paygens = NULL, *tmpgen;
 	user_instance_t *user, *tmpuser;
+	unsigned int hashv, keylen;
 	int64_t total = g64;
 	int payouts = 0;
 	uint64_t *u64;
@@ -696,7 +697,11 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 			continue;
 		gen = ckzalloc(sizeof(generation_t));
 		gen->user = user;
-		HASH_ADD_STR(gens, user->username, gen);
+		/* Cache the hashvalue and keylen from username since we'll be
+		 * using the same key speeding up insertion into other tables */
+		hashv = user->hh.hashv;
+		keylen = user->hh.keylen;
+		HASH_ADD_BYHASHVALUE(hh, gens, user->username, keylen, hashv, gen);
 	}
 	ck_runlock(&sdata->instance_lock);
 
@@ -715,7 +720,8 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 	}
 
 	/* Sort by reward */
-	HASH_SORT(gens, herp_sort);
+	if (HASH_COUNT(gens) > PAYOUT_USERS)
+		HASH_SORT(gens, herp_sort);
 
 	/* Now iterate in highest to lowest reward order */
 	HASH_ITER(hh, gens, gen, tmpgen) {
@@ -735,9 +741,11 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 			continue;
 
 		payouts++;
-		/* Remove them from the genlist and add them to the paygens */
+		/* Remove them from the genlist and add them to the paygens.*/
+		hashv = gen->hh.hashv;
+		keylen = gen->hh.keylen;
 		HASH_DEL(gens, gen);
-		HASH_ADD_STR(paygens, user->username, gen);
+		HASH_ADD_BYHASHVALUE(hh, paygens, user->username, keylen, hashv, gen);
 		/* Calculate the total herp we will be using for our final
 		 * derp calculations */
 		total_herp += gen->herp;
@@ -758,7 +766,9 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 			dealloc(gen);
 			continue;
 		}
-		HASH_ADD_STR(paygens, user->username, gen);
+		hashv = user->hh.hashv;
+		keylen = user->hh.keylen;
+		HASH_ADD_BYHASHVALUE(hh, paygens, user->username, keylen, hashv, gen);
 		total_herp += gen->herp;
 	}
 
