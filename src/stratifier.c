@@ -1754,6 +1754,8 @@ static void gbt_witness_data(workbase_t *wb, json_t *txn_array)
 
 static user_instance_t *get_user(sdata_t *sdata, const char *username);
 
+/* Block is confirmed, time to interleave payments to next users that have been
+ * postponed and are entitled to a payout. */
 static void confirm_block(sdata_t *sdata, json_t *blocksolve_val)
 {
 	json_t *payouts, *postponed, *val;
@@ -1809,22 +1811,36 @@ static void confirm_block(sdata_t *sdata, json_t *blocksolve_val)
 
 }
 
-/* Find the first unconfirmed block that is 3 confirms ago and remove it
+/* Block was orphaned, re-add shares removed when resetting shares on blocksolve
+ * for diff calculation to be correct on next block solve. */
+static void orphan_block(sdata_t *sdata, json_t *val)
+{
+	int64_t shares;
+
+	json_get_int64(&shares, val, "shares");
+
+	mutex_lock(&sdata->stats_lock);
+	sdata->stats.accounted_diff_shares += shares;
+	mutex_unlock(&sdata->stats_lock);
+}
+
+/* Find the first unconfirmed block that is 2 confirms ago and remove it
  * from the list, declaring it confirmed or orphaned. */
 static void check_unconfirmed(ckpool_t *ckp, sdata_t *sdata, const int height)
 {
 	char heighthash[68] = {}, *rhash, *fname, *newname;
-	json_entry_t *blocksolve, *tmp, *found = NULL;
+	json_entry_t *blocksolve, *found = NULL;
 	pool_stats_t *stats = &sdata->stats;
 	int solveheight = 0;
 	bool ret;
 
 	mutex_lock(&sdata->stats_lock);
-	DL_FOREACH_SAFE(stats->unconfirmed, blocksolve, tmp) {
+	/* No need to use foreach_safe since we abort when we delete a solve */
+	DL_FOREACH(stats->unconfirmed, blocksolve) {
 		json_t *val = blocksolve->val;
 
 		json_get_int(&solveheight, val, "height");
-		if (height - solveheight < 3)
+		if (height - solveheight < 2)
 			continue;
 		DL_DELETE(stats->unconfirmed, blocksolve);
 		found = blocksolve;
@@ -1841,6 +1857,8 @@ static void check_unconfirmed(ckpool_t *ckp, sdata_t *sdata, const int height)
 	dealloc(rhash);
 	if (ret)
 		confirm_block(sdata, found->val);
+	else
+		orphan_block(sdata, found->val);
 
 	LOGWARNING("Hash for block height %d confirms block was %s", solveheight,
 		   ret ? "CONFIRMED" : "ORPHANED");
@@ -6429,7 +6447,7 @@ test_blocksolve(const stratum_instance_t *client, const workbase_t *wb, const uc
 		char *fname, stamp[128], *s, rhash[68] = {};
 		uchar swap256[32];
 		json_t *blockval;
-		uint64_t shares;
+		int64_t shares;
 		double percent;
 		FILE *fp;
 
