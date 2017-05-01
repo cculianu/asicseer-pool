@@ -5533,6 +5533,7 @@ static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 
 	while ((dir = readdir(d)) != NULL) {
 		json_t *worker_array, *arr_val;
+		int lastshare;
 		size_t index;
 
 		username = basename(dir->d_name);
@@ -5580,13 +5581,14 @@ static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 
 		/* Assume any user with logs was authorised */
 		user->authorised = true;
-		copy_tv(&user->last_share, &now);
 		copy_tv(&user->last_decay, &now);
 		user->dsps1 = dsps_from_key(val, "hashrate1m");
 		user->dsps5 = dsps_from_key(val, "hashrate5m");
 		user->dsps60 = dsps_from_key(val, "hashrate1hr");
 		user->dsps1440 = dsps_from_key(val, "hashrate1d");
 		user->dsps10080 = dsps_from_key(val, "hashrate7d");
+		json_get_int(&lastshare, val, "lastshare");
+		user->last_share.tv_sec = lastshare;
 		json_get_int64(&user->shares, val, "shares");
 		json_get_double(&user->best_diff, val, "bestshare");
 		json_get_double(&user->accumulated, val, "accumulated");
@@ -5616,13 +5618,14 @@ static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 				continue;
 			}
 			workers++;
-			copy_tv(&worker->last_share, &now);
 			copy_tv(&worker->last_decay, &now);
 			worker->dsps1 = dsps_from_key(arr_val, "hashrate1m");
 			worker->dsps5 = dsps_from_key(arr_val, "hashrate5m");
 			worker->dsps60 = dsps_from_key(arr_val, "hashrate1hr");
 			worker->dsps1440 = dsps_from_key(arr_val, "hashrate1d");
 			worker->dsps10080 = dsps_from_key(arr_val, "hashrate7d");
+			json_get_int(&lastshare, arr_val, "lastshare");
+			worker->last_share.tv_sec = lastshare;
 			json_get_double(&worker->best_diff, arr_val, "bestshare");
 			json_get_int64(&worker->shares, arr_val, "shares");
 			json_get_double(&worker->herp, arr_val, "herp");
