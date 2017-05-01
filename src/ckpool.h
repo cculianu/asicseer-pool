@@ -15,6 +15,7 @@
 #include <sys/file.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <inttypes.h>
 
 #include "libckpool.h"
 #include "uthash.h"
