@@ -8653,7 +8653,7 @@ static void *statsupdate(void *arg)
 		char suffix360[16], suffix1440[16], suffix10080[16];
 		int remote_users = 0, remote_workers = 0, idle_workers = 0,
 			cbspace = 0, payouts = 0;
-		long double herp, lns;
+		long double numer, herp, lns;
 		log_entry_t *log_entries = NULL;
 		char_entry_t *char_list = NULL;
 		stratum_instance_t *client;
@@ -8679,7 +8679,7 @@ static void *statsupdate(void *arg)
 		 * scoring newest herp values more for derp once per minute */
 		mutex_lock(&sdata->stats_lock);
 		if (stats->rolling_herp + herp > stats->herp_window) {
-			long double numer, herp_diff, herp_mul;
+			long double herp_diff, herp_mul;
 
 			herp_diff = stats->rolling_herp + herp - stats->herp_window;
 			numer = stats->rolling_herp - herp_diff;
@@ -8690,7 +8690,7 @@ static void *statsupdate(void *arg)
 		stats->rolling_herp += herp;
 		rolling_herp = stats->rolling_herp;
 		if (stats->rolling_lns + lns > stats->herp_window) {
-			long double numer, lns_diff, lns_mul;
+			long double lns_diff, lns_mul;
 
 			lns_diff = stats->rolling_lns + lns - stats->herp_window;
 			numer = stats->rolling_lns - lns_diff;
