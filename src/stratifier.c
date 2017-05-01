@@ -745,7 +745,8 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 
 	/* Sort remaining users by number of times their payout has been
 	 * postponed */
-	HASH_SORT(gens, postponed_sort);
+	if (HASH_COUNT(gens) > PAYOUT_REWARDS)
+		HASH_SORT(gens, postponed_sort);
 
 	/* Now add as many more users we can up to PAYOUT_REWARDS */
 	HASH_ITER(hh, gens, gen, tmpgen) {
