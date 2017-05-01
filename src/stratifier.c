@@ -8769,34 +8769,11 @@ static void *statsupdate(void *arg)
 			LOGDEBUG("Storing user %s", user->username);
 			/* Decay times per worker */
 			while ((worker = next_worker(sdata, user, worker)) != NULL) {
-				bool store = false;
+				bool store;
 
 				per_tdiff = tvdiff(&now, &worker->last_share);
-				if (per_tdiff > 60) {
-					decay_worker(worker, 0, &now);
-					worker->idle = true;
-				} else
-					store = true;
-
-				ghs = worker->dsps1 * nonces;
-				suffix_string(ghs, suffix1, 16, 0);
-				store |= ghs > 0;
-
-				ghs = worker->dsps5 * nonces;
-				suffix_string(ghs, suffix5, 16, 0);
-				store |= ghs > 0;
-
-				ghs = worker->dsps60 * nonces;
-				suffix_string(ghs, suffix60, 16, 0);
-				store |= ghs > 0;
-
-				ghs = worker->dsps1440 * nonces;
-				suffix_string(ghs, suffix1440, 16, 0);
-				store |= ghs > 0;
-
-				ghs = worker->dsps10080 * nonces;
-				suffix_string(ghs, suffix10080, 16, 0);
-				/* Do not store if hashrate for 7d exists only */
+				/* Store any worker active in the last week */
+				store = per_tdiff < 600000;
 
 				mutex_lock(&user->stats_lock);
 				if (hmul != 1)
@@ -8817,6 +8794,28 @@ static void *statsupdate(void *arg)
 					LOGDEBUG("Skipping worker %s", worker->workername);
 					continue;
 				}
+
+				if (per_tdiff > 60) {
+					decay_worker(worker, 0, &now);
+					worker->idle = true;
+				}
+
+				ghs = worker->dsps1 * nonces;
+				suffix_string(ghs, suffix1, 16, 0);
+
+				ghs = worker->dsps5 * nonces;
+				suffix_string(ghs, suffix5, 16, 0);
+
+				ghs = worker->dsps60 * nonces;
+				suffix_string(ghs, suffix60, 16, 0);
+
+				ghs = worker->dsps1440 * nonces;
+				suffix_string(ghs, suffix1440, 16, 0);
+
+				ghs = worker->dsps10080 * nonces;
+				suffix_string(ghs, suffix10080, 16, 0);
+				/* Do not store if hashrate for 7d exists only */
+
 				LOGDEBUG("Storing worker %s", worker->workername);
 
 				percent = round(worker->herp / worker->lns * 100) / 100;
