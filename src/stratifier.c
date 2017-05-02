@@ -639,7 +639,10 @@ static const int witnessdata_size = 36; // commitment header + hash
 typedef struct generation generation_t;
 
 struct generation {
+	/* Added to either hashtables or linked lists */
 	UT_hash_handle hh;
+	generation_t *next;
+	generation_t *prev;
 
 	user_instance_t *user;
 	int postponed;
@@ -668,7 +671,6 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 	double rolling_herp, derp, herp = 0, total_herp = 0, dreward;
 	generation_t *gen, *gens = NULL, *paygens = NULL, *tmpgen;
 	user_instance_t *user, *tmpuser;
-	unsigned int hashv, keylen;
 	int64_t total = g64;
 	int payouts = 0;
 	uint64_t *u64;
@@ -697,11 +699,10 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 			continue;
 		gen = ckzalloc(sizeof(generation_t));
 		gen->user = user;
-		/* Cache the hashvalue and keylen from username since we'll be
+		/* Use the hashvalue and keylen from username since we'll be
 		 * using the same key speeding up insertion into other tables */
-		hashv = user->hh.hashv;
-		keylen = user->hh.keylen;
-		HASH_ADD_BYHASHVALUE(hh, gens, user->username, keylen, hashv, gen);
+		HASH_ADD_BYHASHVALUE(hh, gens, user->username, user->hh.keylen,
+				     user->hh.hashv, gen);
 	}
 	ck_runlock(&sdata->instance_lock);
 
@@ -742,10 +743,8 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 
 		payouts++;
 		/* Remove them from the genlist and add them to the paygens.*/
-		hashv = gen->hh.hashv;
-		keylen = gen->hh.keylen;
 		HASH_DEL(gens, gen);
-		HASH_ADD_BYHASHVALUE(hh, paygens, user->username, keylen, hashv, gen);
+		DL_APPEND(paygens, gen);
 		/* Calculate the total herp we will be using for our final
 		 * derp calculations */
 		total_herp += gen->herp;
@@ -766,15 +765,13 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 			dealloc(gen);
 			continue;
 		}
-		hashv = user->hh.hashv;
-		keylen = user->hh.keylen;
-		HASH_ADD_BYHASHVALUE(hh, paygens, user->username, keylen, hashv, gen);
+		DL_APPEND(paygens, gen);
 		total_herp += gen->herp;
 	}
 
 	/* Now calculate each user's reward, adding a transaction to the
 	 * coinbase and remove the generation structure */
-	HASH_ITER(hh, paygens, gen, tmpgen) {
+	DL_FOREACH_SAFE(paygens, gen, tmpgen) {
 		uint64_t reward;
 
 		user = gen->user;
@@ -798,7 +795,7 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 
 		/* Increment number of generation transactions */
 		(*gentxns)++;
-		HASH_DEL(paygens, gen);
+		DL_DELETE(paygens, gen);
 		free(gen);
 	}
 	wb->payout = payout;
