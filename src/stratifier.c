@@ -1498,8 +1498,8 @@ static void update_txns(ckpool_t *ckp, sdata_t *sdata, txntable_t *txns, bool lo
 
 /* Distill down a set of transactions into an efficient tree arrangement for
  * stratum messages and fast work assembly. */
-static void wb_merkle_bins(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb, json_t *txn_array,
-			   bool local)
+static txntable_t *wb_merkle_bin_txns(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb,
+				      json_t *txn_array, bool local)
 {
 	int i, j, binleft, binlen, cbspace = 0, max_txns = 0, subtract_fee = 0;
 	txntable_t *txns = NULL;
@@ -1529,7 +1529,7 @@ static void wb_merkle_bins(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb, json_t
 			txn = json_string_value(json_object_get(arr_val, "data"));
 			if (!txn) {
 				LOGWARNING("json_string_value fail - cannot find transaction data");
-				return;
+				goto out;
 			}
 			length = strlen(txn);
 			len += length;
@@ -1579,7 +1579,7 @@ static void wb_merkle_bins(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb, json_t
 				txid = hash;
 			if (unlikely(!txid)) {
 				LOGERR("Missing txid for transaction in wb_merkle_bins");
-				return;
+				goto out;
 			}
 			txn = json_string_value(json_object_get(arr_val, "data"));
 			add_txn(ckp, sdata, &txns, hash, txn, local);
@@ -1587,7 +1587,7 @@ static void wb_merkle_bins(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb, json_t
 			ofs += length;
 			if (!hex2bin(binswap, txid, 32)) {
 				LOGERR("Failed to hex2bin hash in gbt_merkle_bins");
-				return;
+				goto out;
 			}
 			memcpy(wb->txn_hashes + i * 65, txid, 64);
 			bswap_256(hashbin + 32 + 32 * i, binswap);
@@ -1630,8 +1630,8 @@ static void wb_merkle_bins(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb, json_t
 		LOGNOTICE("Stored %s workbase with %d transactions", local ? "local" : "remote",
 			  wb->txns);
 	}
-
-	update_txns(ckp, sdata, txns, true);
+out:
+	return txns;
 }
 
 static const unsigned char witness_nonce[32] = {0};
@@ -1818,6 +1818,7 @@ static void block_update(ckpool_t *ckp, int *prio)
 	bool new_block = false;
 	int i, retries = 0;
 	bool ret = false;
+	txntable_t *txns;
 	workbase_t *wb;
 	time_t now_t;
 
@@ -1853,7 +1854,7 @@ retry:
 
 	/* This function will trim transactions and coinbasevalue to leave room
 	 * for user generation transactions */
-	wb_merkle_bins(ckp, sdata, wb, txn_array, true);
+	txns = wb_merkle_bin_txns(ckp, sdata, wb, txn_array, true);
 
 	wb->insert_witness = false;
 	memset(wb->witnessdata, 0, sizeof(wb->witnessdata));
@@ -1903,6 +1904,10 @@ retry:
 		if (sdata->stats.unconfirmed)
 			check_unconfirmed(ckp, sdata, wb->height);
 	}
+	/* Update transactions after stratum broadcast to not delay
+	 * propagation. */
+	if (likely(txns))
+		update_txns(ckp, sdata, txns, true);
 out:
 	cksem_post(&sdata->update_sem);
 
@@ -1986,6 +1991,7 @@ static bool rebuild_txns(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb)
 	json_t *txn_array, *missing_txns;
 	char hash[68] = {};
 	bool ret = false;
+	txntable_t *txns;
 	int i, len = 0;
 
 	/* We'll only see this on testnet now */
@@ -2061,7 +2067,9 @@ static bool rebuild_txns(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb)
 		/* These two structures are regenerated so free their ram */
 		json_decref(wb->merkle_array);
 		dealloc(wb->txn_hashes);
-		wb_merkle_bins(ckp, sdata, wb, txn_array, false);
+		txns = wb_merkle_bin_txns(ckp, sdata, wb, txn_array, false);
+		if (likely(txns))
+			update_txns(ckp, sdata, txns, true);
 	} else {
 		if (!sdata->wbincomplete) {
 			sdata->wbincomplete = true;
