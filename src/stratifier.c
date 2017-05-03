@@ -8602,8 +8602,7 @@ static void calc_user_paygens(sdata_t *sdata)
 	}
 
 	/* Sort by reward */
-	if (HASH_COUNT(gens) > PAYOUT_USERS)
-		HASH_SORT(gens, herp_sort);
+	HASH_SORT(gens, herp_sort);
 
 	/* Now iterate in highest to lowest reward order */
 	HASH_ITER(hh, gens, gen, tmpgen) {
@@ -8623,8 +8622,7 @@ static void calc_user_paygens(sdata_t *sdata)
 
 	/* Sort remaining users by number of times their payout has been
 	 * postponed */
-	if (HASH_COUNT(gens) > PAYOUT_REWARDS)
-		HASH_SORT(gens, postponed_sort);
+	HASH_SORT(gens, postponed_sort);
 
 	/* Now add as many more users we can up to PAYOUT_REWARDS */
 	HASH_ITER(hh, gens, gen, tmpgen) {
