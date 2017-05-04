@@ -834,12 +834,11 @@ static void reconnect_generator(ckpool_t *ckp)
 	send_proc(ckp->generator, "reconnect");
 }
 
-json_t *generator_genbase(ckpool_t *ckp)
+struct genwork *generator_getbase(ckpool_t *ckp)
 {
-	gbtbase_t gbt = {.target={}};
 	gdata_t *gdata = ckp->gdata;
+	gbtbase_t *gbt = NULL;
 	server_instance_t *si;
-	json_t *val = NULL;
 	connsock_t *cs;
 
 	/* Use temporary variables to prevent deref while accessing */
@@ -849,17 +848,15 @@ json_t *generator_genbase(ckpool_t *ckp)
 		goto out;
 	}
 	cs = &si->cs;
-	if (unlikely(!gen_gbtbase(cs, &gbt))) {
+	gbt = ckzalloc(sizeof(gbtbase_t));
+	if (unlikely(!gen_gbtbase(cs, gbt))) {
 		LOGWARNING("Failed to get block template from %s:%s", cs->url, cs->port);
 		si->alive = cs->alive = false;
 		reconnect_generator(ckp);
-		goto out;
+		dealloc(gbt);
 	}
-	val = gbt.json;
-	gbt.json = NULL;
-	clear_gbtbase(&gbt);
 out:
-	return val;
+	return gbt;
 }
 
 int generator_getbest(ckpool_t *ckp, char *hash)

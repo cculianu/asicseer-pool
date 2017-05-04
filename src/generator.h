@@ -17,7 +17,7 @@
 #define GETBEST_SUCCESS 1
 
 void generator_add_send(ckpool_t *ckp, json_t *val);
-json_t *generator_genbase(ckpool_t *ckp);
+struct genwork *generator_getbase(ckpool_t *ckp);
 int generator_getbest(ckpool_t *ckp, char *hash);
 bool generator_checkaddr(ckpool_t *ckp, const char *addr);
 char *generator_get_txn(ckpool_t *ckp, const char *hash);

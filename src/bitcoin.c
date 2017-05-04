@@ -14,6 +14,7 @@
 #include "ckpool.h"
 #include "libckpool.h"
 #include "bitcoin.h"
+#include "stratifier.h"
 
 static const char *b58chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 static char* understood_rules[] = {"segwit"};
@@ -98,9 +99,8 @@ static const char *gbt_req = "{\"method\": \"getblocktemplate\", \"params\": [{\
  * required to assemble a mining template, storing it in a gbtbase_t structure */
 bool gen_gbtbase(connsock_t *cs, gbtbase_t *gbt)
 {
-	json_t *txn_array, *rules_array, *coinbase_aux, *res_val, *val;
+	json_t *rules_array, *coinbase_aux, *res_val, *val;
 	const char *previousblockhash;
-	const char *witnessdata_check;
 	char hash_swap[32], tmp[32];
 	uint64_t coinbasevalue;
 	const char *target;
@@ -139,13 +139,11 @@ bool gen_gbtbase(connsock_t *cs, gbtbase_t *gbt)
 
 	previousblockhash = json_string_value(json_object_get(res_val, "previousblockhash"));
 	target = json_string_value(json_object_get(res_val, "target"));
-	txn_array = json_object_get(res_val, "transactions");
 	version = json_integer_value(json_object_get(res_val, "version"));
 	curtime = json_integer_value(json_object_get(res_val, "curtime"));
 	bits = json_string_value(json_object_get(res_val, "bits"));
 	height = json_integer_value(json_object_get(res_val, "height"));
 	coinbasevalue = json_integer_value(json_object_get(res_val, "coinbasevalue"));
-	witnessdata_check = json_string_value(json_object_get(res_val, "default_witness_commitment"));
 	coinbase_aux = json_object_get(res_val, "coinbaseaux");
 	flags = json_string_value(json_object_get(coinbase_aux, "flags"));
 
@@ -154,15 +152,16 @@ bool gen_gbtbase(connsock_t *cs, gbtbase_t *gbt)
 		goto out;
 	}
 
-	gbt->json = json_object();
+	/* Store getblocktemplate for remainder of json components as is */
+	json_incref(res_val);
+	json_object_del(val, "result");
+	gbt->json = res_val;
 
 	hex2bin(hash_swap, previousblockhash, 32);
 	swap_256(tmp, hash_swap);
 	__bin2hex(gbt->prevhash, tmp, 32);
-	json_object_set_new_nocheck(gbt->json, "prevhash", json_string_nocheck(gbt->prevhash));
 
 	strncpy(gbt->target, target, 65);
-	json_object_set_new_nocheck(gbt->json, "target", json_string_nocheck(gbt->target));
 
 	hex2bin(hash_swap, target, 32);
 	bswap_256(tmp, hash_swap);
@@ -170,13 +169,12 @@ bool gen_gbtbase(connsock_t *cs, gbtbase_t *gbt)
 	json_object_set_new_nocheck(gbt->json, "diff", json_real(gbt->diff));
 
 	gbt->version = version;
-	json_object_set_new_nocheck(gbt->json, "version", json_integer(version));
 
 	gbt->curtime = curtime;
-	json_object_set_new_nocheck(gbt->json, "curtime", json_integer(curtime));
 
 	snprintf(gbt->ntime, 9, "%08x", curtime);
 	json_object_set_new_nocheck(gbt->json, "ntime", json_string_nocheck(gbt->ntime));
+	sscanf(gbt->ntime, "%x", &gbt->ntime32);
 
 	snprintf(gbt->bbversion, 9, "%08x", version);
 	json_object_set_new_nocheck(gbt->json, "bbversion", json_string_nocheck(gbt->bbversion));
@@ -185,37 +183,21 @@ bool gen_gbtbase(connsock_t *cs, gbtbase_t *gbt)
 	json_object_set_new_nocheck(gbt->json, "nbit", json_string_nocheck(gbt->nbit));
 
 	gbt->coinbasevalue = coinbasevalue;
-	json_object_set_new_nocheck(gbt->json, "coinbasevalue", json_integer(coinbasevalue));
 
 	gbt->height = height;
-	json_object_set_new_nocheck(gbt->json, "height", json_integer(height));
 
 	gbt->flags = strdup(flags);
-	json_object_set_new_nocheck(gbt->json, "flags", json_string_nocheck(gbt->flags));
-
-	json_object_set_new_nocheck(gbt->json, "transactions", json_deep_copy(txn_array));
-
-	json_object_set_new_nocheck(gbt->json, "rules", json_deep_copy(rules_array));
-
-	// Bitcoind includes the default commitment, though it's not part of the
-	// BIP145 spec. As long as transactions aren't being filtered, it's useful
-	// To check against this during segwit's deployment.
-	json_object_set_new_nocheck(gbt->json, "default_witness_commitment", json_string_nocheck(witnessdata_check ? witnessdata_check : ""));
 
 	ret = true;
-
 out:
-	json_decref(val);
 	return ret;
 }
 
 void clear_gbtbase(gbtbase_t *gbt)
 {
-	dealloc(gbt->flags);
-	dealloc(gbt->txn_data);
-	dealloc(gbt->txn_hashes);
-	json_decref(gbt->json);
-	gbt->json = NULL;
+	free(gbt->flags);
+	if (gbt->json)
+		json_decref(gbt->json);
 	memset(gbt, 0, sizeof(gbtbase_t));
 }
 

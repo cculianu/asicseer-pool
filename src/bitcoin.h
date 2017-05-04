@@ -10,27 +10,7 @@
 #ifndef BITCOIN_H
 #define BITCOIN_H
 
-struct gbtbase {
-	char target[68];
-	double diff;
-	uint32_t version;
-	uint32_t curtime;
-	char prevhash[68];
-	char ntime[12];
-	char bbversion[12];
-	char nbit[12];
-	uint64_t coinbasevalue;
-	int height;
-	char *flags;
-	int txns;
-	char *txn_data;
-	char *txn_hashes;
-	int merkles;
-	char merklehash[16][68];
-	json_t *json;
-};
-
-typedef struct gbtbase gbtbase_t;
+typedef struct genwork gbtbase_t;
 
 bool validate_address(connsock_t *cs, const char *address);
 bool gen_gbtbase(connsock_t *cs, gbtbase_t *gbt);
