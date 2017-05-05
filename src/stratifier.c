@@ -1275,15 +1275,20 @@ static bool add_txn(ckpool_t *ckp, sdata_t *sdata, txntable_t **txns, const char
 
 	txn = ckzalloc(sizeof(txntable_t));
 	memcpy(txn->hash, hash, 65);
-	/* Get the data from our local bitcoind as a way of confirming it
-	 * already knows about this transaction. */
-	txn->data = generator_get_txn(ckp, hash);
-	if (!txn->data) {
-		/* If our local bitcoind hasn't seen this transaction,
-		 * submit it for mempools to be ~synchronised */
-		submit_transaction(ckp, data);
+	if (local)
 		txn->data = strdup(data);
+	else {
+		/* Get the data from our local bitcoind as a way of confirming it
+		 * already knows about this transaction. */
+		txn->data = generator_get_txn(ckp, hash);
+		if (!txn->data) {
+			/* If our local bitcoind hasn't seen this transaction,
+			 * submit it for mempools to be ~synchronised */
+			submit_transaction(ckp, data);
+			txn->data = strdup(data);
+		}
 	}
+
 	if (!local || ckp->node)
 		txn->refcount = REFCOUNT_REMOTE;
 	else
