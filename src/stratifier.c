@@ -609,9 +609,9 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 	json_set_double(payout, "reward", dreward);
 	/* Will be overwritten, just looks nicer in this position */
 	json_set_double(payout, "fee", 0);
-	json_object_set(payout, "payouts", payout_entries);
+	json_object_set_new_nocheck(payout, "payouts", payout_entries);
 	json_set_double(payout, "herp", total_herp);
-	json_object_set(payout, "postponed", postponed_entries);
+	json_object_set_new_nocheck(payout, "postponed", postponed_entries);
 
 	for (payouts = 0; payouts < PAYOUT_REWARDS; payouts++) {
 		uint64_t reward;
