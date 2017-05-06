@@ -190,6 +190,7 @@ bool gen_gbtbase(connsock_t *cs, gbtbase_t *gbt)
 
 	ret = true;
 out:
+	json_decref(val);
 	return ret;
 }
 
