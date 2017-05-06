@@ -1991,8 +1991,6 @@ static bool rebuild_txns(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb)
 			sdata->wbincomplete = true;
 			if (ckp->proxy)
 				LOGWARNING("Unable to rebuild transactions to create workinfo, ignore displayed hashrate");
-			else
-				LOGWARNING("Unable to rebuild txns from remote workinfo, may be unable to submit block locally");
 		}
 		LOGNOTICE("Failed to find all txns in rebuild_txns");
 		request_txns(ckp, sdata, missing_txns);
@@ -2048,7 +2046,8 @@ static void check_incomplete_wbs(ckpool_t *ckp, sdata_t *sdata)
 		LOGNOTICE("%d remote workinfo still incomplete", incomplete);
 	else {
 		sdata->wbincomplete = false;
-		LOGWARNING("Successfully resumed rebuilding transactions into workinfo");
+		if (ckp->proxy)
+			LOGWARNING("Successfully resumed rebuilding transactions into workinfo");
 	}
 }
 
