@@ -473,6 +473,7 @@ struct stratifier_data {
 	workbase_t *current_workbase;
 	int workbases_generated;
 	txntable_t *txns;
+	int txns_generated;
 
 	/* Workbases from remote trusted servers */
 	workbase_t *remote_workbases;
@@ -1401,6 +1402,7 @@ static void update_txns(ckpool_t *ckp, sdata_t *sdata, txntable_t *txns, bool lo
 		json_array_append_new(txn_array, txn_val);
 		/* Move to the sdata transaction table */
 		HASH_ADD_STR(sdata->txns, hash, tmp);
+		sdata->txns_generated++;
 		added++;
 	}
 	ck_wunlock(&sdata->txn_lock);
@@ -1967,6 +1969,7 @@ static bool rebuild_txns(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb)
 			txn->data = data;
 			txn->refcount = REFCOUNT_REMOTE;
 			HASH_ADD_STR(sdata->txns, hash, txn);
+			sdata->txns_generated++;
 		} else {
 			free(data);
 			txn->refcount = REFCOUNT_REMOTE;
@@ -4167,10 +4170,14 @@ char *stratifier_stats(ckpool_t *ckp, void *data)
 	objects = HASH_COUNT(sdata->workbases);
 	memsize = SAFE_HASH_OVERHEAD(sdata->workbases) + sizeof(workbase_t) * objects;
 	generated = sdata->workbases_generated;
-	ck_runlock(&sdata->workbase_lock);
-
 	JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
 	json_set_object(val, "workbases", subval);
+	objects = HASH_COUNT(sdata->remote_workbases);
+	memsize = SAFE_HASH_OVERHEAD(sdata->remote_workbases) + sizeof(workbase_t) * objects;
+	ck_runlock(&sdata->workbase_lock);
+
+	JSON_CPACK(subval, "{si,si}", "count", objects, "memory", memsize);
+	json_set_object(val, "remote_workbases", subval);
 
 	ck_rlock(&sdata->instance_lock);
 	objects = HASH_COUNT(sdata->user_instances);
@@ -4200,6 +4207,14 @@ char *stratifier_stats(ckpool_t *ckp, void *data)
 
 	JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
 	json_set_object(val, "shares", subval);
+
+	ck_rlock(&sdata->txn_lock);
+	objects = HASH_COUNT(sdata->txns);
+	memsize = SAFE_HASH_OVERHEAD(sdata->txns) + sizeof(txntable_t) * objects;
+	generated = sdata->txns_generated;
+	JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
+	json_set_object(val, "transactions", subval);
+	ck_runlock(&sdata->txn_lock);
 
 	ckmsgq_stats(sdata->ssends, sizeof(smsg_t), &subval);
 	json_set_object(val, "ssends", subval);
