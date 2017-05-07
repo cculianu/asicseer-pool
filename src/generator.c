@@ -207,6 +207,7 @@ static bool server_alive(ckpool_t *ckp, server_instance_t *si, bool pinging)
 	userpass = strdup(si->auth);
 	realloc_strcat(&userpass, ":");
 	realloc_strcat(&userpass, si->pass);
+	dealloc(cs->auth);
 	cs->auth = http_base64(userpass);
 	dealloc(userpass);
 	if (!cs->auth) {
