@@ -1968,6 +1968,7 @@ static bool rebuild_txns(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb)
 			txn->refcount = REFCOUNT_REMOTE;
 			HASH_ADD_STR(sdata->txns, hash, txn);
 		} else {
+			free(data);
 			txn->refcount = REFCOUNT_REMOTE;
 			txn->seen = true;
 			JSON_CPACK(txn_val, "{ss,ss}",
