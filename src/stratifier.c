@@ -1233,7 +1233,7 @@ static void add_base(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb, bool *new_bl
 
 static void broadcast_ping(sdata_t *sdata);
 
-#define REFCOUNT_REMOTE	100
+#define REFCOUNT_REMOTE	20
 #define REFCOUNT_LOCAL	5
 
 /* Submit the transactions in node/remote mode so the local btcd has all the
