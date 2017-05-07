@@ -123,8 +123,6 @@ struct server_instance {
 	bool notify;
 	bool alive;
 	connsock_t cs;
-
-	void *data; // Private data
 };
 
 typedef struct server_instance server_instance_t;

@@ -194,7 +194,7 @@ static bool server_alive(ckpool_t *ckp, server_instance_t *si, bool pinging)
 	char *userpass = NULL;
 	bool ret = false;
 	connsock_t *cs;
-	gbtbase_t *gbt;
+	gbtbase_t gbt;
 	int fd;
 
 	if (si->alive)
@@ -222,16 +222,14 @@ static bool server_alive(ckpool_t *ckp, server_instance_t *si, bool pinging)
 	}
 
 	/* Test we can connect, authorise and get a block template */
-	gbt = ckzalloc(sizeof(gbtbase_t));
-	si->data = gbt;
-	if (!gen_gbtbase(cs, gbt)) {
+	if (!gen_gbtbase(cs, &gbt)) {
 		if (!pinging) {
 			LOGINFO("Failed to get test block template from %s:%s!",
 				cs->url, cs->port);
 		}
 		goto out;
 	}
-	clear_gbtbase(gbt);
+	clear_gbtbase(&gbt);
 	if (!ckp->node && !validate_address(cs, ckp->btcaddress)) {
 		LOGWARNING("Invalid btcaddress: %s !", ckp->btcaddress);
 		goto out;
@@ -299,7 +297,6 @@ static void kill_server(server_instance_t *si)
 	dealloc(cs->url);
 	dealloc(cs->port);
 	dealloc(cs->auth);
-	dealloc(si->data);
 }
 
 static void clear_unix_msg(unix_msg_t **umsg)
@@ -365,7 +362,7 @@ static void gen_loop(proc_instance_t *pi)
 	ckpool_t *ckp = pi->ckp;
 	char *buf = NULL;
 	connsock_t *cs;
-	gbtbase_t *gbt;
+	gbtbase_t gbt;
 	char hash[68];
 
 reconnect:
@@ -379,7 +376,6 @@ reconnect:
 		LOGWARNING("%s generator ready", ckp->name);
 	}
 
-	gbt = si->data;
 	cs = &si->cs;
 	if (!old_si)
 		LOGWARNING("Connected to bitcoind: %s:%s", cs->url, cs->port);
@@ -401,18 +397,18 @@ retry:
 	buf = umsg->buf;
 	LOGDEBUG("Generator received request: %s", buf);
 	if (cmdmatch(buf, "getbase")) {
-		if (!gen_gbtbase(cs, gbt)) {
+		if (!gen_gbtbase(cs, &gbt)) {
 			LOGWARNING("Failed to get block template from %s:%s",
 				   cs->url, cs->port);
 			si->alive = cs->alive = false;
 			send_unix_msg(umsg->sockd, "Failed");
 			goto reconnect;
 		} else {
-			char *s = json_dumps(gbt->json, JSON_NO_UTF8);
+			char *s = json_dumps(gbt.json, JSON_NO_UTF8);
 
 			send_unix_msg(umsg->sockd, s);
 			free(s);
-			clear_gbtbase(gbt);
+			clear_gbtbase(&gbt);
 		}
 	} else if (cmdmatch(buf, "getbest")) {
 		if (si->notify)
