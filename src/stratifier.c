@@ -9316,8 +9316,10 @@ void *stratifier(void *arg)
 	sdata->sauthq = create_ckmsgq(ckp, "authoriser", &sauth_process);
 	sdata->stxnq = create_ckmsgq(ckp, "stxnq", &send_transactions);
 	sdata->srecvs = create_ckmsgqs(ckp, "sreceiver", &srecv_process, threads);
-	sdata->ckdbq = create_ckmsgqs(ckp, "ckdbqueue", &ckdbq_process, threads);
-	create_pthread(&pth_heartbeat, ckdb_heartbeat, ckp);
+	if (!CKP_STANDALONE(ckp)) {
+		sdata->ckdbq = create_ckmsgqs(ckp, "ckdbqueue", &ckdbq_process, threads);
+		create_pthread(&pth_heartbeat, ckdb_heartbeat, ckp);
+	}
 	read_poolstats(ckp, &tvsec_diff);
 	read_userstats(ckp, sdata, tvsec_diff);
 
