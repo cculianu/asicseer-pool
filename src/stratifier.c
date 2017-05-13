@@ -2371,15 +2371,14 @@ static char *
 process_block(const workbase_t *wb, const char *coinbase, const int cblen,
 	      const uchar *data, const uchar *hash, uchar *flip32, char *blockhash)
 {
-	char *gbt_block, varint[12];
+	char *hexcoinbase, *gbt_block, varint[12];
 	int txns = wb->txns + 1;
-	char hexcoinbase[1024];
 
 	flip_32(flip32, hash);
 	__bin2hex(blockhash, flip32, 32);
 
 	/* Message format: "data" */
-	gbt_block = ckzalloc(1024);
+	gbt_block = ckzalloc(256);
 	__bin2hex(gbt_block, data, 80);
 	if (txns < 0xfd) {
 		uint8_t val8 = txns;
@@ -2397,9 +2396,10 @@ process_block(const workbase_t *wb, const char *coinbase, const int cblen,
 		__bin2hex(varint, (const unsigned char *)&val32, 4);
 	}
 	strcat(gbt_block, varint);
-	__bin2hex(hexcoinbase, coinbase, cblen);
-	strcat(gbt_block, hexcoinbase);
-	if (wb->txns)
+	hexcoinbase = bin2hex(coinbase, cblen);
+	realloc_strcat(&gbt_block, hexcoinbase);
+	free(hexcoinbase);
+	if (likely(wb->txns))
 		realloc_strcat(&gbt_block, wb->txn_data);
 	return gbt_block;
 }
