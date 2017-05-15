@@ -1755,6 +1755,12 @@ static void block_update(ckpool_t *ckp, int *prio)
 	txntable_t *txns;
 	workbase_t *wb;
 
+	/* Skip update if we're getting stacked low priority updates too close
+	 * together. */
+	if (*prio < GEN_PRIORITY && time(NULL) < sdata->update_time + (ckp->update_interval / 2)) {
+		ret = true;
+		goto out;
+	}
 retry:
 	wb = generator_getbase(ckp);
 	if (unlikely(!wb)) {
