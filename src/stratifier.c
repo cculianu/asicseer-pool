@@ -1757,7 +1757,8 @@ static void block_update(ckpool_t *ckp, int *prio)
 
 	/* Skip update if we're getting stacked low priority updates too close
 	 * together. */
-	if (*prio < GEN_PRIORITY && time(NULL) < sdata->update_time + (ckp->update_interval / 2)) {
+	if (*prio < GEN_PRIORITY && time(NULL) < sdata->update_time + (ckp->update_interval / 2) &&
+	    sdata->current_workbase) {
 		ret = true;
 		goto out;
 	}
