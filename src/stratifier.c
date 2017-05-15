@@ -712,7 +712,7 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 	len += wb->enonce2varlen;
 
 	/* Leave room for coinbase generation txns and witness data */
-	wb->coinb2bin = ckzalloc(256 + cbspace + 12);
+	wb->coinb2bin = ckzalloc(256 + cbspace + wb->insert_witness * (8 + witnessdata_size + 2));
 	memcpy(wb->coinb2bin, "\x0a\x63\x6b\x70\x6f\x6f\x6c", 7);
 	wb->coinb2len = 7;
 	if (ckp->btcsig) {
