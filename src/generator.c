@@ -1406,7 +1406,7 @@ static bool auth_stratum(ckpool_t *ckp, connsock_t *cs, proxy_instance_t *proxi)
 			epoll_ctl(proxi->epfd, EPOLL_CTL_DEL, cs->fd, NULL);
 			Close(cs->fd);
 		}
-		goto out;
+		goto out_noconn;
 	}
 
 	/* Read and parse any extra methods sent. Anything left in the buffer
@@ -1418,7 +1418,7 @@ static bool auth_stratum(ckpool_t *ckp, connsock_t *cs, proxy_instance_t *proxi)
 			LOGNOTICE("Proxy %d:%d %s failed to receive line in auth_stratum",
 				  proxi->id, proxi->subid, proxi->url);
 			ret = false;
-			goto out;
+			goto out_noconn;
 		}
 		ret = parse_method(ckp, proxi, buf);
 	} while (ret);
@@ -1471,6 +1471,9 @@ out:
 		proxi->disabled = true;
 		disable_subproxy(ckp->gdata, proxi->parent, proxi);
 	}
+	/* Jump here if we failed to connect properly and didn't even get to
+	 * try authorising. */
+out_noconn:
 	return ret;
 }
 
