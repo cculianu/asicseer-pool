@@ -4845,7 +4845,6 @@ retry:
 
 		end_t = time(NULL);
 		if (end_t - sdata->update_time >= ckp->update_interval) {
-			sdata->update_time = end_t;
 			if (!ckp->proxy) {
 				LOGDEBUG("%ds elapsed in strat_loop, updating gbt base",
 					 ckp->update_interval);
