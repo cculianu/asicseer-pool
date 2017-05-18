@@ -1432,7 +1432,7 @@ static bool auth_stratum(ckpool_t *ckp, connsock_t *cs, proxy_instance_t *proxi)
 			LOGNOTICE("Proxy %d:%d %s failed to get a json result in auth_stratum, got: %s",
 				  proxi->id, proxi->subid, proxi->url, buf);
 		}
-		goto out;
+		goto out_noconn;
 	}
 
 	if (err_val && !json_is_null(err_val)) {
@@ -1453,8 +1453,7 @@ static bool auth_stratum(ckpool_t *ckp, connsock_t *cs, proxy_instance_t *proxi)
 	}
 	LOGINFO("Proxy %d:%d %s auth success in auth_stratum", proxi->id, proxi->subid, proxi->url);
 out:
-	if (val)
-		json_decref(val);
+	json_decref(val);
 	if (ret) {
 		/* Now parse any cached responses so there are none in the
 		 * queue and they can be managed one at a time from now on. */
