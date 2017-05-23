@@ -610,12 +610,20 @@ static int recv_available(ckpool_t *ckp, connsock_t *cs)
  * and -1 on error. */
 int read_socket_line(connsock_t *cs, float *timeout)
 {
-	ckpool_t *ckp = cs->ckp;
-	bool quiet = ckp->proxy | ckp->remote;
 	char *eom = NULL;
 	tv_t start, now;
+	ckpool_t *ckp;
+	int ret = -1;
+	bool quiet;
 	float diff;
-	int ret;
+
+	if (unlikely(!cs)) {
+		LOGNOTICE("Invalidated connsock sent to read_socket_line");
+		return ret;
+	}
+
+	ckp = cs->ckp;
+	quiet = ckp->proxy | ckp->remote;
 
 	clear_bufline(cs);
 	recv_available(ckp, cs); // Intentionally ignore return value
