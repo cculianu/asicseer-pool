@@ -1492,12 +1492,18 @@ static void send_subscribe(ckpool_t *ckp, proxy_instance_t *proxi)
 	json_t *json_msg;
 	char *msg, *buf;
 
-	JSON_CPACK(json_msg, "{ss,ss,ss,ss,sI,si,ss,si,sb,si}",
-		   "baseurl", proxi->baseurl,
-		   "url", proxi->url, "auth", proxi->auth, "pass", proxi->pass,
-		   "proxy", proxi->id, "subproxy", proxi->subid,
-		   "enonce1", proxi->enonce1, "nonce2len", proxi->nonce2len,
-		   "global", proxi->global, "userid", proxi->userid);
+	/* Set each field discretely instead of packing to aid debugging */
+	json_msg = json_object();
+	json_set_string(json_msg, "baseurl", proxi->baseurl);
+	json_set_string(json_msg, "url", proxi->url);
+	json_set_string(json_msg, "auth", proxi->auth);
+	json_set_string(json_msg, "pass", proxi->pass);
+	json_set_int64(json_msg, "proxy", proxi->id);
+	json_set_int(json_msg, "subproxy", proxi->subid);
+	json_set_string(json_msg, "enonce1", proxi->enonce1);
+	json_set_int(json_msg, "nonce2len", proxi->nonce2len);
+	json_set_bool(json_msg, "global", proxi->global);
+	json_set_int(json_msg, "userid", proxi->userid);
 	msg = json_dumps(json_msg, JSON_NO_UTF8);
 	json_decref(json_msg);
 	ASPRINTF(&buf, "subscribe=%s", msg);
