@@ -2644,6 +2644,7 @@ static void parse_addproxy(ckpool_t *ckp, gdata_t *gdata, const int sockd, const
 	proxy_instance_t *proxy;
 	json_error_t err_val;
 	int id, userid;
+	unsigned int i;
 	bool global;
 
 	val = json_loads(buf, 0, &err_val);
@@ -2661,6 +2662,26 @@ static void parse_addproxy(ckpool_t *ckp, gdata_t *gdata, const int sockd, const
 	if (unlikely(!url || !auth || !pass)) {
 		res = json_errormsg("Failed to decode url/auth/pass in addproxy %s", buf);
 		goto out;
+	}
+
+	/* Check for non-ascii characters */
+	for (i = 0; i < strlen(url); i++) {
+		if (unlikely(url[i] < 0)) {
+			res = json_errormsg("Non-ascii character in url in addproxy %s", buf);
+			goto out;
+		}
+	}
+	for (i = 0; i < strlen(auth); i++) {
+		if (unlikely(auth[i] < 0)) {
+			res = json_errormsg("Non-ascii character in auth in addproxy %s", buf);
+			goto out;
+		}
+	}
+	for (i = 0; i < strlen(pass); i++) {
+		if (unlikely(pass[i] < 0)) {
+			res = json_errormsg("Non-ascii character in pass in addproxy %s", buf);
+			goto out;
+		}
 	}
 
 	mutex_lock(&gdata->lock);
@@ -3159,6 +3180,7 @@ static void server_mode(ckpool_t *ckp, proc_instance_t *pi)
 static proxy_instance_t *__add_proxy(ckpool_t *ckp, gdata_t *gdata, const int id)
 {
 	proxy_instance_t *proxy;
+	unsigned int i;
 
 	gdata->proxies_generated++;
 	proxy = ckzalloc(sizeof(proxy_instance_t));
@@ -3170,6 +3192,25 @@ static proxy_instance_t *__add_proxy(ckpool_t *ckp, gdata_t *gdata, const int id
 		proxy->pass = strdup(ckp->proxypass[id]);
 	else
 		proxy->pass = strdup("");
+	/* Check for non-ascii characters */
+	for (i = 0; i < strlen(proxy->url); i++) {
+		if (proxy->url[i] < 0) {
+			LOGEMERG("Non-ascii characters in global proxy url config %s", proxy->url);
+			exit(1);
+		}
+	}
+	for (i = 0; i < strlen(proxy->auth); i++) {
+		if (proxy->auth[i] < 0) {
+			LOGEMERG("Non-ascii characters in global proxy auth config %s", proxy->auth);
+			exit(1);
+		}
+	}
+	for (i = 0; i < strlen(proxy->pass); i++) {
+		if (proxy->pass[i] < 0) {
+			LOGEMERG("Non-ascii characters in global proxy pass config %s", proxy->pass);
+			exit(1);
+		}
+	}
 	proxy->ckp = proxy->cs.ckp = ckp;
 	HASH_ADD_INT(gdata->proxies, id, proxy);
 	proxy->global = true;
