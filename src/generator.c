@@ -2340,7 +2340,8 @@ static void *proxy_recv(void *arg)
 		}
 
 		/* Parse any other messages already fully buffered with a zero
-		 * timeout. */
+		 * timeout. This might call read_socket_line with cs == NULL
+		 * but it can gracefully handle that. */
 		while (message || read_socket_line(cs, &timeout) > 0) {
 			message = false;
 			timeout = 0;
