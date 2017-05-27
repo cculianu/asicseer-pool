@@ -5770,6 +5770,7 @@ static void parse_worker_diffs(ckpool_t *ckp, json_t *worker_array)
 		json_get_string(&workername, worker_entry, "workername");
 		json_get_int(&mindiff, worker_entry, "difficultydefault");
 		set_worker_mindiff(ckp, workername, mindiff);
+		dealloc(workername);
 	}
 }
 
