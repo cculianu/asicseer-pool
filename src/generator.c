@@ -557,11 +557,11 @@ static char *next_proxy_line(connsock_t *cs, proxy_instance_t *proxi)
 	return buf;
 }
 
-/* For appending a line to the proxy recv list */
-static void append_proxy_line(proxy_instance_t *proxi, const char *buf)
+/* For appending a line to the proxy recv list, absorbing *buf */
+static void append_proxy_line(proxy_instance_t *proxi, char *buf)
 {
 	char_entry_t *char_t = ckalloc(sizeof(char_entry_t));
-	char_t->buf = strdup(buf);
+	char_t->buf = buf;
 	DL_APPEND(proxi->recvd_lines, char_t);
 }
 
