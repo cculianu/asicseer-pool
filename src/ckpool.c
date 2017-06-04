@@ -57,7 +57,10 @@ static bool open_logfile(ckpool_t *ckp)
  * on any delays. */
 static void console_log(ckpool_t __maybe_unused *ckp, char *msg)
 {
-	fprintf(stderr, "\33[2K\r%s", msg);
+	/* Add clear line only if stderr is going to console */
+	if (isatty(fileno(stderr)))
+		fprintf(stderr, "\33[2K\r");
+	fprintf(stderr, "%s", msg);
 	fflush(stderr);
 
 	free(msg);
