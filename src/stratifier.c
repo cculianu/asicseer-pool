@@ -1976,17 +1976,16 @@ static bool rebuild_txns(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb)
 			txn = ckzalloc(sizeof(txntable_t));
 			memcpy(txn->hash, hash, 65);
 			txn->data = data;
-			txn->refcount = REFCOUNT_REMOTE;
 			HASH_ADD_STR(sdata->txns, hash, txn);
 			sdata->txns_generated++;
 		} else {
 			free(data);
-			txn->refcount = REFCOUNT_REMOTE;
-			txn->seen = true;
-			JSON_CPACK(txn_val, "{ss,ss}",
-				   "hash", hash, "data", txn->data);
-			json_array_append_new(txn_array, txn_val);
 		}
+		txn->refcount = REFCOUNT_REMOTE;
+		txn->seen = true;
+		JSON_CPACK(txn_val, "{ss,ss}",
+			   "hash", hash, "data", txn->data);
+		json_array_append_new(txn_array, txn_val);
 		ck_wunlock(&sdata->txn_lock);
 	}
 
