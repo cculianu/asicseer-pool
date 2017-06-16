@@ -1910,7 +1910,8 @@ static void request_txns(ckpool_t *ckp, sdata_t *sdata, json_t *txns)
 	}
 }
 
-/* Rebuilds transactions from txnhashes to be able to construct wb_merkle_bins */
+/* Rebuilds transactions from txnhashes to be able to construct wb_merkle_bins
+ * on remote workbases */
 static bool rebuild_txns(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb)
 {
 	const char *hashes = wb->txn_hashes;
@@ -1997,7 +1998,7 @@ static bool rebuild_txns(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb)
 		dealloc(wb->txn_hashes);
 		txns = wb_merkle_bin_txns(ckp, sdata, wb, txn_array, false);
 		if (likely(txns))
-			update_txns(ckp, sdata, txns, true);
+			update_txns(ckp, sdata, txns, false);
 	} else {
 		if (!sdata->wbincomplete) {
 			sdata->wbincomplete = true;
