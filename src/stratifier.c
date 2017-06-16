@@ -2029,17 +2029,21 @@ static void check_incomplete_wbs(ckpool_t *ckp, sdata_t *sdata)
 
 	ck_wlock(&sdata->workbase_lock);
 	HASH_ITER(hh, sdata->remote_workbases, wb, tmp) {
-		if (!wb->incomplete || wb->readcount)
+		if (!wb->incomplete)
+			continue;
+		incomplete++;
+		/* We can't remove a workbase that is currently in use */
+		if (wb->readcount)
 			continue;
 		/* Remove the workbase from the hashlist so we can work on it
 		 * without holding the lock */
 		HASH_DEL(sdata->remote_workbases, wb);
 		ck_wunlock(&sdata->workbase_lock);
 
-		if (rebuild_txns(ckp, sdata, wb))
+		if (rebuild_txns(ckp, sdata, wb)) {
 			LOGNOTICE("Rebuilt transactions on previously failed remote workinfo");
-		else
-			incomplete++;
+			incomplete--;
+		}
 
 		/* Add it to a list of removed workbases, to be returned once
 		 * we exit this HASH_ITER loop. */
