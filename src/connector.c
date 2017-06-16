@@ -1378,7 +1378,7 @@ char *connector_stats(void *data, const int runtime)
 	ck_runlock(&cdata->lock);
 
 	JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
-	json_set_object(val, "clients", subval);
+	json_steal_object(val, "clients", subval);
 
 	ck_rlock(&cdata->lock);
 	DL_COUNT(cdata->dead_clients, client, objects);
@@ -1387,7 +1387,7 @@ char *connector_stats(void *data, const int runtime)
 
 	memsize = objects * sizeof(client_instance_t);
 	JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
-	json_set_object(val, "dead", subval);
+	json_steal_object(val, "dead", subval);
 
 	objects = 0;
 	memsize = 0;
@@ -1398,12 +1398,12 @@ char *connector_stats(void *data, const int runtime)
 		memsize += sizeof(sender_send_t) + send->len + 1;
 	}
 	JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", cdata->sends_generated);
-	json_set_object(val, "sends", subval);
+	json_steal_object(val, "sends", subval);
 
 	JSON_CPACK(subval, "{si,si,si}", "count", cdata->sends_queued, "memory", cdata->sends_size, "generated", cdata->sends_delayed);
 	mutex_unlock(&cdata->sender_lock);
 
-	json_set_object(val, "delays", subval);
+	json_steal_object(val, "delays", subval);
 
 	buf = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER);
 	json_decref(val);

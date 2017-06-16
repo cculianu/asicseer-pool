@@ -409,14 +409,15 @@ static inline void _json_set_bool(json_t *val, const char *key, bool boolean,
 }
 #define json_set_bool(val, key, boolean) _json_set_bool(val, key, boolean, __FILE__, __func__, __LINE__)
 
-
-static inline void _json_set_object(json_t *val, const char *key, json_t *object,
+/* Steals an object and NULLs original reference */
+static inline void _json_steal_object(json_t *val, const char *key, json_t **object,
 				  const char *file, const char *func, const int line)
 {
-	if (unlikely(json_object_set_new_nocheck(val, key, object)))
+	if (unlikely(json_object_set_new_nocheck(val, key, *object)))
 		LOGERR("Failed to set json object from %s %s:%d", file, func, line);
+	*object = NULL;
 }
-#define json_set_object(val, key, object) _json_set_object(val, key, object, __FILE__, __func__, __LINE__)
+#define json_steal_object(val, key, object) _json_steal_object(val, key, &(object), __FILE__, __func__, __LINE__)
 
 void rename_proc(const char *name);
 void create_pthread(pthread_t *thread, void *(*start_routine)(void *), void *arg);

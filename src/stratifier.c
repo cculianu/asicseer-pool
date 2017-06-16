@@ -4181,32 +4181,32 @@ char *stratifier_stats(ckpool_t *ckp, void *data)
 	memsize = SAFE_HASH_OVERHEAD(sdata->workbases) + sizeof(workbase_t) * objects;
 	generated = sdata->workbases_generated;
 	JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
-	json_set_object(val, "workbases", subval);
+	json_steal_object(val, "workbases", subval);
 	objects = HASH_COUNT(sdata->remote_workbases);
 	memsize = SAFE_HASH_OVERHEAD(sdata->remote_workbases) + sizeof(workbase_t) * objects;
 	ck_runlock(&sdata->workbase_lock);
 
 	JSON_CPACK(subval, "{si,si}", "count", objects, "memory", memsize);
-	json_set_object(val, "remote_workbases", subval);
+	json_steal_object(val, "remote_workbases", subval);
 
 	ck_rlock(&sdata->instance_lock);
 	objects = HASH_COUNT(sdata->user_instances);
 	memsize = SAFE_HASH_OVERHEAD(sdata->user_instances) + sizeof(stratum_instance_t) * objects;
 	JSON_CPACK(subval, "{si,si}", "count", objects, "memory", memsize);
-	json_set_object(val, "users", subval);
+	json_steal_object(val, "users", subval);
 
 	objects = HASH_COUNT(sdata->stratum_instances);
 	memsize = SAFE_HASH_OVERHEAD(sdata->stratum_instances);
 	generated = sdata->stratum_generated;
 	JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
-	json_set_object(val, "clients", subval);
+	json_steal_object(val, "clients", subval);
 
 	objects = sdata->stats.disconnected;
 	generated = sdata->disconnected_generated;
 	memsize = SAFE_HASH_OVERHEAD(sdata->disconnected_sessions);
 	memsize += sizeof(session_t) * sdata->stats.disconnected;
 	JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
-	json_set_object(val, "disconnected", subval);
+	json_steal_object(val, "disconnected", subval);
 	ck_runlock(&sdata->instance_lock);
 
 	mutex_lock(&sdata->share_lock);
@@ -4216,27 +4216,27 @@ char *stratifier_stats(ckpool_t *ckp, void *data)
 	mutex_unlock(&sdata->share_lock);
 
 	JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
-	json_set_object(val, "shares", subval);
+	json_steal_object(val, "shares", subval);
 
 	ck_rlock(&sdata->txn_lock);
 	objects = HASH_COUNT(sdata->txns);
 	memsize = SAFE_HASH_OVERHEAD(sdata->txns) + sizeof(txntable_t) * objects;
 	generated = sdata->txns_generated;
 	JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
-	json_set_object(val, "transactions", subval);
+	json_steal_object(val, "transactions", subval);
 	ck_runlock(&sdata->txn_lock);
 
 	ckmsgq_stats(sdata->ssends, sizeof(smsg_t), &subval);
-	json_set_object(val, "ssends", subval);
+	json_steal_object(val, "ssends", subval);
 	/* Don't know exactly how big the string is so just count the pointer for now */
 	ckmsgq_stats(sdata->srecvs, sizeof(char *), &subval);
-	json_set_object(val, "srecvs", subval);
+	json_steal_object(val, "srecvs", subval);
 	if (!CKP_STANDALONE(ckp)) {
 		ckmsgq_stats(sdata->ckdbq, sizeof(char *), &subval);
-		json_set_object(val, "ckdbq", subval);
+		json_steal_object(val, "ckdbq", subval);
 	}
 	ckmsgq_stats(sdata->stxnq, sizeof(json_params_t), &subval);
-	json_set_object(val, "stxnq", subval);
+	json_steal_object(val, "stxnq", subval);
 
 	buf = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER);
 	json_decref(val);
@@ -7993,12 +7993,12 @@ static void ssend_process(ckpool_t *ckp, smsg_t *msg)
 	free(msg);
 }
 
+/* json_decref on NULL is safe */
 static void discard_json_params(json_params_t *jp)
 {
 	json_decref(jp->method);
 	json_decref(jp->params);
-	if (jp->id_val)
-		json_decref(jp->id_val);
+	json_decref(jp->id_val);
 	free(jp);
 }
 
@@ -8072,9 +8072,9 @@ static void upstream_auth(ckpool_t *ckp, stratum_instance_t *client, json_params
 	ts_realtime(&now);
 	sprintf(cdfield, "%lu,%lu", now.tv_sec, now.tv_nsec);
 
-	json_set_object(val, "params", jp->params);
-	json_set_object(val, "id", jp->id_val);
-	json_set_object(val, "method", jp->method);
+	json_steal_object(val, "params", jp->params);
+	json_steal_object(val, "id", jp->id_val);
+	json_steal_object(val, "method", jp->method);
 	json_set_string(val, "method", stratum_msgs[SM_AUTH]);
 
 	json_set_string(val, "useragent", client->useragent ? : "");

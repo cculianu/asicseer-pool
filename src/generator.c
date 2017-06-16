@@ -2834,12 +2834,12 @@ static void send_stats(gdata_t *gdata, const int sockd)
 	memsize = SAFE_HASH_OVERHEAD(gdata->proxies) + sizeof(proxy_instance_t) * objects;
 	generated = gdata->proxies_generated;
 	JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
-	json_set_object(val, "proxies", subval);
+	json_steal_object(val, "proxies", subval);
 
 	DL_COUNT(gdata->dead_proxies, proxy, objects);
 	memsize = sizeof(proxy_instance_t) * objects;
 	JSON_CPACK(subval, "{si,si}", "count", objects, "memory", memsize);
-	json_set_object(val, "dead_proxies", subval);
+	json_steal_object(val, "dead_proxies", subval);
 
 	total_objects = memsize = 0;
 	for (proxy = gdata->proxies; proxy; proxy=proxy->hh.next) {
@@ -2852,7 +2852,7 @@ static void send_stats(gdata_t *gdata, const int sockd)
 	mutex_unlock(&gdata->lock);
 
 	JSON_CPACK(subval, "{si,si,si}", "count", total_objects, "memory", memsize, "generated", generated);
-	json_set_object(val, "subproxies", subval);
+	json_steal_object(val, "subproxies", subval);
 
 	mutex_lock(&gdata->notify_lock);
 	objects = HASH_COUNT(gdata->notify_instances);
@@ -2861,7 +2861,7 @@ static void send_stats(gdata_t *gdata, const int sockd)
 	mutex_unlock(&gdata->notify_lock);
 
 	JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
-	json_set_object(val, "notifies", subval);
+	json_steal_object(val, "notifies", subval);
 
 	mutex_lock(&gdata->share_lock);
 	objects = HASH_COUNT(gdata->shares);
@@ -2870,7 +2870,7 @@ static void send_stats(gdata_t *gdata, const int sockd)
 	mutex_unlock(&gdata->share_lock);
 
 	JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
-	json_set_object(val, "shares", subval);
+	json_steal_object(val, "shares", subval);
 
 	mutex_lock(&gdata->psend_lock);
 	DL_COUNT(gdata->psends, msg, objects);
@@ -2879,7 +2879,7 @@ static void send_stats(gdata_t *gdata, const int sockd)
 
 	memsize = sizeof(stratum_msg_t) * objects;
 	JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
-	json_set_object(val, "psends", subval);
+	json_steal_object(val, "psends", subval);
 
 	send_api_response(val, sockd);
 }
