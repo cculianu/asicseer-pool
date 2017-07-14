@@ -1436,7 +1436,7 @@ static void update_txns(ckpool_t *ckp, sdata_t *sdata, txntable_t *txns, bool lo
 static txntable_t *wb_merkle_bin_txns(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb,
 				      json_t *txn_array, bool local)
 {
-	int i, j, binleft, binlen, cbspace = 0, max_txns = 0, subtract_fee = 0;
+	int i, j, binleft, binlen;
 	txntable_t *txns = NULL;
 	json_t *arr_val;
 	uchar *hashbin;
@@ -1451,14 +1451,6 @@ static txntable_t *wb_merkle_bin_txns(ckpool_t *ckp, sdata_t *sdata, workbase_t 
 		int len = 1, ofs = 0, length, max_len;
 		const char *txn;
 
-		/* Find out how much space we need to leave for coinbase
-		 * generation of user txns */
-		if (local) {
-			mutex_lock(&sdata->stats_lock);
-			cbspace = sdata->stats.cbspace;
-			mutex_unlock(&sdata->stats_lock);
-		}
-
 		for (i = 0; i < wb->txns; i++) {
 			arr_val = json_array_get(txn_array, i);
 			txn = json_string_value(json_object_get(arr_val, "data"));
@@ -1468,20 +1460,9 @@ static txntable_t *wb_merkle_bin_txns(ckpool_t *ckp, sdata_t *sdata, workbase_t 
 			}
 			length = strlen(txn);
 			len += length;
-			/* Store the length so we can decide when to start
-			 * trimming transactions off the end */
 			json_set_int(arr_val, "length", length);
 		}
-		/* Find the total transaction space used, and then remove
-		 * transactions off the end of at least cbspace bytes, thereby
-		 * preserving max block size from btcd */
-		max_len = len - cbspace;
-		if (unlikely(max_len < 1)) {
-			LOGWARNING("Inadequate space to remove %d bytes of txns for cbspace",
-				   cbspace);
-			max_len = 1;
-			wb->txns = 0;
-		}
+		max_len = len;
 
 		wb->txn_data = ckzalloc(max_len + 1);
 		wb->txn_hashes = ckzalloc(wb->txns * 65 + 1);
@@ -1499,17 +1480,6 @@ static txntable_t *wb_merkle_bin_txns(ckpool_t *ckp, sdata_t *sdata, workbase_t 
 			hash = json_string_value(json_object_get(arr_val, "hash"));
 			length = json_integer_value(json_object_get(arr_val, "length"));
 			len += length;
-			if (len > max_len) {
-				/* Remove the fee from txns we're no longer
-				 * including */
-				int fee = json_integer_value(json_object_get(arr_val, "fee"));
-
-				/* Remove the transaction from the array */
-				json_array_remove(txn_array, i);
-				subtract_fee += fee;
-				continue;
-			}
-			max_txns++;
 			if (!txid)
 				txid = hash;
 			if (unlikely(!txid)) {
@@ -1530,14 +1500,6 @@ static txntable_t *wb_merkle_bin_txns(ckpool_t *ckp, sdata_t *sdata, workbase_t 
 	} else
 		wb->txn_hashes = ckzalloc(1);
 	wb->merkle_array = json_array();
-	if (cbspace) {
-		/* Readjust binlens if we've trimmed txns */
-		wb->txns = max_txns;
-		binlen = wb->txns * 32 + 32;
-		binleft = binlen / 32;
-		wb->coinbasevalue -= subtract_fee;
-		LOGINFO("Subtracting %d fee from reward for cbspace", subtract_fee);
-	}
 	if (binleft > 1) {
 		while (42) {
 			if (binleft == 1)
@@ -1558,13 +1520,8 @@ static txntable_t *wb_merkle_bin_txns(ckpool_t *ckp, sdata_t *sdata, workbase_t 
 			binlen = binleft * 32;
 		}
 	}
-	if (cbspace) {
-		LOGNOTICE("Stored local workbase with %d transactions leaving %d bytes for user generation txns",
-			  wb->txns, cbspace);
-	} else {
-		LOGNOTICE("Stored %s workbase with %d transactions", local ? "local" : "remote",
-			  wb->txns);
-	}
+	LOGNOTICE("Stored %s workbase with %d transactions", local ? "local" : "remote",
+		  wb->txns);
 out:
 	return txns;
 }
