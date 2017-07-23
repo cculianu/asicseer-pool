@@ -26,6 +26,10 @@ config.sub
 ext_deps
 config.h.in
 config.h
+jansson_private_config.h.in
+jansson_private_config.h
+jansson_config.h
+jansson.pc
 
 mkinstalldirs
 
