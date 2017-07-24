@@ -1415,13 +1415,6 @@ static void block_update(ckpool_t *ckp, int *prio)
 	txntable_t *txns;
 	workbase_t *wb;
 
-	/* Skip update if we're getting stacked low priority updates too close
-	 * together. */
-	if (*prio < GEN_PRIORITY && time(NULL) < sdata->update_time + (ckp->update_interval / 2) &&
-	    sdata->current_workbase) {
-		ret = true;
-		goto out;
-	}
 retry:
 	wb = generator_getbase(ckp);
 	if (unlikely(!wb)) {
@@ -2760,7 +2753,6 @@ static void dead_proxyid(sdata_t *sdata, const int id, const int subid, const bo
 	if (proxy) {
 		proxy->dead = true;
 		proxy->deleted = deleted;
-		set_proxy_prio(sdata, proxy, 0xFFFF);
 		if (!replaced && proxy->global)
 			check_bestproxy(sdata);
 	}
@@ -4323,7 +4315,7 @@ static json_t *json_proxyinfo(const proxy_t *proxy)
 	const proxy_t *parent = proxy->parent;
 	json_t *val;
 
-	JSON_CPACK(val, "{si,si,si,sf,ss,ss,ss,ss,ss,si,si,si,si,sb,sb,sI,sI,sI,sI,si,si,sb,sb,si}",
+	JSON_CPACK(val, "{si,si,si,sf,ss,ss,ss,ss,ss,si,si,si,si,sb,sb,sI,sI,sI,sI,sI,si,sb,sb,si}",
 	    "id", proxy->id, "subid", proxy->subid, "priority", proxy_prio(parent),
 	    "diff", proxy->diff, "baseurl", proxy->baseurl, "url", proxy->url,
 	    "auth", proxy->auth, "pass", proxy->pass,
@@ -4501,6 +4493,7 @@ retry:
 
 		end_t = time(NULL);
 		if (end_t - sdata->update_time >= ckp->update_interval) {
+			sdata->update_time = end_t;
 			if (!ckp->proxy) {
 				LOGDEBUG("%ds elapsed in strat_loop, updating gbt base",
 					 ckp->update_interval);
@@ -5397,16 +5390,17 @@ static void set_worker_mindiff(ckpool_t *ckp, const char *workername, int mindif
 
 static void parse_worker_diffs(ckpool_t *ckp, json_t *worker_array)
 {
+	const char *workername;
 	json_t *worker_entry;
-	char *workername;
 	size_t index;
 	int mindiff;
 
 	json_array_foreach(worker_array, index, worker_entry) {
-		json_get_string(&workername, worker_entry, "workername");
+		workername = json_string_value(json_object_get(worker_entry, "workername"));
+		if (!workername)
+			continue;
 		json_get_int(&mindiff, worker_entry, "difficultydefault");
 		set_worker_mindiff(ckp, workername, mindiff);
-		dealloc(workername);
 	}
 }
 
@@ -7725,15 +7719,14 @@ static void parse_ckdb_cmd(ckpool_t *ckp, const char *cmd)
 	}
 	res_val = json_object_get(val, "diffchange");
 	json_array_foreach(res_val, index, arr_val) {
-		char *workername;
+		const char *workername;
 		int mindiff;
 
-		json_get_string(&workername, arr_val, "workername");
+		workername = json_string_value(json_object_get(arr_val, "workername"));
 		if (!workername)
 			continue;
 		json_get_int(&mindiff, arr_val, "difficultydefault");
 		set_worker_mindiff(ckp, workername, mindiff);
-		dealloc(workername);
 	}
 	json_decref(val);
 }

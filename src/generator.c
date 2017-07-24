@@ -2133,6 +2133,9 @@ static void *proxy_reconnect(void *arg)
 
 	pthread_detach(pthread_self());
 	proxy_alive(ckp, proxy, cs, true);
+	sleep(3);
+	/* Delay resetting this flag to throttle how frequently we can create
+	 * this thread and check proxy_alive */
 	proxy->reconnecting = false;
 	return NULL;
 }
@@ -2818,8 +2821,8 @@ static void parse_ableproxy(gdata_t *gdata, const int sockd, const char *buf, bo
 		res = json_errormsg("Proxy id %d not found", id);
 		goto out;
 	}
-	JSON_CPACK(res, "{si,ss,ss,ss}", "id", proxy->id, "url", proxy->url,
-		   "auth", proxy->auth, "pass", proxy->pass);
+	JSON_CPACK(res, "{si,ss, ss,ss,ss}", "id", proxy->id, "url", proxy->url,
+		   "baseurl", proxy->baseurl,"auth", proxy->auth, "pass", proxy->pass);
 	if (proxy->disabled != disable) {
 		proxy->disabled = disable;
 		LOGNOTICE("%sabling proxy %d:%s", disable ? "Dis" : "En", id, proxy->url);
@@ -2899,12 +2902,11 @@ static void send_stats(gdata_t *gdata, const int sockd)
 	send_api_response(val, sockd);
 }
 
-static json_t *proxystats(proxy_instance_t *proxy)
+/* Entered with parent proxy locked */
+static json_t *__proxystats(proxy_instance_t *proxy, proxy_instance_t *parent, bool discrete)
 {
-	proxy_instance_t *parent = proxy->parent;
 	json_t *val = json_object();
 
-	mutex_lock(&parent->proxy_lock);
 	/* Opportunity to update hashrate just before we report it without
 	 * needing to check on idle proxies regularly */
 	__decay_proxy(proxy, parent, 0);
@@ -2928,20 +2930,50 @@ static json_t *proxystats(proxy_instance_t *proxy)
 		json_set_double(val, "tdsps60", proxy->tdsps60);
 		json_set_double(val, "tdsps1440", proxy->tdsps1440);
 	}
-	json_set_double(val, "dsps1", proxy->dsps1);
-	json_set_double(val, "dsps5", proxy->dsps5);
-	json_set_double(val, "dsps60", proxy->dsps60);
-	json_set_double(val, "dsps1440", proxy->dsps1440);
-	json_set_double(val, "accepted", proxy->diff_accepted);
-	json_set_double(val, "rejected", proxy->diff_rejected);
+	if (discrete) {
+		json_set_double(val, "dsps1", proxy->dsps1);
+		json_set_double(val, "dsps5", proxy->dsps5);
+		json_set_double(val, "dsps60", proxy->dsps60);
+		json_set_double(val, "dsps1440", proxy->dsps1440);
+		json_set_double(val, "accepted", proxy->diff_accepted);
+		json_set_double(val, "rejected", proxy->diff_rejected);
+	}
 	json_set_int(val, "lastshare", proxy->last_share.tv_sec);
 	json_set_bool(val, "global", proxy->global);
 	json_set_bool(val, "disabled", proxy->disabled);
 	json_set_bool(val, "alive", proxy->alive);
 	json_set_int(val, "maxclients", proxy->clients_per_proxy);
+
+	return val;
+}
+
+static json_t *proxystats(proxy_instance_t *proxy, bool discrete)
+{
+	proxy_instance_t *parent = proxy->parent;
+	json_t *val;
+
+	mutex_lock(&parent->proxy_lock);
+	val = __proxystats(proxy, parent, discrete);
 	mutex_unlock(&parent->proxy_lock);
 
 	return val;
+}
+
+static json_t *all_proxystats(gdata_t *gdata)
+{
+	json_t *res, *arr_val = json_array();
+	proxy_instance_t *proxy, *tmp;
+
+	mutex_lock(&gdata->lock);
+	HASH_ITER(hh, gdata->proxies, proxy, tmp) {
+		mutex_unlock(&gdata->lock);
+		json_array_append_new(arr_val, proxystats(proxy, false));
+		mutex_lock(&gdata->lock);
+	}
+	mutex_unlock(&gdata->lock);
+
+	JSON_CPACK(res, "{so}", "proxy", arr_val);
+	return res;
 }
 
 static void parse_proxystats(gdata_t *gdata, const int sockd, const char *buf)
@@ -2954,11 +2986,11 @@ static void parse_proxystats(gdata_t *gdata, const int sockd, const char *buf)
 
 	val = json_loads(buf, 0, &err_val);
 	if (unlikely(!val)) {
-		res = json_encode_errormsg(&err_val);
-		goto out;
+		res = all_proxystats(gdata);
+		goto out_noval;
 	}
 	if (!json_get_int(&id, val, "id")) {
-		res = json_errormsg("Failed to find id key");
+		res = all_proxystats(gdata);
 		goto out;
 	}
 	if (!json_get_int(&subid, val, "subid"))
@@ -2974,10 +3006,42 @@ static void parse_proxystats(gdata_t *gdata, const int sockd, const char *buf)
 		res = json_errormsg("Proxy id %d:%d not found", id, subid);
 		goto out;
 	}
-	res = proxystats(proxy);
+	res = proxystats(proxy, true);
 out:
-	if (val)
-		json_decref(val);
+	json_decref(val);
+out_noval:
+	send_api_response(res, sockd);
+}
+
+static void send_subproxystats(gdata_t *gdata, const int sockd)
+{
+	json_t *res, *arr_val = json_array();
+	proxy_instance_t *parent, *tmp;
+
+	mutex_lock(&gdata->lock);
+	HASH_ITER(hh, gdata->proxies, parent, tmp) {
+		json_t *val, *subarr_val = json_array();
+		proxy_instance_t *subproxy, *subtmp;
+
+		mutex_unlock(&gdata->lock);
+
+		mutex_lock(&parent->proxy_lock);
+		HASH_ITER(sh, parent->subproxies, subproxy, subtmp) {
+			val = __proxystats(subproxy, parent, true);
+			json_set_int(val, "subid", subproxy->subid);
+			json_array_append_new(subarr_val, val);
+		}
+		mutex_unlock(&parent->proxy_lock);
+
+		JSON_CPACK(val, "{si,so}",
+			   "id", parent->id,
+			   "subproxy", subarr_val);
+		json_array_append_new(arr_val, val);
+		mutex_lock(&gdata->lock);
+	}
+	mutex_unlock(&gdata->lock);
+
+	JSON_CPACK(res, "{so}", "proxy", arr_val);
 	send_api_response(res, sockd);
 }
 
@@ -3087,6 +3151,8 @@ retry:
 		parse_ableproxy(gdata, umsg->sockd, buf + 13, true);
 	} else if (cmdmatch(buf, "proxystats")) {
 		parse_proxystats(gdata, umsg->sockd, buf + 11);
+	} else if (cmdmatch(buf, "subproxystats")) {
+		send_subproxystats(gdata, umsg->sockd);
 	} else if (cmdmatch(buf, "globaluser")) {
 		parse_globaluser(ckp, gdata, buf + 11);
 	} else if (cmdmatch(buf, "reconnect")) {
