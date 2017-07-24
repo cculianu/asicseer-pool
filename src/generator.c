@@ -2269,6 +2269,7 @@ static void *proxy_recv(void *arg)
 				 * the generator has been informed to reconnect
 				 * so we may as well serialise calls to
 				 * proxy_alive now */
+				sleep(5);
 				proxy_alive(ckp, proxi, &proxi->cs, true);
 			}
 		}
