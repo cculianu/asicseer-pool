@@ -303,6 +303,7 @@ struct proxy_base {
 	int64_t bound_clients; /* Currently actively bound clients */
 	int64_t combined_clients; /* Total clients of all subproxies of a parent proxy */
 	int64_t headroom; /* Temporary variable when calculating how many more clients can bind */
+	int connecting; /* New clients in the process of connecting */
 
 	int subproxy_count; /* Number of subproxies */
 	proxy_t *parent; /* Parent proxy of each subproxy */
@@ -4705,7 +4706,8 @@ static bool new_enonce1(ckpool_t *ckp, sdata_t *ckp_sdata, sdata_t *sdata, strat
 		mutex_unlock(&ckp_sdata->proxy_lock);
 
 		if (proxy->clients >= proxy->max_clients) {
-			LOGWARNING("Proxy reached max clients %"PRId64, proxy->max_clients);
+			LOGWARNING("Proxy %d reached max clients %"PRId64, proxy->id,
+				   proxy->max_clients);
 			return false;
 		}
 	}
@@ -4727,6 +4729,7 @@ static bool new_enonce1(ckpool_t *ckp, sdata_t *ckp_sdata, sdata_t *sdata, strat
 		proxy->clients++;
 		proxy->bound_clients++;
 		proxy->parent->combined_clients++;
+		proxy->connecting--;
 	}
 	ck_wunlock(&ckp_sdata->instance_lock);
 
@@ -4753,7 +4756,9 @@ static proxy_t *__best_subproxy(proxy_t *proxy)
 			continue;
 		if (!subproxy->sdata->current_workbase)
 			continue;
-		subproxy_headroom = subproxy->max_clients - subproxy->clients;
+		/* This subproxy data is checked without holding the correct
+		 * instance_lock but an incorrect value here is harmless */
+		subproxy_headroom = subproxy->max_clients - subproxy->clients - subproxy->connecting;
 
 		proxy->headroom += subproxy_headroom;
 		if (subproxy_headroom > max_headroom) {
@@ -4800,6 +4805,13 @@ static sdata_t *select_sdata(ckpool_t *ckp, sdata_t *ckp_sdata, const int userid
 			LOGNOTICE("Temporarily insufficient proxies for userid %d to accept more clients", userid);
 		return NULL;
 	}
+
+	/* Keep track of in-progress connecting clients. This will overestimate
+	 * if they go on to fail but that's inherently safer */
+	ck_wlock(&ckp_sdata->instance_lock);
+	best->connecting++;
+	ck_wunlock(&ckp_sdata->instance_lock);
+
 	if (!userid) {
 		if (best->id != global->id || current_headroom(ckp_sdata, &proxy) < 2)
 			generator_recruit(ckp, global->id, 1);
