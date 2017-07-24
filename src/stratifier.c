@@ -4812,8 +4812,8 @@ static sdata_t *select_sdata(ckpool_t *ckp, sdata_t *ckp_sdata, const int userid
 	best->connecting++;
 	ck_wunlock(&ckp_sdata->instance_lock);
 
-	if (!userid) {
-		if (best->id != global->id || current_headroom(ckp_sdata, &proxy) < 2)
+	if (!userid || best->id == global->id) {
+		if (current_headroom(ckp_sdata, &proxy) < 2)
 			generator_recruit(ckp, global->id, 1);
 	} else {
 		if (best_userproxy_headroom(ckp_sdata, userid) < 2)
