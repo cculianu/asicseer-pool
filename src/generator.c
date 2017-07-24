@@ -2255,19 +2255,33 @@ static void *proxy_recv(void *arg)
 		if (!proxi->alive) {
 			reconnect_proxy(proxi);
 			while (!subproxies_alive(proxi)) {
-				reconnect_proxy(proxi);
 				if (alive) {
+					/* This will make the generator choose
+					 * another proxy if available */
 					reconnect_generator(ckp);
-					LOGWARNING("Proxy %d:%s failed, attempting reconnect",
-						   proxi->id, proxi->url);
+					if (!proxi->reconnect) {
+						LOGWARNING("Proxy %d:%s failed, attempting reconnect",
+							   proxi->id, proxi->url);
+					}
 					alive = false;
 				}
-				sleep(5);
+				/* The proxy and all subproxies are dead and
+				 * the generator has been informed to reconnect
+				 * so we may as well serialise calls to
+				 * proxy_alive now */
+				proxy_alive(ckp, proxi, &proxi->cs, true);
 			}
 		}
 		if (!alive) {
+			/* This will make the generator switch back to this
+			 * proxy if it's higher priority */
 			reconnect_generator(ckp);
-			LOGWARNING("Proxy %d:%s recovered", proxi->id, proxi->url);
+			if (proxi->reconnect) {
+				LOGWARNING("Proxy %d:%s completed issued reconnection",
+					   proxi->id, proxi->url);
+				proxi->reconnect = false;
+			} else
+				LOGWARNING("Proxy %d:%s recovered", proxi->id, proxi->url);
 			alive = true;
 		}
 
