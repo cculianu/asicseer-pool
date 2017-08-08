@@ -746,12 +746,17 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 
 	/* Add any change left over from user gen to donation */
 	if (CKP_STANDALONE(ckp)) {
+#if 0
+		/* FIXME Fee is currently ignored */
 		double dfee;
 
 		d64 += add_user_generation(sdata, wb, g64, gentxns);
 		dfee = d64;
 		dfee /= SATOSHIS;
 		json_set_double(wb->payout, "fee", dfee);
+#else
+		add_user_generation(sdata, wb, g64, gentxns);
+#endif
 	} else {
 		(*gentxns)++;
 
@@ -9252,6 +9257,8 @@ void *stratifier(void *arg)
 			sdata->pubkeytxnlen = 25;
 		}
 
+#if 0
+		/* FIXME Fee is currently disabled. Donvalid will be false */
 		if (generator_checkaddr(ckp, ckp->donaddress)) {
 			ckp->donvalid = true;
 			if (script_address(ckp->donaddress)) {
@@ -9262,6 +9269,7 @@ void *stratifier(void *arg)
 				address_to_pubkeytxn(sdata->donkeytxnbin, ckp->donaddress);
 			}
 		}
+#endif
 	}
 
 	randomiser = time(NULL);
