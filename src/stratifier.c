@@ -8300,7 +8300,8 @@ static void *statsupdate(void *arg)
 		s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER);
 		json_decref(val);
 		LOGNOTICE("Pool:%s", s);
-		fprintf(fp, "%s\n", s);
+		if (likely(fp))
+			fprintf(fp, "%s\n", s);
 		dealloc(s);
 
 		JSON_CPACK(val, "{ss,ss,ss,ss,ss,ss,ss}",
@@ -8314,7 +8315,8 @@ static void *statsupdate(void *arg)
 		s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER);
 		json_decref(val);
 		LOGNOTICE("Pool:%s", s);
-		fprintf(fp, "%s\n", s);
+		if (likely(fp))
+			fprintf(fp, "%s\n", s);
 		dealloc(s);
 
 		JSON_CPACK(val, "{sf,sf,sf,sf}",
@@ -8325,9 +8327,11 @@ static void *statsupdate(void *arg)
 		s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER | JSON_REAL_PRECISION(3));
 		json_decref(val);
 		LOGNOTICE("Pool:%s", s);
-		fprintf(fp, "%s\n", s);
+		if (likely(fp)) {
+			fprintf(fp, "%s\n", s);
+			fclose(fp);
+		}
 		dealloc(s);
-		fclose(fp);
 
 		if (ckp->proxy && sdata->proxy) {
 			proxy_t *proxy, *proxytmp, *subproxy, *subtmp;
