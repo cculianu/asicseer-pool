@@ -5890,7 +5890,7 @@ test_blocksolve(const stratum_instance_t *client, const workbase_t *wb, const uc
 	bool ret;
 
 	/* Submit anything over 99.9% of the diff in case of rounding errors */
-	if (diff < sdata->current_workbase->network_diff * 0.999)
+	if (likely(diff < sdata->current_workbase->network_diff * 0.999))
 		return;
 
 	LOGWARNING("Possible %sblock solve diff %lf !", stale ? "stale share " : "", diff);
