@@ -3275,9 +3275,14 @@ static void __drop_client(sdata_t *sdata, stratum_instance_t *client, bool lazil
 
 	if (client->workername) {
 		if (user) {
-			ASPRINTF(msg, "Dropped client %s %s %suser %s worker %s %s",
-				 client->identity, client->address, user->throttled ? "throttled " : "",
-				 user->username, client->workername, lazily ? "lazily" : "");
+			/* No message anywhere if throttled, too much flood and
+			 * these only can be LOGNOTICE messages.
+			 */
+			if (!user->throttled) {
+				ASPRINTF(msg, "Dropped client %s %suser %s worker %s %s",
+					 client->identity, client->address,
+					 user->username, client->workername, lazily ? "lazily" : "");
+			}
 		} else {
 			ASPRINTF(msg, "Dropped client %s %s no user worker %s %s",
 				 client->identity, client->address, client->workername,
@@ -5586,9 +5591,15 @@ static void client_auth(ckpool_t *ckp, stratum_instance_t *client, user_instance
 		user->auth_backoff = DEFAULT_AUTH_BACKOFF; /* Reset auth backoff time */
 		user->throttled = false;
 	} else {
-		LOGNOTICE("Client %s %s worker %s failed to authorise as user %s",
-			  client->identity, client->address, client->workername,
-		          user->username);
+		if (user->throttled) {
+			LOGINFO("Client %s %s worker %s failed to authorise as throttled user %s",
+				client->identity, client->address, client->workername,
+			        user->username);
+		} else {
+			LOGNOTICE("Client %s %s worker %s failed to authorise as user %s",
+				  client->identity, client->address, client->workername,
+			          user->username);
+		}
 		user->failed_authtime = time(NULL);
 		user->auth_backoff <<= 1;
 		/* Cap backoff time to 10 mins */
