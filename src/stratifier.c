@@ -8599,6 +8599,7 @@ static void *statsupdate(void *arg)
 			reward, derp, percent;
 		char suffix1[16], suffix5[16], suffix15[16], suffix60[16], cdfield[64];
 		char suffix360[16], suffix1440[16], suffix10080[16];
+		char pcstring[16];
 		int remote_users = 0, remote_workers = 0, idle_workers = 0,
 			cbspace = 0, payouts = 0;
 		long double numer, herp, lns;
@@ -8951,9 +8952,10 @@ static void *statsupdate(void *arg)
 		fprintf(fp, "%s\n", s);
 		dealloc(s);
 
-		percent = round(stats->accounted_diff_shares * 1000 / stats->network_diff) / 10;
-		JSON_CPACK(val, "{sf,sI,sI,sf,sf,sf}",
-			        "diff", percent,
+		percent = stats->accounted_diff_shares * 100 / stats->network_diff;
+		snprintf(pcstring, 15, "%.1f", percent);
+		JSON_CPACK(val, "{ss,sI,sI,sf,sf,sf}",
+			        "diff", pcstring,
 				"accepted", stats->accounted_diff_shares,
 			        "rejected", stats->accounted_rejects,
 			        "lns", rolling_lns,
