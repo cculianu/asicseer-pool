@@ -3307,7 +3307,7 @@ static void _dec_instance_ref(sdata_t *sdata, stratum_instance_t *client, const 
 {
 	char_entry_t *entries = NULL;
 	bool dropped = false;
-	char *msg;
+	char *msg = NULL;
 	int ref;
 
 	ck_wlock(&sdata->instance_lock);
@@ -3317,7 +3317,8 @@ static void _dec_instance_ref(sdata_t *sdata, stratum_instance_t *client, const 
 	if (unlikely(client->dropped && !ref)) {
 		dropped = true;
 		__drop_client(sdata, client, true, &msg);
-		add_msg_entry(&entries, &msg);
+		if (msg)
+			add_msg_entry(&entries, &msg);
 	}
 	ck_wunlock(&sdata->instance_lock);
 
