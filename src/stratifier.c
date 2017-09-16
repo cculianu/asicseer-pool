@@ -3322,7 +3322,8 @@ static void _dec_instance_ref(sdata_t *sdata, stratum_instance_t *client, const 
 	}
 	ck_wunlock(&sdata->instance_lock);
 
-	notice_msg_entries(&entries);
+	if (entries)
+		notice_msg_entries(&entries);
 	/* This should never happen */
 	if (unlikely(ref < 0))
 		LOGERR("Instance ref count dropped below zero from %s %s:%d", file, func, line);
@@ -3541,7 +3542,7 @@ static void drop_client(ckpool_t *ckp, sdata_t *sdata, const int64_t id)
 {
 	char_entry_t *entries = NULL;
 	stratum_instance_t *client;
-	char *msg;
+	char *msg = NULL;
 
 	LOGINFO("Stratifier asked to drop client %"PRId64, id);
 
@@ -3553,13 +3554,15 @@ static void drop_client(ckpool_t *ckp, sdata_t *sdata, const int64_t id)
 		 * now but wait till the reference is dropped */
 		if (!client->ref) {
 			__drop_client(sdata, client, false, &msg);
-			add_msg_entry(&entries, &msg);
+			if (msg)
+				add_msg_entry(&entries, &msg);
 		} else
 			client->dropped = true;
 	}
 	ck_wunlock(&sdata->instance_lock);
 
-	notice_msg_entries(&entries);
+	if (entries)
+		notice_msg_entries(&entries);
 	reap_proxies(ckp, sdata);
 }
 
