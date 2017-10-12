@@ -1180,8 +1180,6 @@ static void submit_transaction_array(ckpool_t *ckp, const json_t *arr)
 	}
 }
 
-static void check_incomplete_wbs(ckpool_t *ckp, sdata_t *sdata);
-
 static void clear_txn(txntable_t *txn)
 {
 	free(txn->data);
@@ -1251,8 +1249,6 @@ static void update_txns(ckpool_t *ckp, sdata_t *sdata, txntable_t *txns, bool lo
 	json_decref(purged_txns);
 
 	if (added || purged) {
-		if (sdata->wbincomplete)
-			check_incomplete_wbs(ckp, sdata);
 		LOGINFO("Stratifier added %d %stransactions and purged %d", added,
 			local ? "" : "remote ", purged);
 	}
@@ -1664,51 +1660,6 @@ out:
 static void __add_to_remote_workbases(sdata_t *sdata, workbase_t *wb)
 {
 	HASH_ADD(hh, sdata->remote_workbases, id, sizeof(int64_t) * 2, wb);
-}
-
-static void check_incomplete_wbs(ckpool_t *ckp, sdata_t *sdata)
-{
-	workbase_t *wb, *tmp, *removed = NULL;
-	int incomplete = 0;
-
-	ck_wlock(&sdata->workbase_lock);
-	HASH_ITER(hh, sdata->remote_workbases, wb, tmp) {
-		if (!wb->incomplete)
-			continue;
-		incomplete++;
-		/* We can't remove a workbase that is currently in use */
-		if (wb->readcount)
-			continue;
-		/* Remove the workbase from the hashlist so we can work on it
-		 * without holding the lock */
-		HASH_DEL(sdata->remote_workbases, wb);
-		ck_wunlock(&sdata->workbase_lock);
-
-		if (rebuild_txns(ckp, sdata, wb)) {
-			LOGINFO("Rebuilt transactions on previously failed remote workinfo");
-			incomplete--;
-		}
-
-		/* Add it to a list of removed workbases, to be returned once
-		 * we exit this HASH_ITER loop. */
-		HASH_ADD(hh, removed, id, sizeof(int64_t) * 2, wb);
-
-		ck_wlock(&sdata->workbase_lock);
-	}
-	/* Return all removed workbases to remote_workbase hashlist */
-	HASH_ITER(hh, removed, wb, tmp) {
-		HASH_DEL(removed, wb);
-		__add_to_remote_workbases(sdata, wb);
-	}
-	ck_wunlock(&sdata->workbase_lock);
-
-	if (incomplete)
-		LOGNOTICE("%d remote workinfo still incomplete", incomplete);
-	else {
-		sdata->wbincomplete = false;
-		if (ckp->proxy)
-			LOGWARNING("Successfully resumed rebuilding transactions into workinfo");
-	}
 }
 
 static void add_remote_base(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb)
