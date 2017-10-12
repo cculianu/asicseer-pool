@@ -1062,8 +1062,9 @@ static void add_base(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb, bool *new_bl
 
 static void broadcast_ping(sdata_t *sdata);
 
-#define REFCOUNT_REMOTE	20
-#define REFCOUNT_LOCAL	5
+#define REFCOUNT_REMOTE		20
+#define REFCOUNT_LOCAL		10
+#define REFCOUNT_RETURNED	5
 
 /* Submit the transactions in node/remote mode so the local btcd has all the
  * transactions that will go into the next blocksolve. */
@@ -1091,11 +1092,16 @@ static bool add_txn(ckpool_t *ckp, sdata_t *sdata, txntable_t **txns, const char
 	ck_wlock(&sdata->txn_lock);
 	HASH_FIND_STR(sdata->txns, hash, txn);
 	if (txn) {
+		/* If we already have this in our transaction table but haven't
+		 * seen it in a while, it is reappearing in work and we should
+		 * propagate it again in update_txns. */
+		if (txn->refcount > REFCOUNT_RETURNED)
+			found = true;
 		if (!local)
 			txn->refcount = REFCOUNT_REMOTE;
 		else if (txn->refcount < REFCOUNT_LOCAL)
 			txn->refcount = REFCOUNT_LOCAL;
-		txn->seen = found = true;
+		txn->seen = true;
 	}
 	ck_wunlock(&sdata->txn_lock);
 
@@ -1118,6 +1124,7 @@ static bool add_txn(ckpool_t *ckp, sdata_t *sdata, txntable_t **txns, const char
 		}
 	}
 
+	txn->seen = true;
 	if (!local || ckp->node)
 		txn->refcount = REFCOUNT_REMOTE;
 	else
@@ -1216,16 +1223,19 @@ static void update_txns(ckpool_t *ckp, sdata_t *sdata, txntable_t *txns, bool lo
 		json_t *txn_val;
 
 		HASH_DEL(txns, tmp);
+		/* Propagate transaction here */
+		JSON_CPACK(txn_val, "{ss,ss}", "hash", tmp->hash, "data", tmp->data);
+		json_array_append_new(txn_array, txn_val);
+
 		/* Check one last time this txn hasn't already been added in the
-		 * interim. */
+		 * interim. This can happen in add_txn intentionally for a
+		 * transaction that has reappeared. */
 		HASH_FIND_STR(sdata->txns, tmp->hash, found);
 		if (found) {
 			clear_txn(tmp);
 			continue;
 		}
-		/* Propagate transaction here */
-		JSON_CPACK(txn_val, "{ss,ss}", "hash", tmp->hash, "data", tmp->data);
-		json_array_append_new(txn_array, txn_val);
+
 		/* Move to the sdata transaction table */
 		HASH_ADD_STR(sdata->txns, hash, tmp);
 		sdata->txns_generated++;
