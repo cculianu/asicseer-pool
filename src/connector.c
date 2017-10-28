@@ -46,8 +46,12 @@ struct client_instance {
 	bool invalid;
 
 	/* For dead_clients list */
-	client_instance_t *next;
-	client_instance_t *prev;
+	client_instance_t *dead_next;
+	client_instance_t *dead_prev;
+
+	client_instance_t *recycled_next;
+	client_instance_t *recycled_prev;
+
 
 	struct sockaddr_storage address_storage;
 	struct sockaddr *address;
@@ -212,7 +216,7 @@ static client_instance_t *recruit_client(cdata_t *cdata)
 	ck_wlock(&cdata->lock);
 	if (cdata->recycled_clients) {
 		client = cdata->recycled_clients;
-		DL_DELETE(cdata->recycled_clients, client);
+		DL_DELETE2(cdata->recycled_clients, client, recycled_prev, recycled_next);
 	} else
 		cdata->clients_generated++;
 	ck_wunlock(&cdata->lock);
@@ -233,7 +237,7 @@ static void __recycle_client(cdata_t *cdata, client_instance_t *client)
 	dealloc(client->buf);
 	memset(client, 0, sizeof(client_instance_t));
 	client->id = -1;
-	DL_APPEND(cdata->recycled_clients, client);
+	DL_APPEND2(cdata->recycled_clients, client, recycled_prev, recycled_next);
 }
 
 static void recycle_client(cdata_t *cdata, client_instance_t *client)
@@ -360,7 +364,7 @@ static int __drop_client(cdata_t *cdata, client_instance_t *client)
 	/* Closing the fd will automatically remove it from the epoll list */
 	Close(client->fd);
 	HASH_DEL(cdata->clients, client);
-	DL_APPEND(cdata->dead_clients, client);
+	DL_APPEND2(cdata->dead_clients, client, dead_prev, dead_next);
 	/* This is the reference to this client's presence in the
 	 * epoll list. */
 	__dec_instance_ref(client);
@@ -439,9 +443,9 @@ static int invalidate_client(ckpool_t *ckp, cdata_t *cdata, client_instance_t *c
 	/* Cull old unused clients lazily when there are no more reference
 	 * counts for them. */
 	ck_wlock(&cdata->lock);
-	DL_FOREACH_SAFE(cdata->dead_clients, client, tmp) {
+	DL_FOREACH_SAFE2(cdata->dead_clients, client, tmp, dead_next) {
 		if (!client->ref) {
-			DL_DELETE(cdata->dead_clients, client);
+			DL_DELETE2(cdata->dead_clients, client, dead_prev, dead_next);
 			LOGINFO("Connector recycling client %"PRId64, client->id);
 			/* We only close the client fd once we're sure there
 			 * are no references to it left to prevent fds being
@@ -1381,7 +1385,7 @@ char *connector_stats(void *data, const int runtime)
 	json_steal_object(val, "clients", subval);
 
 	ck_rlock(&cdata->lock);
-	DL_COUNT(cdata->dead_clients, client, objects);
+	DL_COUNT2(cdata->dead_clients, client, objects, dead_next);
 	generated = cdata->dead_generated;
 	ck_runlock(&cdata->lock);
 
