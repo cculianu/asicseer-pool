@@ -241,8 +241,17 @@ struct stratum_instance {
 	/* Virtualid used as unique local id for passthrough clients */
 	int64_t virtualid;
 
-	stratum_instance_t *next;
-	stratum_instance_t *prev;
+	stratum_instance_t *recycled_next;
+	stratum_instance_t *recycled_prev;
+
+	stratum_instance_t *user_next;
+	stratum_instance_t *user_prev;
+
+	stratum_instance_t *node_next;
+	stratum_instance_t *node_prev;
+
+	stratum_instance_t *remote_next;
+	stratum_instance_t *remote_prev;
 
 	/* Descriptive of ID number and passthrough if any */
 	char identity[128];
@@ -1052,7 +1061,7 @@ static void send_node_workinfo(ckpool_t *ckp, sdata_t *sdata, const workbase_t *
 	json_set_string(wb_val, "coinb2", wb->coinb2);
 
 	ck_rlock(&sdata->instance_lock);
-	DL_FOREACH(sdata->node_instances, client) {
+	DL_FOREACH2(sdata->node_instances, client, node_next) {
 		ckmsg_t *client_msg;
 		smsg_t *msg;
 		json_t *json_msg = json_deep_copy(wb_val);
@@ -1066,7 +1075,7 @@ static void send_node_workinfo(ckpool_t *ckp, sdata_t *sdata, const workbase_t *
 		DL_APPEND(bulk_send, client_msg);
 		messages++;
 	}
-	DL_FOREACH(sdata->remote_instances, client) {
+	DL_FOREACH2(sdata->remote_instances, client, remote_next) {
 		ckmsg_t *client_msg;
 		smsg_t *msg;
 		json_t *json_msg = json_deep_copy(wb_val);
@@ -1315,7 +1324,7 @@ static void send_node_transactions(ckpool_t *ckp, sdata_t *sdata, const json_t *
 	smsg_t *msg;
 
 	ck_rlock(&sdata->instance_lock);
-	DL_FOREACH(sdata->node_instances, client) {
+	DL_FOREACH2(sdata->node_instances, client, node_next) {
 		json_msg = json_deep_copy(txn_val);
 		json_set_string(json_msg, "node.method", stratum_msgs[SM_TRANSACTIONS]);
 		client_msg = ckalloc(sizeof(ckmsg_t));
@@ -1326,7 +1335,7 @@ static void send_node_transactions(ckpool_t *ckp, sdata_t *sdata, const json_t *
 		DL_APPEND(bulk_send, client_msg);
 		messages++;
 	}
-	DL_FOREACH(sdata->remote_instances, client) {
+	DL_FOREACH2(sdata->remote_instances, client, remote_next) {
 		json_msg = json_deep_copy(txn_val);
 		json_set_string(json_msg, "method", stratum_msgs[SM_TRANSACTIONS]);
 		client_msg = ckalloc(sizeof(ckmsg_t));
@@ -1821,7 +1830,7 @@ static void downstream_json(sdata_t *sdata, const json_t *val, const int64_t cli
 	int messages = 0;
 
 	ck_rlock(&sdata->instance_lock);
-	DL_FOREACH(sdata->remote_instances, client) {
+	DL_FOREACH2(sdata->remote_instances, client, remote_next) {
 		ckmsg_t *client_msg;
 		json_t *json_msg;
 		smsg_t *msg;
@@ -2085,7 +2094,7 @@ static void add_remote_base(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb)
 
 	/* Send a copy of this to all OTHER remote trusted servers as well */
 	ck_rlock(&sdata->instance_lock);
-	DL_FOREACH(sdata->remote_instances, client) {
+	DL_FOREACH2(sdata->remote_instances, client, remote_next) {
 		ckmsg_t *client_msg;
 		json_t *json_msg;
 		smsg_t *msg;
@@ -2103,7 +2112,7 @@ static void add_remote_base(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb)
 		DL_APPEND(bulk_send, client_msg);
 		messages++;
 	}
-	DL_FOREACH(sdata->node_instances, client) {
+	DL_FOREACH2(sdata->node_instances, client, node_next) {
 		ckmsg_t *client_msg;
 		json_t *json_msg;
 		smsg_t *msg;
@@ -2291,7 +2300,7 @@ static void send_nodes_block(sdata_t *sdata, const json_t *block_val, const int6
 	skip = subclient(client_id);
 
 	ck_rlock(&sdata->instance_lock);
-	DL_FOREACH(sdata->node_instances, client) {
+	DL_FOREACH2(sdata->node_instances, client, node_next) {
 		ckmsg_t *client_msg;
 		json_t *json_msg;
 		smsg_t *msg;
@@ -2593,7 +2602,7 @@ static void __kill_instance(sdata_t *sdata, stratum_instance_t *client)
 	free(client->password);
 	free(client->useragent);
 	memset(client, 0, sizeof(stratum_instance_t));
-	DL_APPEND(sdata->recycled_instances, client);
+	DL_APPEND2(sdata->recycled_instances, client, recycled_prev, recycled_next);
 }
 
 /* Called with instance_lock held. Note stats.users is protected by
@@ -2653,7 +2662,7 @@ static void __del_client(sdata_t *sdata, stratum_instance_t *client)
 
 	HASH_DEL(sdata->stratum_instances, client);
 	if (user) {
-		DL_DELETE(user->clients, client);
+		DL_DELETE2(user->clients, client, user_prev, user_next );
 		__dec_worker(sdata, user, client->worker_instance);
 	}
 }
@@ -3584,10 +3593,10 @@ static void __drop_client(sdata_t *sdata, stratum_instance_t *client, bool lazil
 	bool parent = false;
 
 	if (unlikely(client->node)) {
-		DL_DELETE(sdata->node_instances, client);
+		DL_DELETE2(sdata->node_instances, client, node_prev, node_next);
 		parent = true;
 	} else if (unlikely(client->trusted)) {
-		DL_DELETE(sdata->remote_instances, client);
+		DL_DELETE2(sdata->remote_instances, client, remote_prev, remote_next);
 		parent = true;
 	} else if (unlikely(client->passthrough))
 		parent = true;
@@ -3660,7 +3669,7 @@ static stratum_instance_t *__recruit_stratum_instance(sdata_t *sdata)
 	stratum_instance_t *client = sdata->recycled_instances;
 
 	if (client)
-		DL_DELETE(sdata->recycled_instances, client);
+		DL_DELETE2(sdata->recycled_instances, client, recycled_prev, recycled_next);
 	else {
 		client = ckzalloc(sizeof(stratum_instance_t));
 		sdata->stratum_generated++;
@@ -4338,7 +4347,7 @@ static void userclients(sdata_t *sdata, const char *buf, int *sockd)
 	client_arr = json_array();
 
 	ck_rlock(&sdata->instance_lock);
-	DL_FOREACH(user->clients, client) {
+	DL_FOREACH2(user->clients, client, user_next) {
 		json_array_append_new(client_arr, json_integer(client->id));
 	}
 	ck_runlock(&sdata->instance_lock);
@@ -4378,7 +4387,7 @@ static void workerclients(sdata_t *sdata, const char *buf, int *sockd)
 	client_arr = json_array();
 
 	ck_rlock(&sdata->instance_lock);
-	DL_FOREACH(user->clients, client) {
+	DL_FOREACH2(user->clients, client, user_next) {
 		if (strcmp(client->workername, workername))
 			continue;
 		json_array_append_new(client_arr, json_integer(client->id));
@@ -4579,7 +4588,7 @@ static void user_clientinfo(sdata_t *sdata, const char *buf, int *sockd)
 	client_arr = json_array();
 
 	ck_rlock(&sdata->instance_lock);
-	DL_FOREACH(user->clients, client) {
+	DL_FOREACH2(user->clients, client, user_next) {
 		json_array_append_new(client_arr, clientinfo(client));
 	}
 	ck_runlock(&sdata->instance_lock);
@@ -4619,7 +4628,7 @@ static void worker_clientinfo(sdata_t *sdata, const char *buf, int *sockd)
 	client_arr = json_array();
 
 	ck_rlock(&sdata->instance_lock);
-	DL_FOREACH(user->clients, client) {
+	DL_FOREACH2(user->clients, client, user_next) {
 		if (strcmp(client->workername, workername))
 			continue;
 		json_array_append_new(client_arr, clientinfo(client));
@@ -5678,7 +5687,7 @@ static user_instance_t *generate_user(ckpool_t *ckp, stratum_instance_t *client,
 	ck_wlock(&sdata->instance_lock);
 	client->user_instance = user;
 	client->worker_instance = worker;
-	DL_APPEND(user->clients, client);
+	DL_APPEND2(user->clients, client, user_prev, user_next);
 	__inc_worker(sdata,user, worker);
 	ck_wunlock(&sdata->instance_lock);
 
@@ -5722,7 +5731,7 @@ static void set_worker_mindiff(ckpool_t *ckp, const char *workername, int mindif
 	 * if we can. Otherwise it will only act as a clamp on next share
 	 * submission. */
 	ck_rlock(&sdata->instance_lock);
-	DL_FOREACH(user->clients, client) {
+	DL_FOREACH2(user->clients, client, user_next) {
 		if (client->worker_instance != worker)
 			continue;
 		/* Per connection suggest diff overrides worker mindiff ugh */
@@ -6912,7 +6921,7 @@ static void add_mining_node(ckpool_t *ckp, sdata_t *sdata, stratum_instance_t *c
 
 	ck_wlock(&sdata->instance_lock);
 	client->node = true;
-	DL_APPEND(sdata->node_instances, client);
+	DL_APPEND2(sdata->node_instances, client, node_prev, node_next);
 	__inc_instance_ref(client);
 	ck_wunlock(&sdata->instance_lock);
 
@@ -6926,7 +6935,7 @@ static void add_remote_server(sdata_t *sdata, stratum_instance_t *client)
 {
 	ck_wlock(&sdata->instance_lock);
 	client->trusted = true;
-	DL_APPEND(sdata->remote_instances, client);
+	DL_APPEND2(sdata->remote_instances, client, remote_prev, remote_next);
 	__inc_instance_ref(client);
 	ck_wunlock(&sdata->instance_lock);
 
