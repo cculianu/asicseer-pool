@@ -1969,6 +1969,54 @@ out:
 	json_decref(val);
 }
 
+static void suggest_diff(ckpool_t *ckp, connsock_t *cs, proxy_instance_t *proxy)
+{
+	json_t *val = NULL, *res_val, *req, *err_val;
+	char *buf = NULL;
+	bool ret;
+
+	JSON_CPACK(req, "{s:i,s:s, s:[I]}",
+		        "id", 42,
+		        "method", "mining.suggest",
+		        "params", ckp->mindiff);
+	ret = send_json_msg(cs, req);
+	json_decref(req);
+	if (!ret) {
+		LOGNOTICE("Proxy %d:%d %s failed to send message in suggest_diff",
+			  proxy->id, proxy->subid, proxy->url);
+		if (cs->fd > 0) {
+			epoll_ctl(proxy->epfd, EPOLL_CTL_DEL, cs->fd, NULL);
+			Close(cs->fd);
+		}
+		return;
+	}
+
+	buf = next_proxy_line(cs, proxy);
+	if (!buf) {
+		LOGNOTICE("Proxy %d:%d %s failed to receive line in suggest_diff",
+			  proxy->id, proxy->subid, proxy->url);
+		return;
+	}
+	ret = parse_method(ckp, proxy, buf);
+	if (!ret) {
+		LOGNOTICE("Proxy %d:%d %s failed to parse method in suggest_diff",
+			  proxy->id, proxy->subid, proxy->url);
+		return;
+	}
+	val = json_msg_result(buf, &res_val, &err_val);
+	dealloc(buf);
+	if (!val) {
+		if (proxy->global) {
+			LOGWARNING("Proxy %d:%d %s failed to get a json result in suggest_diff, got: %s",
+				   proxy->id, proxy->subid, proxy->url, buf);
+		} else {
+			LOGNOTICE("Proxy %d:%d %s failed to get a json result in suggest_diff, got: %s",
+				  proxy->id, proxy->subid, proxy->url, buf);
+		}
+	}
+
+}
+
 static bool proxy_alive(ckpool_t *ckp, proxy_instance_t *proxi, connsock_t *cs,
 			bool pinging)
 {
@@ -2034,6 +2082,8 @@ static bool proxy_alive(ckpool_t *ckp, proxy_instance_t *proxi, connsock_t *cs,
 		goto out;
 	}
 	proxi->authorised = ret = true;
+	if (ckp->mindiff > 1)
+		suggest_diff(ckp, cs, proxi);
 out:
 	if (!ret) {
 		send_stratifier_deadproxy(ckp, proxi->id, proxi->subid);
