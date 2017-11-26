@@ -77,6 +77,19 @@ struct pass_msg {
 typedef struct pass_msg pass_msg_t;
 typedef struct cs_msg cs_msg_t;
 
+/* States of various proxy statuses - connect, subscribe and auth */
+enum proxy_stat {
+	STATUS_INIT = 0,
+	STATUS_SUCCESS,
+	STATUS_FAIL
+};
+
+static const char *proxy_status[] = {
+	"Initial",
+	"Success",
+	"Failed"
+};
+
 /* Per proxied pool instance data */
 struct proxy_instance {
 	UT_hash_handle hh; /* Proxy list */
@@ -136,6 +149,11 @@ struct proxy_instance {
 	int64_t recruit; /* No of recruiting requests in progress */
 	bool alive;
 	bool authorised;
+
+	/* Which of STATUS_* states are these in */
+	enum proxy_stat connect_status;
+	enum proxy_stat subscribe_status;
+	enum proxy_stat auth_status;
 
 	 /* Are we in the middle of a blocked write of this message? */
 	cs_msg_t *sending;
@@ -2044,8 +2062,11 @@ static bool proxy_alive(ckpool_t *ckp, proxy_instance_t *proxi, connsock_t *cs,
 			LOGINFO("Failed to connect to %s:%s in proxy_mode!",
 				cs->url, cs->port);
 		}
+		proxi->connect_status = STATUS_FAIL;
 		goto out;
 	}
+	proxi->connect_status = STATUS_SUCCESS;
+
 	if (ckp->node) {
 		if (!node_stratum(cs, proxi)) {
 			LOGWARNING("Failed initial node setup to %s:%s !",
@@ -2070,8 +2091,11 @@ static bool proxy_alive(ckpool_t *ckp, proxy_instance_t *proxi, connsock_t *cs,
 			LOGWARNING("Failed initial subscribe to %s:%s !",
 				   cs->url, cs->port);
 		}
+		proxi->subscribe_status = STATUS_FAIL;
 		goto out;
 	}
+	proxi->subscribe_status = STATUS_SUCCESS;
+
 	if (!ckp->passthrough)
 		send_subscribe(ckp, proxi);
 	if (!auth_stratum(ckp, cs, proxi)) {
@@ -2079,8 +2103,10 @@ static bool proxy_alive(ckpool_t *ckp, proxy_instance_t *proxi, connsock_t *cs,
 			LOGWARNING("Failed initial authorise to %s:%s with %s:%s !",
 				   cs->url, cs->port, proxi->auth, proxi->pass);
 		}
+		proxi->auth_status = STATUS_FAIL;
 		goto out;
 	}
+	proxi->auth_status = STATUS_SUCCESS;
 	proxi->authorised = ret = true;
 	if (ckp->mindiff > 1)
 		suggest_diff(ckp, cs, proxi);
@@ -2988,6 +3014,9 @@ static json_t *__proxystats(proxy_instance_t *proxy, proxy_instance_t *parent, b
 		json_set_double(val, "accepted", proxy->diff_accepted);
 		json_set_double(val, "rejected", proxy->diff_rejected);
 	}
+	json_set_string(val, "connect", proxy_status[proxy->connect_status]);
+	json_set_string(val, "subscribe", proxy_status[proxy->subscribe_status]);
+	json_set_string(val, "authorise", proxy_status[proxy->auth_status]);
 	json_set_int(val, "lastshare", proxy->last_share.tv_sec);
 	json_set_bool(val, "global", proxy->global);
 	json_set_bool(val, "disabled", proxy->disabled);
