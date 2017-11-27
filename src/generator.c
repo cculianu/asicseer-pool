@@ -77,7 +77,7 @@ struct pass_msg {
 typedef struct pass_msg pass_msg_t;
 typedef struct cs_msg cs_msg_t;
 
-/* States of various proxy statuses - connect, subscribe and auth */
+/* Statuses of various proxy states - connect, subscribe and auth */
 enum proxy_stat {
 	STATUS_INIT = 0,
 	STATUS_SUCCESS,
@@ -154,6 +154,9 @@ struct proxy_instance {
 	enum proxy_stat connect_status;
 	enum proxy_stat subscribe_status;
 	enum proxy_stat auth_status;
+
+	/* Back off from retrying if we fail one of the above */
+	int backoff;
 
 	 /* Are we in the middle of a blocked write of this message? */
 	cs_msg_t *sending;
@@ -1461,8 +1464,13 @@ static bool auth_stratum(ckpool_t *ckp, connsock_t *cs, proxy_instance_t *proxi)
 	if (res_val) {
 		ret = json_is_true(res_val);
 		if (!ret) {
-			LOGWARNING("Proxy %d:%d %s failed to authorise in auth_stratum, got: %s",
-				   proxi->id, proxi->subid, proxi->url, buf);
+			if (proxi->global) {
+				LOGWARNING("Proxy %d:%d %s failed to authorise in auth_stratum, got: %s",
+					   proxi->id, proxi->subid, proxi->url, buf);
+			} else {
+				LOGNOTICE("Proxy %d:%d %s failed to authorise in auth_stratum, got: %s",
+					  proxi->id, proxi->subid, proxi->url, buf);
+			}
 			goto out;
 		}
 	} else {
@@ -1482,11 +1490,6 @@ out:
 				break;
 			parse_method(ckp, proxi, buf);
 		};
-	} else if (!proxi->global) {
-		LOGNOTICE("Disabling userproxy %d:%d %s that failed authorisation as %s",
-			  proxi->id, proxi->subid, proxi->url, proxi->auth);
-		proxi->disabled = true;
-		disable_subproxy(ckp->gdata, proxi->parent, proxi);
 	}
 	/* Jump here if we failed to connect properly and didn't even get to
 	 * try authorising. */
@@ -2035,9 +2038,19 @@ static void suggest_diff(ckpool_t *ckp, connsock_t *cs, proxy_instance_t *proxy)
 
 }
 
+/* Upon failing connnect, subscribe, or auth, back off on the next attempt.
+ * This function should be called on the parent proxy */
+static void proxy_backoff(proxy_instance_t *proxy)
+{
+	/* Add 5 seconds with each backoff, up to maximum of 1 minute */
+	if (proxy->backoff < 60)
+		proxy->backoff += 5;
+}
+
 static bool proxy_alive(ckpool_t *ckp, proxy_instance_t *proxi, connsock_t *cs,
 			bool pinging)
 {
+	proxy_instance_t *parent = proxi->parent;
 	bool ret = false;
 
 	/* Has this proxy already been reconnected? */
@@ -2062,10 +2075,11 @@ static bool proxy_alive(ckpool_t *ckp, proxy_instance_t *proxi, connsock_t *cs,
 			LOGINFO("Failed to connect to %s:%s in proxy_mode!",
 				cs->url, cs->port);
 		}
-		proxi->connect_status = STATUS_FAIL;
+		parent->connect_status = STATUS_FAIL;
+		proxy_backoff(parent);
 		goto out;
 	}
-	proxi->connect_status = STATUS_SUCCESS;
+	parent->connect_status = STATUS_SUCCESS;
 
 	if (ckp->node) {
 		if (!node_stratum(cs, proxi)) {
@@ -2091,10 +2105,11 @@ static bool proxy_alive(ckpool_t *ckp, proxy_instance_t *proxi, connsock_t *cs,
 			LOGWARNING("Failed initial subscribe to %s:%s !",
 				   cs->url, cs->port);
 		}
-		proxi->subscribe_status = STATUS_FAIL;
+		parent->subscribe_status = STATUS_FAIL;
+		proxy_backoff(parent);
 		goto out;
 	}
-	proxi->subscribe_status = STATUS_SUCCESS;
+	parent->subscribe_status = STATUS_SUCCESS;
 
 	if (!ckp->passthrough)
 		send_subscribe(ckp, proxi);
@@ -2103,11 +2118,13 @@ static bool proxy_alive(ckpool_t *ckp, proxy_instance_t *proxi, connsock_t *cs,
 			LOGWARNING("Failed initial authorise to %s:%s with %s:%s !",
 				   cs->url, cs->port, proxi->auth, proxi->pass);
 		}
-		proxi->auth_status = STATUS_FAIL;
+		parent->auth_status = STATUS_FAIL;
+		proxy_backoff(parent);
 		goto out;
 	}
-	proxi->auth_status = STATUS_SUCCESS;
+	parent->auth_status = STATUS_SUCCESS;
 	proxi->authorised = ret = true;
+	parent->backoff = 0;
 	if (ckp->mindiff > 1)
 		suggest_diff(ckp, cs, proxi);
 out:
@@ -2145,6 +2162,10 @@ static void *proxy_recruit(void *arg)
 	bool recruit, alive;
 
 	pthread_detach(pthread_self());
+
+	/* We do this in a separate thread so it's okay to sleep here */
+	if (parent->backoff)
+		sleep(parent->backoff);
 
 retry:
 	recruit = false;
@@ -2208,10 +2229,9 @@ static void *proxy_reconnect(void *arg)
 	ckpool_t *ckp = proxy->ckp;
 
 	pthread_detach(pthread_self());
+	if (proxy->parent->backoff)
+		sleep(proxy->parent->backoff);
 	proxy_alive(ckp, proxy, cs, true);
-	sleep(3);
-	/* Delay resetting this flag to throttle how frequently we can create
-	 * this thread and check proxy_alive */
 	proxy->reconnecting = false;
 	return NULL;
 }
@@ -3014,9 +3034,10 @@ static json_t *__proxystats(proxy_instance_t *proxy, proxy_instance_t *parent, b
 		json_set_double(val, "accepted", proxy->diff_accepted);
 		json_set_double(val, "rejected", proxy->diff_rejected);
 	}
-	json_set_string(val, "connect", proxy_status[proxy->connect_status]);
-	json_set_string(val, "subscribe", proxy_status[proxy->subscribe_status]);
-	json_set_string(val, "authorise", proxy_status[proxy->auth_status]);
+	json_set_string(val, "connect", proxy_status[parent->connect_status]);
+	json_set_string(val, "subscribe", proxy_status[parent->subscribe_status]);
+	json_set_string(val, "authorise", proxy_status[parent->auth_status]);
+	json_set_int(val, "backoff", parent->backoff);
 	json_set_int(val, "lastshare", proxy->last_share.tv_sec);
 	json_set_bool(val, "global", proxy->global);
 	json_set_bool(val, "disabled", proxy->disabled);
