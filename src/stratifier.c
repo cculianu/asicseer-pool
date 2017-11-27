@@ -3622,7 +3622,7 @@ static void __drop_client(sdata_t *sdata, stratum_instance_t *client, bool lazil
 			 * these only can be LOGNOTICE messages.
 			 */
 			if (!user->throttled) {
-				ASPRINTF(msg, "Dropped client %s %suser %s worker %s %s",
+				ASPRINTF(msg, "Dropped client %s %s user %s worker %s %s",
 					 client->identity, client->address,
 					 user->username, client->workername, lazily ? "lazily" : "");
 			}
