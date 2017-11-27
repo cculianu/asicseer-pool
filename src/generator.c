@@ -1334,13 +1334,25 @@ static bool parse_method(ckpool_t *ckp, proxy_instance_t *proxi, const char *msg
 	memset(&err, 0, sizeof(err));
 	val = json_loads(msg, 0, &err);
 	if (!val) {
-		LOGWARNING("JSON decode of msg %s failed(%d): %s", msg, err.line, err.text);
+		if (proxi->global) {
+			LOGWARNING("JSON decode of proxy %d:%s msg %s failed(%d): %s",
+				   proxi->id, proxi->url, msg, err.line, err.text);
+		} else {
+			LOGNOTICE("JSON decode of proxy %d:%s msg %s failed(%d): %s",
+				  proxi->id, proxi->url, msg, err.line, err.text);
+		}
 		goto out;
 	}
 
 	method = json_object_get(val, "method");
 	if (!method) {
-		LOGDEBUG("Failed to find method in json for parse_method");
+		/* Likely a share, look for harmless unhandled methods in
+		 * pool response */
+		if (strstr(msg, "mining.suggest")) {
+			LOGINFO("Unhandled suggest_diff from proxy %d:%s", proxi->id, proxi->url);
+			ret = true;
+		} else
+			LOGDEBUG("Failed to find method in json for parse_method");
 		goto out;
 	}
 	err_val = json_object_get(val, "error");
@@ -1992,12 +2004,11 @@ out:
 
 static void suggest_diff(ckpool_t *ckp, connsock_t *cs, proxy_instance_t *proxy)
 {
-	json_t *val = NULL, *res_val, *req, *err_val;
-	char *buf = NULL;
+	json_t *req;
 	bool ret;
 
 	JSON_CPACK(req, "{s:i,s:s, s:[I]}",
-		        "id", 42,
+		        "id", 41,
 		        "method", "mining.suggest",
 		        "params", ckp->mindiff);
 	ret = send_json_msg(cs, req);
@@ -2009,33 +2020,9 @@ static void suggest_diff(ckpool_t *ckp, connsock_t *cs, proxy_instance_t *proxy)
 			epoll_ctl(proxy->epfd, EPOLL_CTL_DEL, cs->fd, NULL);
 			Close(cs->fd);
 		}
-		return;
 	}
-
-	buf = next_proxy_line(cs, proxy);
-	if (!buf) {
-		LOGNOTICE("Proxy %d:%d %s failed to receive line in suggest_diff",
-			  proxy->id, proxy->subid, proxy->url);
-		return;
-	}
-	ret = parse_method(ckp, proxy, buf);
-	if (!ret) {
-		LOGNOTICE("Proxy %d:%d %s failed to parse method in suggest_diff",
-			  proxy->id, proxy->subid, proxy->url);
-		return;
-	}
-	val = json_msg_result(buf, &res_val, &err_val);
-	dealloc(buf);
-	if (!val) {
-		if (proxy->global) {
-			LOGWARNING("Proxy %d:%d %s failed to get a json result in suggest_diff, got: %s",
-				   proxy->id, proxy->subid, proxy->url, buf);
-		} else {
-			LOGNOTICE("Proxy %d:%d %s failed to get a json result in suggest_diff, got: %s",
-				  proxy->id, proxy->subid, proxy->url, buf);
-		}
-	}
-
+	/* We don't care about the response here. It can get filtered out later
+	 * if it fails upstream. */
 }
 
 /* Upon failing connnect, subscribe, or auth, back off on the next attempt.
