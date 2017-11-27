@@ -771,7 +771,7 @@ int connect_socket(char *url, char *port)
 		break;
 	}
 	if (p == NULL) {
-		LOGNOTICE("Failed to connect to %s:%s", url, port);
+		LOGINFO("Failed to connect to %s:%s", url, port);
 		sockd = -1;
 	}
 	freeaddrinfo(servinfo);
