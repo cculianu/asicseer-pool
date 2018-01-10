@@ -1862,7 +1862,7 @@ static void add_node_base(ckpool_t *ckp, json_t *val, bool trusted, int64_t clie
 /* Calculate share diff and fill in hash and swap. Need to hold workbase read count */
 static double
 share_diff(char *coinbase, const uchar *enonce1bin, const workbase_t *wb, const char *nonce2,
-	   const uint32_t ntime32, const uint32_t version_mask, const char *nonce,
+	   const uint32_t ntime32, uint32_t version_mask, const char *nonce,
 	   uchar *hash, uchar *swap, int *cblen)
 {
 	unsigned char merkle_root[32], merkle_sha[64];
@@ -1897,13 +1897,9 @@ share_diff(char *coinbase, const uchar *enonce1bin, const workbase_t *wb, const 
 
 	/* Update nVersion when version_mask is in use */
 	if (version_mask) {
-		uint32_t version;
-
+		version_mask = htobe32(version_mask);
 		data32 = (uint32_t *)data;
-		version = be32toh(*data32);
-		version |= version_mask;
-		LOGDEBUG("Vmask %u version changed to %08x", version_mask, version);
-		*data32 = htobe32(version);
+		*data32 |= version_mask;
 	}
 
 	/* Insert the nonce value into the data */
