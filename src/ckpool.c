@@ -1444,8 +1444,8 @@ static void parse_config(ckpool_t *ckp)
 {
 	json_t *json_conf, *arr_val;
 	json_error_t err_val;
+	char *url, *vmask;
 	int arr_size;
-	char *url;
 
 	json_conf = json_load_file(ckp->config, JSON_DISABLE_EOF_CHECK, &err_val);
 	if (!json_conf) {
@@ -1469,6 +1469,9 @@ static void parse_config(ckpool_t *ckp)
 	json_get_int(&ckp->nonce1length, json_conf, "nonce1length");
 	json_get_int(&ckp->nonce2length, json_conf, "nonce2length");
 	json_get_int(&ckp->update_interval, json_conf, "update_interval");
+	json_get_string(&vmask, json_conf, "version_mask");
+	if (vmask && strlen(vmask) && validhex(vmask))
+		sscanf(vmask, "%x", &ckp->version_mask);
 	/* Look for an array first and then a single entry */
 	arr_val = json_object_get(json_conf, "serverurl");
 	if (!parse_serverurls(ckp, arr_val)) {
