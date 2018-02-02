@@ -59,7 +59,7 @@ bool validate_address(connsock_t *cs, const char *address)
 			}
 		}
 		if (!found) {
-			LOGNOTICE("Invalid char %.1s passed to validate_address", &c);
+			LOGINFO("Invalid char %.1s passed to validate_address", &c);
 			return ret;
 		}
 	}
