@@ -8427,6 +8427,18 @@ static void update_workerstats(ckpool_t *ckp, sdata_t *sdata)
 	}
 }
 
+/* Creates an initial blank entry in the fname file name to allow creating an
+ * empty file if no entries exist after this point */
+static void init_log_entry(log_entry_t **entries, char **fname)
+{
+	log_entry_t *entry = ckalloc(sizeof(log_entry_t));
+
+	entry->fname = *fname;
+	*fname = NULL;
+	entry->buf = strdup("");
+	DL_APPEND(*entries, entry);
+}
+
 static void add_log_entry(log_entry_t **entries, char **fname, char **buf)
 {
 	log_entry_t *entry = ckalloc(sizeof(log_entry_t));
@@ -8612,7 +8624,7 @@ static void *statsupdate(void *arg)
 		int remote_users = 0, remote_workers = 0, idle_workers = 0,
 			cbspace = 0, payouts = 0;
 		long double numer, herp, lns;
-		log_entry_t *log_entries = NULL;
+		log_entry_t *log_entries = NULL, *miner_entries = NULL;
 		char_entry_t *char_list = NULL;
 		stratum_instance_t *client;
 		user_instance_t *user;
@@ -8667,6 +8679,9 @@ static void *statsupdate(void *arg)
 		if (likely(client))
 			__inc_instance_ref(client);
 		ck_wunlock(&sdata->instance_lock);
+
+		ASPRINTF(&fname, "%s/pool/pool.miners", ckp->logdir);
+		init_log_entry(&miner_entries, &fname);
 
 		while (client) {
 			tv_time(&now);
@@ -8894,6 +8909,7 @@ static void *statsupdate(void *arg)
 
 		/* Dump log entries out of instance_lock */
 		dump_log_entries(&log_entries);
+		dump_log_entries(&miner_entries);
 		notice_msg_entries(&char_list);
 
 		ghs1 = stats->dsps1 * nonces;
