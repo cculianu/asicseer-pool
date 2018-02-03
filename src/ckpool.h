@@ -110,6 +110,7 @@ struct log_entry {
 	log_entry_t *prev;
 	char *fname;
 	char *buf;
+	double comparator;
 };
 
 struct server_instance {

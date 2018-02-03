@@ -8436,10 +8436,17 @@ static void init_log_entry(log_entry_t **entries, char **fname)
 	entry->fname = *fname;
 	*fname = NULL;
 	entry->buf = strdup("");
+	entry->comparator = 0;
 	DL_APPEND(*entries, entry);
 }
 
-static void add_log_entry(log_entry_t **entries, char **fname, char **buf)
+static double log_ascending(log_entry_t *a, log_entry_t *b)
+{
+	return (b->comparator - a->comparator);
+}
+
+static void add_log_entry_ascending(log_entry_t **entries, char **fname, char **buf,
+				     double comparator)
 {
 	log_entry_t *entry = ckalloc(sizeof(log_entry_t));
 
@@ -8447,7 +8454,8 @@ static void add_log_entry(log_entry_t **entries, char **fname, char **buf)
 	*fname = NULL;
 	entry->buf = *buf;
 	*buf = NULL;
-	DL_APPEND(*entries, entry);
+	entry->comparator = comparator;
+	DL_INSERT_INORDER(*entries, entry, log_ascending);
 }
 
 static void dump_log_entries(log_entry_t **entries)
@@ -8888,7 +8896,7 @@ static void *statsupdate(void *arg)
 			ASPRINTF(&fname, "%s/users/%s", ckp->logdir, user->username);
 			s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER | JSON_EOL |
 				 JSON_REAL_PRECISION(16) | JSON_INDENT(1));
-			add_log_entry(&log_entries, &fname, &s);
+			add_log_entry_ascending(&log_entries, &fname, &s, user->dsps1);
 			json_decref(val);
 			if (ckp->remote)
 				upstream_workers(ckp, user);
