@@ -554,6 +554,21 @@ static void add_msg_entry(char_entry_t **entries, char **buf)
 	DL_APPEND(*entries, entry);
 }
 
+static double msg_ascending(char_entry_t *a, char_entry_t *b)
+{
+	return (a->comparator - b->comparator);
+}
+
+static void add_msg_entry_ascending(char_entry_t **entries, char **buf, double comparator)
+{
+	char_entry_t *entry = ckalloc(sizeof(char_entry_t));
+
+	entry->buf = *buf;
+	*buf = NULL;
+	entry->comparator = comparator;
+	DL_INSERT_INORDER(*entries, entry, msg_ascending);
+}
+
 static void notice_msg_entries(char_entry_t **entries)
 {
 	char_entry_t *entry, *tmpentry;
@@ -8926,8 +8941,10 @@ static void *statsupdate(void *arg)
 				s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER |
 					JSON_COMPACT | JSON_REAL_PRECISION(16));
 				if (!idle) {
+					/* It's convenient to see the biggest hashers last
+					 * when tail'ing the log as it's being written. */
 					ASPRINTF(&sp, "User %s:%s", user->username, s);
-					add_msg_entry(&char_list, &sp);
+					add_msg_entry_ascending(&char_list, &sp, user->dsps1);
 				}
 				ASPRINTF(&sp, "%s:%s\n", user->username, s);
 				dealloc(s);

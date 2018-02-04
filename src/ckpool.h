@@ -101,6 +101,7 @@ struct char_entry {
 	char_entry_t *next;
 	char_entry_t *prev;
 	char *buf;
+	double comparator;
 };
 
 typedef struct log_entry log_entry_t;
