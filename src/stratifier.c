@@ -9044,7 +9044,7 @@ static void *statsupdate(void *arg)
 		fprintf(fp, "%s\n", s);
 		dealloc(s);
 
-		percent = stats->accounted_diff_shares * 100 / stats->network_diff;
+		percent = (double)stats->accounted_diff_shares * 100 / (double)stats->network_diff;
 		snprintf(pcstring, 15, "%.1f", percent);
 		JSON_CPACK(val, "{ss,sI,sI,sf,sf,sf}",
 			        "diff", pcstring,
