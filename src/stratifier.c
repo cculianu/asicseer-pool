@@ -8440,13 +8440,13 @@ static void init_log_entry(log_entry_t **entries, char **fname)
 	DL_APPEND(*entries, entry);
 }
 
-static double log_ascending(log_entry_t *a, log_entry_t *b)
+static double log_descending(log_entry_t *a, log_entry_t *b)
 {
 	return (b->comparator - a->comparator);
 }
 
-static void add_log_entry_ascending(log_entry_t **entries, char **fname, char **buf,
-				     double comparator)
+static void add_log_entry_descending(log_entry_t **entries, char **fname, char **buf,
+			            double comparator)
 {
 	log_entry_t *entry = ckalloc(sizeof(log_entry_t));
 
@@ -8455,26 +8455,61 @@ static void add_log_entry_ascending(log_entry_t **entries, char **fname, char **
 	entry->buf = *buf;
 	*buf = NULL;
 	entry->comparator = comparator;
-	DL_INSERT_INORDER(*entries, entry, log_ascending);
+	DL_INSERT_INORDER(*entries, entry, log_descending);
+}
+
+/* No filename associated with each entry in this variant */
+static void add_onelog_entry_descending(log_entry_t **entries, char **buf,
+				     double comparator)
+{
+	log_entry_t *entry = ckzalloc(sizeof(log_entry_t));
+
+	entry->buf = *buf;
+	*buf = NULL;
+	entry->comparator = comparator;
+	DL_INSERT_INORDER(*entries, entry, log_descending);
 }
 
 static void dump_log_entries(log_entry_t **entries)
 {
 	log_entry_t *entry, *tmpentry;
+	char *fname;
 	FILE *fp;
 
 	DL_FOREACH_SAFE(*entries, entry, tmpentry) {
 		DL_DELETE(*entries, entry);
-		fp = fopen(entry->fname, "we");
+		fname = entry->fname;
+		fp = fopen(fname, "we");
 		if (likely(fp)) {
 			fprintf(fp, "%s", entry->buf);
 			fclose(fp);
 		} else
-			LOGERR("Failed to fopen %s in dump_log_entries", entry->fname);
+			LOGERR("Failed to fopen %s in dump_log_entries", fname);
 		free(entry->fname);
 		free(entry->buf);
 		free(entry);
 	}
+}
+
+static void dump_onelog_entries(char **fname, log_entry_t **entries)
+{
+	log_entry_t *entry, *tmpentry;
+	FILE *fp = fopen(*fname, "we");
+
+	if (unlikely(!fp)) {
+		LOGERR("Failed to fopen %s in dump_onelog_entries", *fname);
+		return;
+	}
+	free(*fname);
+
+	DL_FOREACH_SAFE(*entries, entry, tmpentry) {
+		DL_DELETE(*entries, entry);
+		fprintf(fp, "%s", entry->buf);
+		free(entry->buf);
+		free(entry);
+	}
+
+	fclose(fp);
 }
 
 static void upstream_workers(ckpool_t *ckp, user_instance_t *user)
@@ -8631,9 +8666,9 @@ static void *statsupdate(void *arg)
 		char pcstring[16];
 		int remote_users = 0, remote_workers = 0, idle_workers = 0,
 			cbspace = 0, payouts = 0;
-		long double numer, herp, lns;
 		log_entry_t *log_entries = NULL, *miner_entries = NULL;
 		char_entry_t *char_list = NULL;
+		long double numer, herp, lns;
 		stratum_instance_t *client;
 		user_instance_t *user;
 		char *fname, *s, *sp;
@@ -8736,8 +8771,8 @@ static void *statsupdate(void *arg)
 		user = NULL;
 
 		while ((user = next_user(sdata, user)) != NULL) {
+			bool idle = false, inactive = false;
 			worker_instance_t *worker;
-			bool idle = false;
 			json_t *user_array;
 
 			if (!user->authorised)
@@ -8822,6 +8857,8 @@ static void *statsupdate(void *arg)
 			if (per_tdiff > 60) {
 				decay_user(user, 0, &now);
 				idle = true;
+				if (per_tdiff > 600)
+					inactive = true;
 			}
 			ghs = user->dsps1 * nonces;
 			suffix_string(ghs, suffix1, 16, 0);
@@ -8885,18 +8922,22 @@ static void *statsupdate(void *arg)
 					remote_users++;
 			}
 
-			if (!idle) {
+			if (!inactive) {
 				s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER |
 					JSON_COMPACT | JSON_REAL_PRECISION(16));
-				ASPRINTF(&sp, "User %s:%s", user->username, s);
+				if (!idle) {
+					ASPRINTF(&sp, "User %s:%s", user->username, s);
+					add_msg_entry(&char_list, &sp);
+				}
+				ASPRINTF(&sp, "%s:%s\n", user->username, s);
 				dealloc(s);
-				add_msg_entry(&char_list, &sp);
+				add_onelog_entry_descending(&miner_entries, &sp, user->dsps1);
 			}
 			json_object_set_new_nocheck(val, "worker", user_array);
 			ASPRINTF(&fname, "%s/users/%s", ckp->logdir, user->username);
 			s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER | JSON_EOL |
 				 JSON_REAL_PRECISION(16) | JSON_INDENT(1));
-			add_log_entry_ascending(&log_entries, &fname, &s, user->dsps1);
+			add_log_entry_descending(&log_entries, &fname, &s, user->dsps1);
 			json_decref(val);
 			if (ckp->remote)
 				upstream_workers(ckp, user);
@@ -8917,7 +8958,8 @@ static void *statsupdate(void *arg)
 
 		/* Dump log entries out of instance_lock */
 		dump_log_entries(&log_entries);
-		dump_log_entries(&miner_entries);
+		ASPRINTF(&fname, "%s/pool/pool.miners", ckp->logdir);
+		dump_onelog_entries(&fname, &miner_entries);
 		notice_msg_entries(&char_list);
 
 		ghs1 = stats->dsps1 * nonces;
