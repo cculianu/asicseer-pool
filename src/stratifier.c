@@ -389,10 +389,10 @@ static const char *ckdb_seq_names[] = {
 struct stratifier_data {
 	ckpool_t *ckp;
 
-	char pubkeytxnbin[25];
-	int pubkeytxnlen;
-	char donkeytxnbin[25];
-	int donkeytxnlen;
+	char txnbin[40];
+	int txnlen;
+	char dontxnbin[40];
+	int dontxnlen;
 
 	pool_stats_t stats;
 	/* Protects changes to pool stats */
@@ -615,9 +615,9 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 	*u64 = htole64(g64);
 	wb->coinb2len += 8;
 
-	wb->coinb2bin[wb->coinb2len++] = sdata->pubkeytxnlen;
-	memcpy(wb->coinb2bin + wb->coinb2len, sdata->pubkeytxnbin, sdata->pubkeytxnlen);
-	wb->coinb2len += sdata->pubkeytxnlen;
+	wb->coinb2bin[wb->coinb2len++] = sdata->txnlen;
+	memcpy(wb->coinb2bin + wb->coinb2len, sdata->txnbin, sdata->txnlen);
+	wb->coinb2len += sdata->txnlen;
 
 	if (wb->insert_witness) {
 		// 0 value
@@ -636,9 +636,9 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 		*u64 = htole64(d64);
 		wb->coinb2len += 8;
 
-		wb->coinb2bin[wb->coinb2len++] = sdata->donkeytxnlen;
-		memcpy(wb->coinb2bin + wb->coinb2len, sdata->donkeytxnbin, sdata->donkeytxnlen);
-		wb->coinb2len += sdata->donkeytxnlen;
+		wb->coinb2bin[wb->coinb2len++] = sdata->dontxnlen;
+		memcpy(wb->coinb2bin + wb->coinb2len, sdata->dontxnbin, sdata->dontxnlen);
+		wb->coinb2len += sdata->dontxnlen;
 	}
 
 	wb->coinb2len += 4; // Blank lock
@@ -2354,8 +2354,8 @@ static sdata_t *duplicate_sdata(const sdata_t *sdata)
 	dsdata->ckp = sdata->ckp;
 
 	/* Copy the transaction binaries for workbase creation */
-	memcpy(dsdata->pubkeytxnbin, sdata->pubkeytxnbin, 25);
-	memcpy(dsdata->donkeytxnbin, sdata->donkeytxnbin, 25);
+	memcpy(dsdata->txnbin, sdata->txnbin, 40);
+	memcpy(dsdata->dontxnbin, sdata->dontxnbin, 40);
 
 	/* Use the same work queues for all subproxies */
 	dsdata->ssends = sdata->ssends;
@@ -8597,23 +8597,11 @@ void *stratifier(void *arg)
 
 		/* Store this for use elsewhere */
 		hex2bin(scriptsig_header_bin, scriptsig_header, 41);
-		if (ckp->script) {
-			address_to_scripttxn(sdata->pubkeytxnbin, ckp->btcaddress);
-			sdata->pubkeytxnlen = 23;
-		} else {
-			address_to_pubkeytxn(sdata->pubkeytxnbin, ckp->btcaddress);
-			sdata->pubkeytxnlen = 25;
-		}
+		sdata->txnlen = address_to_txn(sdata->txnbin, ckp->btcaddress, ckp->script, ckp->segwit);
 
 		if (generator_checkaddr(ckp, ckp->donaddress, &ckp->donscript, &ckp->donsegwit)) {
 			ckp->donvalid = true;
-			if (ckp->donscript) {
-				sdata->donkeytxnlen = 23;
-				address_to_scripttxn(sdata->donkeytxnbin, ckp->donaddress);
-			} else {
-				sdata->donkeytxnlen = 25;
-				address_to_pubkeytxn(sdata->donkeytxnbin, ckp->donaddress);
-			}
+			sdata->dontxnlen = address_to_txn(sdata->dontxnbin, ckp->donaddress, ckp->script, ckp->segwit);
 		}
 	}
 
