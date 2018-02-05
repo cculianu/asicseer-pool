@@ -1730,7 +1730,9 @@ char *http_base64(const char *src)
 	return (str);
 }
 
-void address_to_pubkeytxn(char *pkh, const char *addr)
+/* It's assumed that there is no chance of sending invalid chars to these
+ * functions as they should have been checked beforehand. */
+static void address_to_pubkeytxn(char *pkh, const char *addr)
 {
 	char b58bin[25] = {};
 
@@ -1743,7 +1745,7 @@ void address_to_pubkeytxn(char *pkh, const char *addr)
 	pkh[24] = 0xac;
 }
 
-void address_to_scripttxn(char *psh, const char *addr)
+static void address_to_scripttxn(char *psh, const char *addr)
 {
 	char b58bin[25] = {};
 
@@ -1752,6 +1754,22 @@ void address_to_scripttxn(char *psh, const char *addr)
 	psh[1] = 0x14;
 	memcpy(&psh[2], &b58bin[1], 20);
 	psh[22] = 0x87;
+}
+
+/* Convert an address to a transaction and return the length of the transaction */
+int address_to_txn(char *p2h, const char *addr, const bool script, const bool segwit)
+{
+	if (unlikely(segwit)) {
+		/* It should be impossible to hit this for now */
+		LOGEMERG("Segwit bech32 address passed to address_to_txn while unsupported.");
+		return 0;
+	}
+	if (script) {
+		address_to_scripttxn(p2h, addr);
+		return 23;
+	}
+	address_to_pubkeytxn(p2h, addr);
+	return 25;
 }
 
 /*  For encoding nHeight into coinbase, return how many bytes were used */
