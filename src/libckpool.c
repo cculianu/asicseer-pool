@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2016 Con Kolivas
+ * Copyright 2014-2018 Con Kolivas
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
@@ -1743,15 +1743,15 @@ void address_to_pubkeytxn(char *pkh, const char *addr)
 	pkh[24] = 0xac;
 }
 
-void address_to_scripttxn(char *pkh, const char *addr)
+void address_to_scripttxn(char *psh, const char *addr)
 {
 	char b58bin[25] = {};
 
 	b58tobin(b58bin, addr);
-	pkh[0] = 0xa9;
-	pkh[1] = 0x14;
-	memcpy(&pkh[2], &b58bin[1], 20);
-	pkh[22] = 0x87;
+	psh[0] = 0xa9;
+	psh[1] = 0x14;
+	memcpy(&psh[2], &b58bin[1], 20);
+	psh[22] = 0x87;
 }
 
 /*  For encoding nHeight into coinbase, return how many bytes were used */

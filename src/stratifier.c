@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2017 Con Kolivas
+ * Copyright 2014-2018 Con Kolivas
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
@@ -157,7 +157,9 @@ struct user_instance {
 	int id;
 	char *secondaryuserid;
 	bool btcaddress;
-	char pubkeytxnbin[25];
+	bool script;
+	bool segwit;
+	char pubkeytxnbin[40];
 	int pubkeytxnlen;
 
 	/* A linked list of all connected instances of this user */
@@ -5558,12 +5560,6 @@ static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 
 #define DEFAULT_AUTH_BACKOFF	(3)  /* Set initial backoff to 3 seconds */
 
-/* Braindead check to see if this btcaddress is an M of N script address. */
-static bool script_address(const char *btcaddress)
-{
-	return btcaddress[0] == '3';
-}
-
 static user_instance_t *__create_user(sdata_t *sdata, const char *username)
 {
 	user_instance_t *user = ckzalloc(sizeof(user_instance_t));
@@ -5599,10 +5595,12 @@ static user_instance_t *get_create_user(sdata_t *sdata, const char *username, bo
 
 	/* Is this a btc address based username? */
 	if (!ckp->proxy && (*new_user || !user->btcaddress) && (len > 26 && len < 35)) {
-		user->btcaddress = generator_checkaddr(ckp, username);
+		user->btcaddress = generator_checkaddr(ckp, username, &user->script, &user->segwit);
+		if (user->segwit) /* Bech32 addresses currently unsupported */
+			user->btcaddress = false;
 		if (user->btcaddress) {
 			/* Cache the transaction for use in generation */
-			if (script_address(username)) {
+			if (user->script) {
 				address_to_scripttxn(user->pubkeytxnbin, username);
 				user->pubkeytxnlen = 23;
 			} else {
@@ -9349,14 +9347,18 @@ void *stratifier(void *arg)
 		cksleep_ms(10);
 
 	if (!ckp->proxy) {
-		if (!generator_checkaddr(ckp, ckp->btcaddress)) {
+		if (!generator_checkaddr(ckp, ckp->btcaddress, &ckp->script, &ckp->segwit)) {
 			LOGEMERG("Fatal: btcaddress invalid according to bitcoind");
+			goto out;
+		}
+		if (ckp->segwit) {
+			LOGEMERG("Fatal: bech32 addresses not currently supported");
 			goto out;
 		}
 
 		/* Store this for use elsewhere */
 		hex2bin(scriptsig_header_bin, scriptsig_header, 41);
-		if (script_address(ckp->btcaddress)) {
+		if (ckp->script) {
 			address_to_scripttxn(sdata->pubkeytxnbin, ckp->btcaddress);
 			sdata->pubkeytxnlen = 23;
 		} else {
@@ -9366,9 +9368,9 @@ void *stratifier(void *arg)
 
 #if 0
 		/* FIXME Fee is currently disabled. Donvalid will be false */
-		if (generator_checkaddr(ckp, ckp->donaddress)) {
+		if (generator_checkaddr(ckp, ckp->donaddress, &ckp->donscript, &ckp->donsegwit)) {
 			ckp->donvalid = true;
-			if (script_address(ckp->donaddress)) {
+			if (ckp->donscript) {
 				sdata->donkeytxnlen = 23;
 				address_to_scripttxn(sdata->donkeytxnbin, ckp->donaddress);
 			} else {

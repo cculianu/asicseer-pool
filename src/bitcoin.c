@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2017 Con Kolivas
+ * Copyright 2014-2018 Con Kolivas
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
@@ -16,7 +16,6 @@
 #include "bitcoin.h"
 #include "stratifier.h"
 
-static const char *b58chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 static char* understood_rules[] = {"segwit"};
 
 static bool check_required_rule(const char* rule)
@@ -32,36 +31,15 @@ static bool check_required_rule(const char* rule)
 
 /* Take a bitcoin address and do some sanity checks on it, then send it to
  * bitcoind to see if it's a valid address */
-bool validate_address(connsock_t *cs, const char *address)
+bool validate_address(connsock_t *cs, const char *address, bool *script, bool *segwit)
 {
-	json_t *val, *res_val, *valid_val;
+	json_t *val, *res_val, *valid_val, *tmp_val;
 	char rpc_req[128];
 	bool ret = false;
-	int len, i, j;
 
 	if (unlikely(!address)) {
 		LOGWARNING("Null address passed to validate_address");
 		return ret;
-	}
-	len = strlen(address);
-	if (len < 27 || len > 36) {
-		LOGWARNING("Invalid address length %d passed to validate_address", len);
-		return ret;
-	}
-	for (i = 0; i < len; i++) {
-		char c = address[i];
-		bool found = false;
-
-		for (j = 0; j < 58; j++) {
-			if (c == b58chars[j]) {
-				found = true;
-				break;
-			}
-		}
-		if (!found) {
-			LOGNOTICE("Invalid char %.1s passed to validate_address", &c);
-			return ret;
-		}
 	}
 
 	snprintf(rpc_req, 128, "{\"method\": \"validateaddress\", \"params\": [\"%s\"]}\n", address);
@@ -80,12 +58,27 @@ bool validate_address(connsock_t *cs, const char *address)
 		LOGERR("Failed to get isvalid json response to validate_address");
 		goto out;
 	}
-	if (!json_is_true(valid_val))
+	if (!json_is_true(valid_val)) {
 		LOGDEBUG("Bitcoin address %s is NOT valid", address);
-	else {
-		LOGDEBUG("Bitcoin address %s IS valid", address);
-		ret = true;
+		goto out;
 	}
+	ret = true;
+	tmp_val = json_object_get(res_val, "isscript");
+	if (unlikely(!tmp_val)) {
+		/* All recent bitcoinds should support this, if not, look for
+		 * a 3x address to at least support it on mainnet */
+		LOGDEBUG("No isscript support from bitcoind");
+		if (address[0] == '3')
+			*script = true;
+		goto out;
+	}
+	*script = json_is_true(tmp_val);
+	tmp_val = json_object_get(res_val, "iswitness");
+	if (unlikely(!tmp_val))
+		goto out;
+	*segwit = json_is_true(tmp_val);
+	LOGDEBUG("Bitcoin address %s IS valid%s%s", address, *script ? " script" : "",
+		 *segwit ? " segwit" : "");
 out:
 	if (val)
 		json_decref(val);
