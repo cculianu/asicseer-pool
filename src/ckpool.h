@@ -297,7 +297,7 @@ enum stratum_msgtype {
 	SM_SHAREERR,
 	SM_WORKERSTATS,
 	SM_REQTXNS,
-	SM_VERSIONMASK,
+	SM_CONFIGURE,
 	SM_NONE
 };
 
@@ -324,6 +324,7 @@ static const char __maybe_unused *stratum_msgs[] = {
 	"shareerr",
 	"workerstats",
 	"reqtxns",
+	"mining.configure",
 	""
 };
 

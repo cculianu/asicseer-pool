@@ -5707,18 +5707,6 @@ static void stratum_send_diff(sdata_t *sdata, const stratum_instance_t *client)
 }
 
 /* Needs to be entered with client holding a ref count. */
-static void stratum_send_version_mask(sdata_t *sdata, const stratum_instance_t *client)
-{
-	char version_str[12];
-	json_t *json_msg;
-
-	sprintf(version_str, "%08x", client->ckp->version_mask);
-	JSON_CPACK(json_msg, "{s[s]soss}", "params", version_str, "id", json_null(),
-		   "method", "mining.set_version_mask");
-	stratum_add_send(sdata, json_msg, client->id, SM_VERSIONMASK);
-}
-
-/* Needs to be entered with client holding a ref count. */
 static void stratum_send_message(sdata_t *sdata, const stratum_instance_t *client, const char *msg)
 {
 	json_t *json_msg;
@@ -6675,6 +6663,23 @@ static void parse_method(ckpool_t *ckp, sdata_t *sdata, stratum_instance_t *clie
 		}
 		jp = create_json_params(client_id, method_val, params_val, id_val);
 		ckmsgq_add(sdata->sauthq, jp);
+		return;
+	}
+
+        if (cmdmatch(method, "mining.configure")) {
+		json_t *val, *result_val;
+		char version_str[12];
+
+		LOGINFO("Mining configure requested from %s %s", client->identity,
+			client->address);
+		sprintf(version_str, "%08x", ckp->version_mask);
+		val = json_object();
+		JSON_CPACK(result_val, "{sbss}", "version-rolling", json_true(),
+			   "version-rolling.mask", version_str);
+		json_object_set_new_nocheck(val, "result", result_val);
+		json_object_set_nocheck(val, "id", id_val);
+		json_object_set_new_nocheck(val, "error", json_null());
+		stratum_add_send(sdata, val, client_id, SM_CONFIGURE);
 		return;
 	}
 
@@ -7730,9 +7735,6 @@ static void sauth_process(ckpool_t *ckp, json_params_t *jp)
 		}
 	}
 
-	/* Set block version mask if needed */
-	if (ckp->version_mask)
-		stratum_send_version_mask(sdata, client);
 out:
 	dec_instance_ref(sdata, client);
 out_noclient:
