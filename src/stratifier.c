@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2017 Con Kolivas
+ * Copyright 2014-2018 Con Kolivas
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
@@ -113,6 +113,8 @@ struct user_instance {
 	int id;
 	char *secondaryuserid;
 	bool btcaddress;
+	bool script;
+	bool segwit;
 
 	/* A linked list of all connected instances of this user */
 	stratum_instance_t *clients;
@@ -5328,7 +5330,9 @@ static user_instance_t *generate_user(ckpool_t *ckp, stratum_instance_t *client,
 
 	/* Is this a btc address based username? */
 	if (!ckp->proxy && (new_user || !user->btcaddress) && (len > 26 && len < 35))
-		user->btcaddress = generator_checkaddr(ckp, username);
+		user->btcaddress = generator_checkaddr(ckp, username, &user->script, &user->segwit);
+	if (user->segwit) /* Bech32 addresses currently unsupported */
+		user->btcaddress = false;
 	if (new_user) {
 		LOGNOTICE("Added new user %s%s", username, user->btcaddress ?
 			  " as address based registration" : "");
@@ -6834,7 +6838,9 @@ static user_instance_t *generate_remote_user(ckpool_t *ckp, const char *workerna
 
 	/* Is this a btc address based username? */
 	if (!ckp->proxy && (new_user || !user->btcaddress) && (len > 26 && len < 35))
-		user->btcaddress = generator_checkaddr(ckp, username);
+		user->btcaddress = generator_checkaddr(ckp, username, &user->script, &user->segwit);
+	if (user->segwit)
+		user->btcaddress = false;
 	if (new_user) {
 		LOGNOTICE("Added new remote user %s%s", username, user->btcaddress ?
 			  " as address based registration" : "");
@@ -8605,13 +8611,6 @@ static void read_poolstats(ckpool_t *ckp, int *tvsec_diff)
 	}
 }
 
-/* Braindead check to see if this btcaddress is an M of N script address which
- * is currently unsupported as a generation address. */
-static bool script_address(const char *btcaddress)
-{
-	return btcaddress[0] == '3';
-}
-
 void *stratifier(void *arg)
 {
 	proc_instance_t *pi = (proc_instance_t *)arg;
@@ -8635,14 +8634,18 @@ void *stratifier(void *arg)
 		cksleep_ms(10);
 
 	if (!ckp->proxy) {
-		if (!generator_checkaddr(ckp, ckp->btcaddress)) {
+		if (!generator_checkaddr(ckp, ckp->btcaddress, &ckp->script, &ckp->segwit)) {
 			LOGEMERG("Fatal: btcaddress invalid according to bitcoind");
+			goto out;
+		}
+		if (ckp->segwit) {
+			LOGEMERG("Fatal: bech32 addresses not currently supported");
 			goto out;
 		}
 
 		/* Store this for use elsewhere */
 		hex2bin(scriptsig_header_bin, scriptsig_header, 41);
-		if (script_address(ckp->btcaddress)) {
+		if (ckp->script) {
 			address_to_scripttxn(sdata->pubkeytxnbin, ckp->btcaddress);
 			sdata->pubkeytxnlen = 23;
 		} else {
@@ -8650,9 +8653,9 @@ void *stratifier(void *arg)
 			sdata->pubkeytxnlen = 25;
 		}
 
-		if (generator_checkaddr(ckp, ckp->donaddress)) {
+		if (generator_checkaddr(ckp, ckp->donaddress, &ckp->donscript, &ckp->donsegwit)) {
 			ckp->donvalid = true;
-			if (script_address(ckp->donaddress)) {
+			if (ckp->donscript) {
 				sdata->donkeytxnlen = 23;
 				address_to_scripttxn(sdata->donkeytxnbin, ckp->donaddress);
 			} else {
