@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2017 Con Kolivas
+ * Copyright 2014-2018 Con Kolivas
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
@@ -563,8 +563,7 @@ void b58tobin(char *b58bin, const char *b58);
 int safecmp(const char *a, const char *b);
 bool cmdmatch(const char *buf, const char *cmd);
 
-void address_to_pubkeytxn(char *pkh, const char *addr);
-void address_to_scripttxn(char *pkh, const char *addr);
+int address_to_txn(char *p2h, const char *addr, const bool script, const bool segwit);
 int ser_number(uchar *s, int32_t val);
 int get_sernumber(uchar *s);
 bool fulltest(const uchar *hash, const uchar *target);
