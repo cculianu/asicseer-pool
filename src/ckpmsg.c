@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2016 Con Kolivas
+ * Copyright 2014-2018 Con Kolivas
  * Copyright 2014-2016 Andrew Smith
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -16,6 +16,7 @@
 #include <string.h>
 #include <termios.h>
 #include <unistd.h>
+#include <ctype.h>
 
 #include "libckpool.h"
 #include "utlist.h"
