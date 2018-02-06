@@ -1892,7 +1892,7 @@ static void *proxy_send(void *arg)
 		int64_t client_id = 0, id;
 		notify_instance_t *ni;
 		json_t *jobid = NULL;
-		json_t *val;
+		json_t *val, *vmask;
 
 		if (unlikely(msg)) {
 			json_decref(msg->json_msg);
@@ -1961,12 +1961,23 @@ static void *proxy_send(void *arg)
 			continue;
 		}
 
-		JSON_CPACK(val, "{s[soooo]soss}", "params", subproxy->auth, jobid,
+		vmask = json_object_get(msg->json_msg, "vmask");
+		if (vmask) {
+			JSON_CPACK(val, "{s[sooooo]soss}", "params", subproxy->auth, jobid,
+				json_object_dup(msg->json_msg, "nonce2"),
+				json_object_dup(msg->json_msg, "ntime"),
+				json_object_dup(msg->json_msg, "nonce"),
+				json_copy(vmask),
+				"id", json_object_dup(msg->json_msg, "id"),
+				"method", "mining.submit");
+		} else {
+			JSON_CPACK(val, "{s[soooo]soss}", "params", subproxy->auth, jobid,
 				json_object_dup(msg->json_msg, "nonce2"),
 				json_object_dup(msg->json_msg, "ntime"),
 				json_object_dup(msg->json_msg, "nonce"),
 				"id", json_object_dup(msg->json_msg, "id"),
 				"method", "mining.submit");
+		}
 		add_json_msgq(&csmsgq, subproxy, &val);
 		send_json_msgq(gdata, &csmsgq);
 	}

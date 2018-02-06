@@ -236,6 +236,9 @@ struct stratum_instance {
 			 * or other problem and should be dropped lazily if
 			 * this is set to 2 */
 
+	bool vmask;		/* Requested vmask */
+	uint32_t version_mask;	/* Mask to use for this client */
+
 	int latency; /* Latency when on a mining node */
 
 	bool reconnect; /* This client really needs to reconnect */
@@ -3055,7 +3058,7 @@ void stratum_set_proxy_vmask(ckpool_t *ckp, int id, int subid, uint32_t version_
 
 	proxy = existing_subproxy(ckp->sdata, id, subid);
 	proxy->version_mask = version_mask;
-	LOGWARNING("Stratum Proxy %d:%d had version mask set to %x", id, subid, version_mask);
+	LOGWARNING("Stratum Proxy %d:%d had version mask set to %08x", id, subid, version_mask);
 }
 
 static void stratum_send_diff(sdata_t *sdata, const stratum_instance_t *client);
@@ -5719,20 +5722,6 @@ static void stratum_send_diff(sdata_t *sdata, const stratum_instance_t *client)
 	stratum_add_send(sdata, json_msg, client->id, SM_DIFF);
 }
 
-#if 0
-/* Needs to be entered with client holding a ref count. */
-static void stratum_send_version_mask(sdata_t *sdata, const stratum_instance_t *client)
-{
-	char version_str[12];
-	json_t *json_msg;
-
-	sprintf(version_str, "%08x", client->ckp->version_mask);
-	JSON_CPACK(json_msg, "{s[s]soss}", "params", version_str, "id", json_null(),
-		   "method", "mining.set_version_mask");
-	stratum_add_send(sdata, json_msg, client->id, SM_VERSIONMASK);
-}
-#endif
-
 /* Needs to be entered with client holding a ref count. */
 static void stratum_send_message(sdata_t *sdata, const stratum_instance_t *client, const char *msg)
 {
@@ -6027,7 +6016,7 @@ static void update_client(const stratum_instance_t *client, const int64_t client
 /* Submit a share in proxy mode to the parent pool. workbase_lock is held.
  * Needs to be entered with client holding a ref count. */
 static void submit_share(stratum_instance_t *client, const int64_t jobid, const char *nonce2,
-			 const char *ntime, const char *nonce)
+			 const char *ntime, const char *nonce, const char *version_mask)
 {
 	ckpool_t *ckp = client->ckp;
 	json_t *json_msg;
@@ -6037,6 +6026,8 @@ static void submit_share(stratum_instance_t *client, const int64_t jobid, const 
 	JSON_CPACK(json_msg, "{sIsssssssIsIsi}", "jobid", jobid, "nonce2", enonce2,
 			     "ntime", ntime, "nonce", nonce, "client_id", client->id,
 			     "proxy", client->proxyid, "subproxy", client->subproxyid);
+	if (version_mask)
+		json_set_string(json_msg, "vmask", version_mask);
 	generator_add_send(ckp, json_msg);
 }
 
@@ -6135,7 +6126,7 @@ static json_t *parse_submit(stratum_instance_t *client, json_t *json_msg,
 	if (version_mask && strlen(version_mask) && validhex(version_mask)) {
 		sscanf(version_mask, "%x", &version_mask32);
 		// check version mask
-		if (version_mask32 && ((~ckp->version_mask) & version_mask32) != 0) {
+		if (version_mask32 && ((~client->version_mask) & version_mask32) != 0) {
 			// means client changed some bits which server doesn't allow to change
 			err = SE_INVALID_VERSION_MASK;
 			*err_val = JSON_ERR(err);
@@ -6262,7 +6253,7 @@ out_nowb:
 	 * stale shares and filter out the rest. */
 	if (wb && wb->proxy && submit) {
 		LOGINFO("Submitting share upstream: %s", hexhash);
-		submit_share(client, id, nonce2, ntime, nonce);
+		submit_share(client, id, nonce2, ntime, nonce, version_mask);
 	}
 
 	add_submit(ckp, client, diff, result, submit);
@@ -6486,11 +6477,30 @@ static void suggest_diff(ckpool_t *ckp, stratum_instance_t *client, const char *
 	stratum_send_diff(ckp->sdata, client);
 }
 
+/* Needs to be entered with client holding a ref count */
+static void stratum_send_version_mask(sdata_t *sdata, stratum_instance_t *client)
+{
+	char version_str[12];
+	json_t *json_msg;
+
+	if (unlikely(!client->proxy)) {
+		LOGERR("stratum_send_version_mask called on a non proxied client");
+		return;
+	}
+	client->version_mask = client->proxy->version_mask;
+	sprintf(version_str, "%08x", client->version_mask);
+	JSON_CPACK(json_msg, "{s[s]soss}", "params", version_str, "id", json_null(),
+		   "method", "mining.set_version_mask");
+	stratum_add_send(sdata, json_msg, client->id, SM_VERSIONMASK);
+}
+
 /* Send diff first when sending the first stratum template after subscribing */
-static void init_client(const stratum_instance_t *client, const int64_t client_id)
+static void init_client(stratum_instance_t *client, const int64_t client_id)
 {
 	sdata_t *sdata = client->sdata;
 
+	if (client->vmask)
+		stratum_send_version_mask(client->sdata, client);
 	stratum_send_diff(sdata, client);
 	stratum_send_update(sdata, client_id, true);
 }
@@ -6699,7 +6709,11 @@ static void parse_method(ckpool_t *ckp, sdata_t *sdata, stratum_instance_t *clie
 
 		LOGINFO("Mining configure requested from %s %s", client->identity,
 			client->address);
+		client->vmask = true;
+		/* Send a temporary vmask in proxy mode till we know what the
+		 * real vmask will be for the upstream pool. */
 		sprintf(version_str, "%08x", ckp->version_mask);
+		client->version_mask = ckp->version_mask;
 		val = json_object();
 		JSON_CPACK(result_val, "{sbss}", "version-rolling", json_true(),
 			   "version-rolling.mask", version_str);

@@ -302,6 +302,7 @@ enum stratum_msgtype {
 	SM_WORKERSTATS,
 	SM_REQTXNS,
 	SM_CONFIGURE,
+	SM_VERSIONMASK,
 	SM_NONE
 };
 
@@ -329,6 +330,7 @@ static const char __maybe_unused *stratum_msgs[] = {
 	"workerstats",
 	"reqtxns",
 	"mining.configure",
+	"vmask",
 	""
 };
 
