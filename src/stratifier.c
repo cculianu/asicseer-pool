@@ -389,9 +389,9 @@ static const char *ckdb_seq_names[] = {
 struct stratifier_data {
 	ckpool_t *ckp;
 
-	char txnbin[40];
+	char txnbin[48];
 	int txnlen;
-	char dontxnbin[40];
+	char dontxnbin[48];
 	int dontxnlen;
 
 	pool_stats_t stats;
@@ -579,7 +579,7 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 	len += wb->enonce1varlen;
 	len += wb->enonce2varlen;
 
-	wb->coinb2bin = ckzalloc(256);
+	wb->coinb2bin = ckzalloc(512);
 	memcpy(wb->coinb2bin, "\x0a\x63\x6b\x70\x6f\x6f\x6c", 7);
 	wb->coinb2len = 7;
 	if (ckp->btcsig) {
@@ -5331,8 +5331,6 @@ static user_instance_t *generate_user(ckpool_t *ckp, stratum_instance_t *client,
 	/* Is this a btc address based username? */
 	if (!ckp->proxy && (new_user || !user->btcaddress) && (len > 26 && len < 35))
 		user->btcaddress = generator_checkaddr(ckp, username, &user->script, &user->segwit);
-	if (user->segwit) /* Bech32 addresses currently unsupported */
-		user->btcaddress = false;
 	if (new_user) {
 		LOGNOTICE("Added new user %s%s", username, user->btcaddress ?
 			  " as address based registration" : "");
@@ -6839,8 +6837,6 @@ static user_instance_t *generate_remote_user(ckpool_t *ckp, const char *workerna
 	/* Is this a btc address based username? */
 	if (!ckp->proxy && (new_user || !user->btcaddress) && (len > 26 && len < 35))
 		user->btcaddress = generator_checkaddr(ckp, username, &user->script, &user->segwit);
-	if (user->segwit)
-		user->btcaddress = false;
 	if (new_user) {
 		LOGNOTICE("Added new remote user %s%s", username, user->btcaddress ?
 			  " as address based registration" : "");
@@ -8636,10 +8632,6 @@ void *stratifier(void *arg)
 	if (!ckp->proxy) {
 		if (!generator_checkaddr(ckp, ckp->btcaddress, &ckp->script, &ckp->segwit)) {
 			LOGEMERG("Fatal: btcaddress invalid according to bitcoind");
-			goto out;
-		}
-		if (ckp->segwit) {
-			LOGEMERG("Fatal: bech32 addresses not currently supported");
 			goto out;
 		}
 
