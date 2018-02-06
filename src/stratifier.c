@@ -5314,7 +5314,7 @@ static user_instance_t *generate_user(ckpool_t *ckp, stratum_instance_t *client,
 	ck_wunlock(&sdata->instance_lock);
 
 	/* Is this a btc address based username? */
-	if (!ckp->proxy && (new_user || !user->btcaddress) && (len > 26 && len < 35))
+	if (!ckp->proxy && (new_user || !user->btcaddress))
 		user->btcaddress = generator_checkaddr(ckp, username, &user->script, &user->segwit);
 	if (new_user) {
 		LOGNOTICE("Added new user %s%s", username, user->btcaddress ?
