@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2017 Con Kolivas
+ * Copyright 2014-2018 Con Kolivas
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
@@ -980,7 +980,7 @@ bool send_json_msg(connsock_t *cs, const json_t *json_msg)
 
 /* Decode a string that should have a json message and return just the contents
  * of the result key or NULL. */
-static json_t *json_result(json_t *val)
+json_t *json_result(json_t *val)
 {
 	json_t *res_val = NULL, *err_val;
 
@@ -1005,7 +1005,7 @@ static json_t *json_result(json_t *val)
 }
 
 /* Return the error value if one exists */
-static json_t *json_errval(json_t *val)
+json_t *json_errval(json_t *val)
 {
 	json_t *err_val = json_object_get(val, "error");
 

@@ -309,6 +309,8 @@ struct proxy_base {
 	bool subscribed;
 	bool notified;
 
+	uint32_t version_mask;
+
 	int64_t clients; /* Incrementing client count */
 	int64_t max_clients; /* Maximum number of clients per subproxy */
 	int64_t bound_clients; /* Currently actively bound clients */
@@ -3047,6 +3049,15 @@ out:
 	json_decref(val);
 }
 
+void stratum_set_proxy_vmask(ckpool_t *ckp, int id, int subid, uint32_t version_mask)
+{
+	proxy_t *proxy;
+
+	proxy = existing_subproxy(ckp->sdata, id, subid);
+	proxy->version_mask = version_mask;
+	LOGWARNING("Stratum Proxy %d:%d had version mask set to %x", id, subid, version_mask);
+}
+
 static void stratum_send_diff(sdata_t *sdata, const stratum_instance_t *client);
 
 static void update_diff(ckpool_t *ckp, const char *cmd)
@@ -5707,6 +5718,20 @@ static void stratum_send_diff(sdata_t *sdata, const stratum_instance_t *client)
 			     "method", "mining.set_difficulty");
 	stratum_add_send(sdata, json_msg, client->id, SM_DIFF);
 }
+
+#if 0
+/* Needs to be entered with client holding a ref count. */
+static void stratum_send_version_mask(sdata_t *sdata, const stratum_instance_t *client)
+{
+	char version_str[12];
+	json_t *json_msg;
+
+	sprintf(version_str, "%08x", client->ckp->version_mask);
+	JSON_CPACK(json_msg, "{s[s]soss}", "params", version_str, "id", json_null(),
+		   "method", "mining.set_version_mask");
+	stratum_add_send(sdata, json_msg, client->id, SM_VERSIONMASK);
+}
+#endif
 
 /* Needs to be entered with client holding a ref count. */
 static void stratum_send_message(sdata_t *sdata, const stratum_instance_t *client, const char *msg)

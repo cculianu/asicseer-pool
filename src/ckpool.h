@@ -371,6 +371,8 @@ json_t *json_rpc_call(connsock_t *cs, const char *rpc_req);
 json_t *json_rpc_response(connsock_t *cs, const char *rpc_req);
 void json_rpc_msg(connsock_t *cs, const char *rpc_req);
 bool send_json_msg(connsock_t *cs, const json_t *json_msg);
+json_t *json_result(json_t *val);
+json_t *json_errval(json_t *val);
 json_t *json_msg_result(const char *msg, json_t **res_val, json_t **err_val);
 
 bool json_get_string(char **store, const json_t *val, const char *res);

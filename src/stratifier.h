@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2017 Con Kolivas
+ * Copyright 2014-2018 Con Kolivas
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
@@ -86,6 +86,7 @@ struct genwork {
 	json_t *json; /* getblocktemplate json */
 };
 
+void stratum_set_proxy_vmask(ckpool_t *ckp, int id, int subid, uint32_t version_mask);
 void parse_remote_txns(ckpool_t *ckp, const json_t *val);
 #define parse_upstream_txns(ckp, val) parse_remote_txns(ckp, val)
 void parse_upstream_auth(ckpool_t *ckp, json_t *val);
