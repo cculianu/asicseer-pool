@@ -2354,8 +2354,8 @@ static sdata_t *duplicate_sdata(const sdata_t *sdata)
 	dsdata->ckp = sdata->ckp;
 
 	/* Copy the transaction binaries for workbase creation */
-	memcpy(dsdata->txnbin, sdata->txnbin, 40);
-	memcpy(dsdata->dontxnbin, sdata->dontxnbin, 40);
+	memcpy(dsdata->txnbin, sdata->txnbin, 48);
+	memcpy(dsdata->dontxnbin, sdata->dontxnbin, 48);
 
 	/* Use the same work queues for all subproxies */
 	dsdata->ssends = sdata->ssends;
