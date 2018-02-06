@@ -5575,7 +5575,6 @@ static user_instance_t *__create_user(sdata_t *sdata, const char *username)
 /* Find user by username or create one if it doesn't already exist */
 static user_instance_t *get_create_user(sdata_t *sdata, const char *username, bool *new_user)
 {
-	int len = strlen(username);
 	ckpool_t *ckp = sdata->ckp;
 	user_instance_t *user;
 
@@ -5594,7 +5593,7 @@ static user_instance_t *get_create_user(sdata_t *sdata, const char *username, bo
 	}
 
 	/* Is this a btc address based username? */
-	if (!ckp->proxy && (*new_user || !user->btcaddress) && (len > 26 && len < 35)) {
+	if (!ckp->proxy && (*new_user || !user->btcaddress)) {
 		user->btcaddress = generator_checkaddr(ckp, username, &user->script, &user->segwit);
 		if (user->btcaddress) {
 			/* Cache the transaction for use in generation */
