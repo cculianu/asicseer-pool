@@ -3409,10 +3409,10 @@ static void proxy_mode(ckpool_t *ckp, proc_instance_t *pi)
 			create_pthread(&proxy->pth_precv, passthrough_recv, proxy);
 			proxy->passsends = create_ckmsgq(ckp, "passsend", &passthrough_send);
 		} else {
-			prepare_proxy(proxy);
-			create_pthread(&gdata->pth_uprecv, userproxy_recv, ckp);
 			mutex_init(&gdata->psend_lock);
 			cond_init(&gdata->psend_cond);
+			prepare_proxy(proxy);
+			create_pthread(&gdata->pth_uprecv, userproxy_recv, ckp);
 			create_pthread(&gdata->pth_psend, proxy_send, ckp);
 		}
 	}
