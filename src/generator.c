@@ -2065,7 +2065,7 @@ static void suggest_diff(ckpool_t *ckp, connsock_t *cs, proxy_instance_t *proxy)
 	 * if it fails upstream. */
 }
 
-static void request_configure(ckpool_t *ckp, connsock_t *cs, proxy_instance_t *proxy)
+static void request_configure(connsock_t *cs, proxy_instance_t *proxy)
 {
 	json_t *req;
 	bool ret;
@@ -2175,7 +2175,7 @@ static bool proxy_alive(ckpool_t *ckp, proxy_instance_t *proxi, connsock_t *cs,
 	}
 	/* Put a request for mining configure to see if the upstream pool
 	 * supports version_mask */
-	request_configure(ckp, cs, proxi);
+	request_configure(cs, proxi);
 	parent->auth_status = STATUS_SUCCESS;
 	proxi->authorised = ret = true;
 	parent->backoff = 0;
