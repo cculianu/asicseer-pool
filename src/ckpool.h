@@ -262,6 +262,8 @@ struct ckpool_instance {
 
 	int update_interval; // Seconds between stratum updates
 
+	uint32_t version_mask; // Bits which set to true means allow miner to modify those bits
+
 	/* Proxy options */
 	int proxies;
 	char **proxyurl;
@@ -302,6 +304,7 @@ enum stratum_msgtype {
 	SM_SHAREERR,
 	SM_WORKERSTATS,
 	SM_REQTXNS,
+	SM_CONFIGURE,
 	SM_NONE
 };
 
@@ -328,6 +331,7 @@ static const char __maybe_unused *stratum_msgs[] = {
 	"shareerr",
 	"workerstats",
 	"reqtxns",
+	"mining.configure",
 	""
 };
 

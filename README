@@ -286,6 +286,10 @@ from 2 to 8. Default 8
 miners and is set to 30 seconds by default to help perpetuate transactions for
 the health of the bitcoin network.
 
+"version_mask" : This is a mask of which bits in the version number it is valid
+for a client to alter and is expressed as an hex string. Eg "00fff000"
+Default is "1fffe000".
+
 "serverurl" : This is the IP(s) to try to bind ckpool uniquely to, otherwise it
 will attempt to bind to all interfaces in port 3333 by default in pool mode
 and 3334 in proxy mode. Multiple entries can be specified as an array by
