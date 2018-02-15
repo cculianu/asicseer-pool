@@ -8680,7 +8680,7 @@ void *stratifier(void *arg)
 
 		if (generator_checkaddr(ckp, ckp->donaddress, &ckp->donscript, &ckp->donsegwit)) {
 			ckp->donvalid = true;
-			sdata->dontxnlen = address_to_txn(sdata->dontxnbin, ckp->donaddress, ckp->script, ckp->segwit);
+			sdata->dontxnlen = address_to_txn(sdata->dontxnbin, ckp->donaddress, ckp->donscript, ckp->donsegwit);
 		}
 	}
 
