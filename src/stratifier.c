@@ -4749,7 +4749,7 @@ static bool new_enonce1(ckpool_t *ckp, sdata_t *ckp_sdata, sdata_t *sdata, strat
 static void stratum_send_message(sdata_t *sdata, const stratum_instance_t *client, const char *msg);
 
 /* Need to hold sdata->proxy_lock */
-static proxy_t *__best_subproxy(proxy_t *proxy)
+static proxy_t *__best_subproxy(proxy_t *proxy, const bool vmask)
 {
 	proxy_t *subproxy, *best = NULL, *tmp;
 	int64_t max_headroom;
@@ -4761,6 +4761,8 @@ static proxy_t *__best_subproxy(proxy_t *proxy)
 		if (subproxy->dead)
 			continue;
 		if (!subproxy->sdata->current_workbase)
+			continue;
+		if (vmask && !subproxy->version_mask)
 			continue;
 		/* This subproxy data is checked without holding the correct
 		 * instance_lock but an incorrect value here is harmless */
@@ -4780,8 +4782,9 @@ static proxy_t *__best_subproxy(proxy_t *proxy)
 /* Choose the stratifier data for a new client. Use the main ckp_sdata except
  * in proxy mode where we find a subproxy based on the current proxy with room
  * for more clients. Signal the generator to recruit more subproxies if we are
- * running out of room. */
-static sdata_t *select_sdata(ckpool_t *ckp, sdata_t *ckp_sdata, const int userid)
+ * running out of room. Needs to be entered with client holding a ref count */
+static sdata_t *select_sdata(ckpool_t *ckp, sdata_t *ckp_sdata, const bool vmask,
+			     const int userid)
 {
 	proxy_t *global, *proxy, *tmp, *best = NULL;
 
@@ -4791,14 +4794,18 @@ static sdata_t *select_sdata(ckpool_t *ckp, sdata_t *ckp_sdata, const int userid
 	/* Proxies are ordered by priority so first available will be the best
 	 * priority */
 	mutex_lock(&ckp_sdata->proxy_lock);
-	best = global = ckp_sdata->proxy;
+	global = ckp_sdata->proxy;
+	/* If the client needs a version mask, only use sdata from pools with
+	 * one set. */
+	if (vmask || ckp->version_mask)
+		best = global;
 
 	HASH_ITER(hh, ckp_sdata->proxies, proxy, tmp) {
 		if (proxy->userid < userid)
 			continue;
 		if (proxy->userid > userid)
 			break;
-		best = __best_subproxy(proxy);
+		best = __best_subproxy(proxy, vmask);
 		if (best)
 			break;
 	}
@@ -4910,7 +4917,7 @@ static json_t *parse_subscribe(stratum_instance_t *client, const int64_t client_
 		return json_string("params not an array");
 	}
 
-	sdata = select_sdata(ckp, ckp_sdata, 0);
+	sdata = select_sdata(ckp, ckp_sdata, client->vmask, 0);
 	if (unlikely(!ckp->node && (!sdata || !sdata->current_workbase))) {
 		LOGWARNING("Failed to provide subscription due to no %s", sdata ? "current workbase" : "sdata");
 		stratum_send_message(ckp_sdata, client, "Pool Initialising");
@@ -4965,7 +4972,7 @@ static json_t *parse_subscribe(stratum_instance_t *client, const int64_t client_
 		if (userid == -1)
 			userid = userid_from_sessionip(ckp_sdata, client->address);
 		if (userid != -1) {
-			sdata_t *user_sdata = select_sdata(ckp, ckp_sdata, userid);
+			sdata_t *user_sdata = select_sdata(ckp, ckp_sdata, client->vmask, userid);
 
 			if (user_sdata)
 				sdata = user_sdata;
