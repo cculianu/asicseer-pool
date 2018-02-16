@@ -2646,6 +2646,10 @@ static void reconnect_global_clients(sdata_t *sdata)
 			continue;
 		if (!client->authorised)
 			continue;
+		/* Does the client mandate a vmask but the best proxy not
+		 * support it? */
+		if (client->vmask && !proxy->version_mask)
+			continue;
 		/* Is this client bound to a dead proxy? */
 		if (!client->reconnect) {
 			/* This client is bound to a user proxy */
