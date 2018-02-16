@@ -2898,31 +2898,6 @@ static void update_subscribe(ckpool_t *ckp, const char *cmd)
 	check_proxy(sdata, proxy);
 }
 
-/* Find the highest priority alive proxy belonging to userid and recruit extra
- * subproxies. */
-static void recruit_best_userproxy(sdata_t *sdata, const int userid, const int recruits)
-{
-	proxy_t *proxy, *subproxy, *tmp, *subtmp;
-	int id = -1;
-
-	mutex_lock(&sdata->proxy_lock);
-	HASH_ITER(hh, sdata->proxies, proxy, tmp) {
-		if (proxy->userid < userid)
-			continue;
-		if (proxy->userid > userid)
-			break;
-		HASH_ITER(sh, proxy->subproxies, subproxy, subtmp) {
-			if (subproxy->dead)
-				continue;
-			id = proxy->id;
-		}
-	}
-	mutex_unlock(&sdata->proxy_lock);
-
-	if (id != -1)
-		generator_recruit(sdata->ckp, id, recruits);
-}
-
 /* Check how much headroom the userid proxies have and reconnect any clients
  * that are not bound to it that should be */
 static void check_userproxies(sdata_t *sdata, proxy_t *proxy, const int userid)
@@ -2944,6 +2919,10 @@ static void check_userproxies(sdata_t *sdata, proxy_t *proxy, const int userid)
 		if (client->proxy->userid == userid &&
 		    client->proxy->parent->priority <= proxy->parent->priority)
 			continue;
+		/* Tested proxy doesn't have vmask support while client
+		 * mandates it. */
+		if (client->vmask && !proxy->version_mask)
+			continue;
 		if (headroom-- < 1)
 			continue;
 		reconnects++;
@@ -2952,11 +2931,11 @@ static void check_userproxies(sdata_t *sdata, proxy_t *proxy, const int userid)
 	ck_runlock(&sdata->instance_lock);
 
 	if (reconnects) {
-		LOGINFO("%d clients flagged for reconnect to user %d proxies",
-			reconnects, userid);
+		LOGINFO("%d clients flagged for reconnect to user %d proxy %d",
+			reconnects, userid, proxy->id);
 	}
 	if (headroom < 0)
-		recruit_best_userproxy(sdata, userid, -headroom);
+		generator_recruit(sdata->ckp, proxy->id, -headroom);
 }
 
 static void update_notify(ckpool_t *ckp, const char *cmd)
