@@ -2647,7 +2647,8 @@ static void reconnect_global_clients(sdata_t *sdata)
 		if (!client->authorised)
 			continue;
 		/* Does the client mandate a vmask but the best proxy not
-		 * support it? */
+		 * support it? Not ideal because there may be a better priority
+		 * pool below the best priority one that does support it. */
 		if (client->vmask && !proxy->version_mask)
 			continue;
 		/* Is this client bound to a dead proxy? */
