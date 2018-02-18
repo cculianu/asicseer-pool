@@ -4781,7 +4781,7 @@ static sdata_t *select_sdata(ckpool_t *ckp, sdata_t *ckp_sdata, const bool vmask
 	global = ckp_sdata->proxy;
 	/* If the client needs a version mask, only use sdata from pools with
 	 * one set. */
-	if (vmask || ckp->version_mask)
+	if (!vmask || ckp->version_mask)
 		best = global;
 
 	HASH_ITER(hh, ckp_sdata->proxies, proxy, tmp) {
