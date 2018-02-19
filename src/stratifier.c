@@ -6486,11 +6486,11 @@ static void stratum_send_version_mask(sdata_t *sdata, stratum_instance_t *client
 }
 
 /* Send diff first when sending the first stratum template after subscribing */
-static void init_client(stratum_instance_t *client, const int64_t client_id)
+static void init_client(ckpool_t *ckp, stratum_instance_t *client, const int64_t client_id)
 {
 	sdata_t *sdata = client->sdata;
 
-	if (client->vmask)
+	if (ckp->proxy && client->vmask)
 		stratum_send_version_mask(client->sdata, client);
 	stratum_send_diff(sdata, client);
 	stratum_send_update(sdata, client_id, true);
@@ -6617,7 +6617,7 @@ static void parse_method(ckpool_t *ckp, sdata_t *sdata, stratum_instance_t *clie
 		json_object_set_new_nocheck(val, "error", json_null());
 		stratum_add_send(sdata, val, client_id, SM_SUBSCRIBERESULT);
 		if (likely(client->subscribed))
-			init_client(client, client_id);
+			init_client(ckp, client, client_id);
 		return;
 	}
 
