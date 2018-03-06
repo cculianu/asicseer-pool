@@ -45,7 +45,9 @@ bool validate_address(connsock_t *cs, const char *address, bool *script, bool *s
 	snprintf(rpc_req, 128, "{\"method\": \"validateaddress\", \"params\": [\"%s\"]}\n", address);
 	val = json_rpc_call(cs, rpc_req);
 	if (!val) {
-		LOGERR("%s:%s Failed to get valid json response to validate_address", cs->url, cs->port);
+		/* May get a parse error with an invalid address */
+		LOGNOTICE("%s:%s Failed to get valid json response to validate_address %s",
+			  cs->url, cs->port, address);
 		return ret;
 	}
 	res_val = json_object_get(val, "result");
