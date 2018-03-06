@@ -115,6 +115,8 @@ struct proxy_instance {
 	int nonce1len;
 	int nonce2len;
 
+	uint32_t version_mask;
+
 	tv_t last_message;
 
 	double diff;
@@ -1317,6 +1319,35 @@ static void send_notify(ckpool_t *ckp, proxy_instance_t *proxi, notify_instance_
 	send_diff(ckp, proxi);
 }
 
+static void parse_configure(ckpool_t *ckp, proxy_instance_t *proxy, json_t *val)
+{
+	bool vroll = false;
+	json_t *res_val;
+	const char *buf;
+
+	res_val = json_result(val);
+	if (!res_val) {
+		LOGDEBUG("Failed to find result response to mining.configure from proxy %d:%s",
+			 proxy->id, proxy->url);
+		return;
+	}
+	vroll = json_is_true(json_object_get(res_val, "version-rolling"));
+	if (!vroll) {
+		LOGINFO("No version rolling from compatible proxy %d:%s", proxy->id,
+			proxy->url);
+		return;
+	}
+	buf = json_string_value(json_object_get(res_val, "version-rolling.mask"));
+	if (!buf || !strlen(buf)) {
+		LOGNOTICE("Invalid version-rolling.mask from proxy %d:%s", proxy->id,
+			  proxy->url);
+		return;
+	}
+	sscanf(buf, "%x", &proxy->version_mask);
+	LOGINFO("Got vmask %s from proxy %d:%d %s", buf, proxy->id, proxy->subid, proxy->url);
+	stratum_set_proxy_vmask(ckp, proxy->id, proxy->subid, proxy->version_mask);
+}
+
 static bool parse_method(ckpool_t *ckp, proxy_instance_t *proxi, const char *msg)
 {
 	json_t *val = NULL, *method, *err_val, *params;
@@ -1345,6 +1376,9 @@ static bool parse_method(ckpool_t *ckp, proxy_instance_t *proxi, const char *msg
 		 * pool response */
 		if (strstr(msg, "mining.suggest")) {
 			LOGINFO("Unhandled suggest_diff from proxy %d:%s", proxi->id, proxi->url);
+			ret = true;
+		} else if (strstr(msg, "version-rolling")) {
+			parse_configure(ckp, proxi, val);
 			ret = true;
 		} else
 			LOGDEBUG("Failed to find method in json for parse_method");
@@ -1858,7 +1892,7 @@ static void *proxy_send(void *arg)
 		int64_t client_id = 0, id;
 		notify_instance_t *ni;
 		json_t *jobid = NULL;
-		json_t *val;
+		json_t *val, *vmask;
 
 		if (unlikely(msg)) {
 			json_decref(msg->json_msg);
@@ -1927,12 +1961,23 @@ static void *proxy_send(void *arg)
 			continue;
 		}
 
-		JSON_CPACK(val, "{s[soooo]soss}", "params", subproxy->auth, jobid,
+		vmask = json_object_get(msg->json_msg, "vmask");
+		if (vmask) {
+			JSON_CPACK(val, "{s[sooooo]soss}", "params", subproxy->auth, jobid,
+				json_object_dup(msg->json_msg, "nonce2"),
+				json_object_dup(msg->json_msg, "ntime"),
+				json_object_dup(msg->json_msg, "nonce"),
+				json_copy(vmask),
+				"id", json_object_dup(msg->json_msg, "id"),
+				"method", "mining.submit");
+		} else {
+			JSON_CPACK(val, "{s[soooo]soss}", "params", subproxy->auth, jobid,
 				json_object_dup(msg->json_msg, "nonce2"),
 				json_object_dup(msg->json_msg, "ntime"),
 				json_object_dup(msg->json_msg, "nonce"),
 				"id", json_object_dup(msg->json_msg, "id"),
 				"method", "mining.submit");
+		}
 		add_json_msgq(&csmsgq, subproxy, &val);
 		send_json_msgq(gdata, &csmsgq);
 	}
@@ -2020,6 +2065,30 @@ static void suggest_diff(ckpool_t *ckp, connsock_t *cs, proxy_instance_t *proxy)
 	 * if it fails upstream. */
 }
 
+static void request_configure(connsock_t *cs, proxy_instance_t *proxy)
+{
+	json_t *req;
+	bool ret;
+
+	JSON_CPACK(req, "{s:i,s:s, s:[]}",
+		        "id", 40,
+		        "method", "mining.configure",
+		        "params");
+	ret = send_json_msg(cs, req);
+	json_decref(req);
+	if (!ret) {
+		LOGNOTICE("Proxy %d:%d %s failed to send message in request_configure",
+			  proxy->id, proxy->subid, proxy->url);
+		if (cs->fd > 0) {
+			epoll_ctl(proxy->epfd, EPOLL_CTL_DEL, cs->fd, NULL);
+			Close(cs->fd);
+		}
+	}
+	/* Response will be parsed by receiver since response can be wildly
+	 * variable. */
+}
+
+
 /* Upon failing connnect, subscribe, or auth, back off on the next attempt.
  * This function should be called on the parent proxy */
 static void proxy_backoff(proxy_instance_t *proxy)
@@ -2104,6 +2173,9 @@ static bool proxy_alive(ckpool_t *ckp, proxy_instance_t *proxi, connsock_t *cs,
 		proxy_backoff(parent);
 		goto out;
 	}
+	/* Put a request for mining configure to see if the upstream pool
+	 * supports version_mask */
+	request_configure(cs, proxi);
 	parent->auth_status = STATUS_SUCCESS;
 	proxi->authorised = ret = true;
 	parent->backoff = 0;

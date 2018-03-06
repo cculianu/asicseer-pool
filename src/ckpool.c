@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2017 Con Kolivas
+ * Copyright 2014-2018 Con Kolivas
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
@@ -980,7 +980,7 @@ bool send_json_msg(connsock_t *cs, const json_t *json_msg)
 
 /* Decode a string that should have a json message and return just the contents
  * of the result key or NULL. */
-static json_t *json_result(json_t *val)
+json_t *json_result(json_t *val)
 {
 	json_t *res_val = NULL, *err_val;
 
@@ -1005,7 +1005,7 @@ static json_t *json_result(json_t *val)
 }
 
 /* Return the error value if one exists */
-static json_t *json_errval(json_t *val)
+json_t *json_errval(json_t *val)
 {
 	json_t *err_val = json_object_get(val, "error");
 
@@ -1444,8 +1444,8 @@ static void parse_config(ckpool_t *ckp)
 {
 	json_t *json_conf, *arr_val;
 	json_error_t err_val;
+	char *url, *vmask;
 	int arr_size;
-	char *url;
 
 	json_conf = json_load_file(ckp->config, JSON_DISABLE_EOF_CHECK, &err_val);
 	if (!json_conf) {
@@ -1469,6 +1469,11 @@ static void parse_config(ckpool_t *ckp)
 	json_get_int(&ckp->nonce1length, json_conf, "nonce1length");
 	json_get_int(&ckp->nonce2length, json_conf, "nonce2length");
 	json_get_int(&ckp->update_interval, json_conf, "update_interval");
+	json_get_string(&vmask, json_conf, "version_mask");
+	if (vmask && strlen(vmask) && validhex(vmask))
+		sscanf(vmask, "%x", &ckp->version_mask);
+	else
+		ckp->version_mask = 0x1fffe000;
 	/* Look for an array first and then a single entry */
 	arr_val = json_object_get(json_conf, "serverurl");
 	if (!parse_serverurls(ckp, arr_val)) {
