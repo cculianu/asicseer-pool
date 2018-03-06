@@ -2236,7 +2236,8 @@ static void add_node_base(ckpool_t *ckp, json_t *val, bool trusted, int64_t clie
 /* Calculate share diff and fill in hash and swap. Need to hold workbase read count */
 static double
 share_diff(char *coinbase, const uchar *enonce1bin, const workbase_t *wb, const char *nonce2,
-	   const uint32_t ntime32, const char *nonce, uchar *hash, uchar *swap, int *cblen)
+	   const uint32_t ntime32, uint32_t version_mask, const char *nonce,
+	   uchar *hash, uchar *swap, int *cblen)
 {
 	unsigned char merkle_root[32], merkle_sha[64];
 	uint32_t *data32, *swap32, benonce32;
@@ -2267,6 +2268,13 @@ share_diff(char *coinbase, const uchar *enonce1bin, const workbase_t *wb, const 
 	/* Copy the cached header binary and insert the merkle root */
 	memcpy(data, wb->headerbin, 80);
 	memcpy(data + 36, merkle_root, 32);
+
+	/* Update nVersion when version_mask is in use */
+	if (version_mask) {
+		version_mask = htobe32(version_mask);
+		data32 = (uint32_t *)data;
+		*data32 |= version_mask;
+	}
 
 	/* Insert the nonce value into the data */
 	hex2bin(&benonce32, nonce, 4);
@@ -2346,8 +2354,8 @@ static void send_nodes_block(sdata_t *sdata, const json_t *block_val, const int6
 
 /* Entered with workbase readcount. */
 static void send_node_block(ckpool_t *ckp, sdata_t *sdata, const char *enonce1, const char *nonce,
-			    const char *nonce2, const uint32_t ntime32, const int64_t jobid,
-			    const double diff, const int64_t client_id,
+			    const char *nonce2, const uint32_t ntime32, const uint32_t version_mask,
+			    const int64_t jobid, const double diff, const int64_t client_id,
 			    const char *coinbase, const int cblen, const uchar *data)
 {
 	if (sdata->node_instances) {
@@ -2357,6 +2365,7 @@ static void send_node_block(ckpool_t *ckp, sdata_t *sdata, const char *enonce1, 
 		json_set_string(val, "nonce", nonce);
 		json_set_string(val, "nonce2", nonce2);
 		json_set_uint32(val, "ntime32", ntime32);
+		json_set_uint32(val, "version_mask", version_mask);
 		json_set_int64(val, "jobid", jobid);
 		json_set_double(val, "diff", diff);
 		add_remote_blockdata(ckp, val, cblen, coinbase, data);
@@ -2484,11 +2493,11 @@ static void submit_node_block(ckpool_t *ckp, sdata_t *sdata, json_t *val)
 	char *coinbase = NULL, *enonce1 = NULL, *nonce = NULL, *nonce2 = NULL, *gbt_block,
 		*coinbasehex, *swaphex;
 	uchar *enonce1bin = NULL, hash[32], swap[80], flip32[32];
+	uint32_t ntime32, version_mask = 0;
 	char blockhash[68], cdfield[64];
 	json_t *bval, *bval_copy;
 	int enonce1len, cblen;
 	workbase_t *wb = NULL;
-	uint32_t ntime32;
 	double diff;
 	ts_t ts_now;
 	int64_t id;
@@ -2517,6 +2526,11 @@ static void submit_node_block(ckpool_t *ckp, sdata_t *sdata, json_t *val)
 	if (unlikely(!json_get_double(&diff, val, "diff"))) {
 		LOGWARNING("Failed to get diff from node method block");
 		goto out;
+	}
+
+	if (!json_get_uint32(&version_mask, val, "version_mask")) {
+		/* No version mask is not fatal, assume it to be zero */
+		LOGINFO("No version mask in node method block");
 	}
 
 	LOGWARNING("Possible upstream block solve diff %lf !", diff);
@@ -2550,20 +2564,21 @@ static void submit_node_block(ckpool_t *ckp, sdata_t *sdata, json_t *val)
 		hex2bin(enonce1bin, enonce1, enonce1len);
 		coinbase = alloca(wb->coinb1len + wb->enonce1constlen + wb->enonce1varlen + wb->enonce2varlen + wb->coinb2len);
 		/* Fill in the hashes */
-		share_diff(coinbase, enonce1bin, wb, nonce2, ntime32, nonce, hash, swap, &cblen);
+		share_diff(coinbase, enonce1bin, wb, nonce2, ntime32, version_mask, nonce, hash, swap, &cblen);
 	}
 
 	/* Now we have enough to assemble a block */
 	gbt_block = process_block(wb, coinbase, cblen, swap, hash, flip32, blockhash);
 	ret = local_block_submit(ckp, gbt_block, flip32, wb->height);
 
-	JSON_CPACK(bval, "{si,ss,ss,sI,ss,ss,ss,sI,sf,ss,ss,ss,ss}",
+	JSON_CPACK(bval, "{si,ss,ss,sI,ss,ss,si,ss,sI,sf,ss,ss,ss,ss}",
 			 "height", wb->height,
 			 "blockhash", blockhash,
 			 "confirmed", "n",
 			 "workinfoid", wb->id,
 			 "enonce1", enonce1,
 			 "nonce2", nonce2,
+		         "version_mask", version_mask,
 			 "nonce", nonce,
 			 "reward", wb->coinbasevalue,
 			 "diff", diff,
@@ -6259,7 +6274,8 @@ downstream_block(ckpool_t *ckp, sdata_t *sdata, const json_t *val, const int cbl
 static void
 test_blocksolve(const stratum_instance_t *client, const workbase_t *wb, const uchar *data,
 		const uchar *hash, const double diff, const char *coinbase, int cblen,
-		const char *nonce2, const char *nonce, const uint32_t ntime32, const bool stale)
+		const char *nonce2, const char *nonce, const uint32_t ntime32, const uint32_t version_mask,
+		const bool stale)
 {
 	char blockhash[68], cdfield[64], *gbt_block;
 	sdata_t *sdata = client->sdata;
@@ -6282,8 +6298,8 @@ test_blocksolve(const stratum_instance_t *client, const workbase_t *wb, const uc
 	sprintf(cdfield, "%lu,%lu", ts_now.tv_sec, ts_now.tv_nsec);
 
 	gbt_block = process_block(wb, coinbase, cblen, data, hash, flip32, blockhash);
-	send_node_block(ckp, sdata, client->enonce1, nonce, nonce2, ntime32, wb->id,
-			diff, client->id, coinbase, cblen, data);
+	send_node_block(ckp, sdata, client->enonce1, nonce, nonce2, ntime32, version_mask,
+			wb->id, diff, client->id, coinbase, cblen, data);
 
 	val = json_object();
 	json_set_int(val, "height", wb->height);
@@ -6300,6 +6316,7 @@ test_blocksolve(const stratum_instance_t *client, const workbase_t *wb, const uc
 	json_set_string(val, "nonce2", nonce2);
 	json_set_string(val, "nonce", nonce);
 	json_set_uint32(val, "ntime32", ntime32);
+	json_set_uint32(val, "version_mask", version_mask);
 	json_set_int64(val, "reward", wb->coinbasevalue);
 	json_set_double(val, "diff", diff);
 	json_set_string(val, "createdate", cdfield);
@@ -6366,7 +6383,8 @@ test_blocksolve(const stratum_instance_t *client, const workbase_t *wb, const uc
 
 /* Needs to be entered with workbase readcount and client holding a ref count. */
 static double submission_diff(const stratum_instance_t *client, const workbase_t *wb, const char *nonce2,
-			      const uint32_t ntime32, const char *nonce, uchar *hash, const bool stale)
+			      const uint32_t ntime32, const uint32_t version_mask,
+			      const char *nonce, uchar *hash, const bool stale)
 {
 	char *coinbase;
 	uchar swap[80];
@@ -6376,10 +6394,10 @@ static double submission_diff(const stratum_instance_t *client, const workbase_t
 	coinbase = ckalloc(wb->coinb1len + wb->enonce1constlen + wb->enonce1varlen + wb->enonce2varlen + wb->coinb2len);
 
 	/* Calculate the diff of the share here */
-	ret = share_diff(coinbase, client->enonce1bin, wb, nonce2, ntime32, nonce, hash, swap, &cblen);
+	ret = share_diff(coinbase, client->enonce1bin, wb, nonce2, ntime32, version_mask, nonce, hash, swap, &cblen);
 
 	/* Test we haven't solved a block regardless of share status */
-	test_blocksolve(client, wb, swap, hash, ret, coinbase, cblen, nonce2, nonce, ntime32, stale);
+	test_blocksolve(client, wb, swap, hash, ret, coinbase, cblen, nonce2, nonce, ntime32, version_mask, stale);
 
 	free(coinbase);
 
@@ -6454,17 +6472,17 @@ static json_t *parse_submit(stratum_instance_t *client, json_t *json_msg,
 			    const json_t *params_val, json_t **err_val)
 {
 	bool share = false, result = false, invalid = true, submit = false, stale = false;
+	const char *workername, *job_id, *ntime, *nonce, *version_mask;
 	double diff = client->diff, wdiff = 0, sdiff = -1;
 	char hexhash[68] = {}, sharehash[32], cdfield[64];
-	const char *workername, *job_id, *ntime, *nonce;
 	user_instance_t *user = client->user_instance;
+	uint32_t ntime32, version_mask32 = 0;
 	char *fname = NULL, *s, *nonce2;
 	sdata_t *sdata = client->sdata;
 	enum share_err err = SE_NONE;
 	ckpool_t *ckp = client->ckp;
 	char idstring[20] = {};
 	workbase_t *wb = NULL;
-	uint32_t ntime32;
 	uchar hash[32];
 	int nlen, len;
 	time_t now_t;
@@ -6517,6 +6535,18 @@ static json_t *parse_submit(stratum_instance_t *client, json_t *json_msg,
 		*err_val = JSON_ERR(err);
 		goto out;
 	}
+
+	version_mask = json_string_value(json_array_get(params_val, 5));
+	if (version_mask && strlen(version_mask) && validhex(version_mask)) {
+		sscanf(version_mask, "%x", &version_mask32);
+		// check version mask
+		if (version_mask32 && ((~ckp->version_mask) & version_mask32) != 0) {
+			// means client changed some bits which server doesn't allow to change
+			err = SE_INVALID_VERSION_MASK;
+			*err_val = JSON_ERR(err);
+			goto out;
+		}
+	}
 	if (safecmp(workername, client->workername)) {
 		err = SE_WORKER_MISMATCH;
 		*err_val = JSON_ERR(err);
@@ -6558,7 +6588,7 @@ static json_t *parse_submit(stratum_instance_t *client, json_t *json_msg,
 	}
 	if (id < sdata->blockchange_id)
 		stale = true;
-	sdiff = submission_diff(client, wb, nonce2, ntime32, nonce, hash, stale);
+	sdiff = submission_diff(client, wb, nonce2, ntime32, version_mask32, nonce, hash, stale);
 	if (sdiff > client->best_diff) {
 		worker_instance_t *worker = client->worker_instance;
 
@@ -7065,6 +7095,23 @@ static void parse_method(ckpool_t *ckp, sdata_t *sdata, stratum_instance_t *clie
 		}
 		jp = create_json_params(client_id, method_val, params_val, id_val);
 		ckmsgq_add(sdata->sauthq, jp);
+		return;
+	}
+
+        if (cmdmatch(method, "mining.configure")) {
+		json_t *val, *result_val;
+		char version_str[12];
+
+		LOGINFO("Mining configure requested from %s %s", client->identity,
+			client->address);
+		sprintf(version_str, "%08x", ckp->version_mask);
+		val = json_object();
+		JSON_CPACK(result_val, "{sbss}", "version-rolling", json_true(),
+			   "version-rolling.mask", version_str);
+		json_object_set_new_nocheck(val, "result", result_val);
+		json_object_set_nocheck(val, "id", id_val);
+		json_object_set_new_nocheck(val, "error", json_null());
+		stratum_add_send(sdata, val, client_id, SM_CONFIGURE);
 		return;
 	}
 
@@ -8130,13 +8177,14 @@ static void sauth_process(ckpool_t *ckp, json_params_t *jp)
 		mindiff = client->suggest_diff;
 	else
 		mindiff = client->worker_instance->mindiff;
-	if (!mindiff)
-		goto out;
-	mindiff = MAX(ckp->mindiff, mindiff);
-	if (mindiff != client->diff) {
-		client->diff = mindiff;
-		stratum_send_diff(sdata, client);
+	if (mindiff) {
+		mindiff = MAX(ckp->mindiff, mindiff);
+		if (mindiff != client->diff) {
+			client->diff = mindiff;
+			stratum_send_diff(sdata, client);
+		}
 	}
+
 out:
 	dec_instance_ref(sdata, client);
 out_noclient:
