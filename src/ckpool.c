@@ -1472,6 +1472,8 @@ static void parse_config(ckpool_t *ckp)
 	json_get_string(&vmask, json_conf, "version_mask");
 	if (vmask && strlen(vmask) && validhex(vmask))
 		sscanf(vmask, "%x", &ckp->version_mask);
+	else
+		ckp->version_mask = 0x1fffe000;
 	/* Look for an array first and then a single entry */
 	arr_val = json_object_get(json_conf, "serverurl");
 	if (!parse_serverurls(ckp, arr_val)) {
