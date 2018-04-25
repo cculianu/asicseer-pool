@@ -3040,7 +3040,7 @@ void stratum_set_proxy_vmask(ckpool_t *ckp, int id, int subid, uint32_t version_
 {
 	proxy_t *proxy;
 
-	proxy = existing_subproxy(ckp->sdata, id, subid);
+	proxy = subproxy_by_id(ckp->sdata, id, subid);
 	proxy->version_mask = version_mask;
 	LOGINFO("Stratum Proxy %d:%d had version mask set to %08x", id, subid, version_mask);
 }
