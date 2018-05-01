@@ -961,21 +961,36 @@ static void terminate_oldpid(const ckpool_t *ckp, proc_instance_t *pi, const pid
 }
 
 /* This is for blocking sends of json messages */
-bool send_json_msg(connsock_t *cs, const json_t *json_msg)
+bool _send_json_msg(connsock_t *cs, const json_t *json_msg, const char *file, const char *func, const int line)
 {
+	bool ret = false;
 	int len, sent;
 	char *s;
 
+	if (unlikely(!json_msg)) {
+		LOGWARNING("Empty json msg in send_json_msg from %s %s:%d", file, func, line);
+		goto out;
+	}
 	s = json_dumps(json_msg, JSON_ESCAPE_SLASH | JSON_EOL);
+	if (unlikely(!s)) {
+		LOGWARNING("Empty json dump in send_json_msg from %s %s:%d", file, func, line);
+		goto out;
+	}
 	LOGDEBUG("Sending json msg: %s", s);
 	len = strlen(s);
+	if (unlikely(!len)) {
+		LOGWARNING("Zero length string in send_json_msg from %s %s:%d", file, func, line);
+		goto out;
+	}
 	sent = write_socket(cs->fd, s, len);
 	dealloc(s);
 	if (sent != len) {
 		LOGNOTICE("Failed to send %d bytes sent %d in send_json_msg", len, sent);
-		return false;
+		goto out;
 	}
-	return true;
+	ret = true;
+out:
+	return ret;
 }
 
 /* Decode a string that should have a json message and return just the contents
