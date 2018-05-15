@@ -1848,9 +1848,12 @@ static void send_json_msgq(cs_msg_t **csmsgq)
 			fd = proxy->cs.fd;
 			ret = send(fd, csmsg->buf + csmsg->ofs, csmsg->len, MSG_DONTWAIT);
 			if (ret < 1) {
-				if (!ret || errno == EAGAIN || errno == EWOULDBLOCK)
+				if (!ret)
 					break;
-				csmsg->len = ret = 0;
+				ret = 0;
+				if (errno == EAGAIN || errno == EWOULDBLOCK)
+					break;
+				csmsg->len = 0;
 				LOGNOTICE("Proxy %d:%d %s failed to send msg in send_json_msgq, dropping",
 					  proxy->id, proxy->subid, proxy->url);
 				set_proxy_disabled(proxy);
