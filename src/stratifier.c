@@ -183,6 +183,9 @@ struct user_instance {
 	int postponed; /* Number of block solves reward has been postponed */
 
 	int64_t shares;
+
+	int64_t uadiff; /* Shares not yet accounted for in hashmeter */
+
 	double dsps1; /* Diff shares per second, 1 minute rolling average */
 	double dsps5; /* ... 5 minute ... */
 	double dsps60;/* etc */
@@ -210,6 +213,9 @@ struct worker_instance {
 	worker_instance_t *prev;
 
 	int64_t shares;
+
+	int64_t uadiff; /* Shares not yet accounted for in hashmeter */
+
 	double dsps1;
 	double dsps5;
 	double dsps60;
@@ -271,6 +277,9 @@ struct stratum_instance {
 	int64_t diff; /* Current diff */
 	int64_t old_diff; /* Previous diff */
 	int64_t diff_change_job_id; /* Last job_id we changed diff */
+
+	int64_t uadiff; /* Shares not yet accounted for in hashmeter */
+
 	double dsps1; /* Diff shares per second, 1 minute rolling average */
 	double dsps5; /* ... 5 minute ... */
 	double dsps60;/* etc */
@@ -5388,36 +5397,58 @@ static void decay_client(stratum_instance_t *client, double diff, tv_t *now_t)
 {
 	double tdiff = sane_tdiff(now_t, &client->last_decay);
 
+	/* If we're calling the hashmeter too frequently we'll just end up
+	 * racing and having inappropriate values, so store up diff and update
+	 * at most 20 times per second. Use an integer for uadiff to make the
+	 * update atomic */
+	if (tdiff < 0.05) {
+		client->uadiff += diff;
+		return;
+	}
+	copy_tv(&client->last_decay, now_t);
+	diff += client->uadiff;
+	client->uadiff = 0;
 	decay_time(&client->dsps1, diff, tdiff, MIN1);
 	decay_time(&client->dsps5, diff, tdiff, MIN5);
 	decay_time(&client->dsps60, diff, tdiff, HOUR);
 	decay_time(&client->dsps1440, diff, tdiff, DAY);
 	decay_time(&client->dsps10080, diff, tdiff, WEEK);
-	copy_tv(&client->last_decay, now_t);
 }
 
 static void decay_worker(worker_instance_t *worker, double diff, tv_t *now_t)
 {
 	double tdiff = sane_tdiff(now_t, &worker->last_decay);
 
+	if (tdiff < 0.05) {
+		worker->uadiff += diff;
+		return;
+	}
+	copy_tv(&worker->last_decay, now_t);
+	diff += worker->uadiff;
+	worker->uadiff = 0;
 	decay_time(&worker->dsps1, diff, tdiff, MIN1);
 	decay_time(&worker->dsps5, diff, tdiff, MIN5);
 	decay_time(&worker->dsps60, diff, tdiff, HOUR);
 	decay_time(&worker->dsps1440, diff, tdiff, DAY);
 	decay_time(&worker->dsps10080, diff, tdiff, WEEK);
-	copy_tv(&worker->last_decay, now_t);
 }
 
 static void decay_user(user_instance_t *user, double diff, tv_t *now_t)
 {
 	double tdiff = sane_tdiff(now_t, &user->last_decay);
 
+	if (tdiff < 0.05) {
+		user->uadiff += diff;
+		return;
+	}
+	copy_tv(&user->last_decay, now_t);
+	diff += user->uadiff;
+	user->uadiff = 0;
 	decay_time(&user->dsps1, diff, tdiff, MIN1);
 	decay_time(&user->dsps5, diff, tdiff, MIN5);
 	decay_time(&user->dsps60, diff, tdiff, HOUR);
 	decay_time(&user->dsps1440, diff, tdiff, DAY);
 	decay_time(&user->dsps10080, diff, tdiff, WEEK);
-	copy_tv(&user->last_decay, now_t);
 }
 
 static user_instance_t *get_create_user(sdata_t *sdata, const char *username, bool *new_user);
