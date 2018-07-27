@@ -3045,15 +3045,6 @@ out:
 	json_decref(val);
 }
 
-void stratum_set_proxy_vmask(ckpool_t *ckp, int id, int subid, uint32_t version_mask)
-{
-	proxy_t *proxy;
-
-	proxy = subproxy_by_id(ckp->sdata, id, subid);
-	proxy->version_mask = version_mask;
-	LOGINFO("Stratum Proxy %d:%d had version mask set to %08x", id, subid, version_mask);
-}
-
 static void stratum_send_diff(sdata_t *sdata, const stratum_instance_t *client);
 
 static void update_diff(ckpool_t *ckp, const char *cmd)
@@ -6514,6 +6505,29 @@ static void stratum_send_version_mask(sdata_t *sdata, stratum_instance_t *client
 	JSON_CPACK(json_msg, "{s[s]soss}", "params", version_str, "id", json_null(),
 		   "method", "mining.set_version_mask");
 	stratum_add_send(sdata, json_msg, client->id, SM_VERSIONMASK);
+}
+
+void stratum_set_proxy_vmask(ckpool_t *ckp, int id, int subid, uint32_t version_mask)
+{
+	stratum_instance_t *client, *tmp;
+	sdata_t *sdata = ckp->sdata;
+	proxy_t *proxy;
+
+	proxy = subproxy_by_id(ckp->sdata, id, subid);
+	if (proxy->version_mask == version_mask)
+		return;
+	proxy->version_mask = version_mask;
+	LOGINFO("Stratum Proxy %d:%d had version mask set to %08x", id, subid, version_mask);
+
+	ck_rlock(&sdata->instance_lock);
+	HASH_ITER(hh, sdata->stratum_instances, client, tmp) {
+		if (client->proxy != proxy)
+			continue;
+		if (!client->version_mask)
+			continue;
+		stratum_send_version_mask(client->sdata, client);
+	}
+	ck_runlock(&sdata->instance_lock);
 }
 
 /* Send diff first when sending the first stratum template after subscribing */
