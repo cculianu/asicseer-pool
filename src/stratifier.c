@@ -6523,7 +6523,7 @@ void stratum_set_proxy_vmask(ckpool_t *ckp, int id, int subid, uint32_t version_
 	HASH_ITER(hh, sdata->stratum_instances, client, tmp) {
 		if (client->proxy != proxy)
 			continue;
-		if (!client->version_mask)
+		if (!client->vmask)
 			continue;
 		stratum_send_version_mask(client->sdata, client);
 	}
