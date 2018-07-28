@@ -9218,8 +9218,13 @@ static void *statsupdate(void *arg)
 				unaccounted_diff_shares,
 				unaccounted_rejects;
 
+			ts_to_tv(&diff, &stats->last_update);
 			cksleep_ms_r(&stats->last_update, 1875);
 			cksleep_prepare_r(&stats->last_update);
+			ts_to_tv(&now, &stats->last_update);
+			/* Calculate how long it's really been for accurate
+			 * stats update */
+			per_tdiff = tvdiff(&now, &diff);
 			update_workerstats(ckp, sdata);
 
 			mutex_lock(&sdata->uastats_lock);
@@ -9236,18 +9241,18 @@ static void *statsupdate(void *arg)
 			stats->accounted_diff_shares += unaccounted_diff_shares;
 			stats->accounted_rejects += unaccounted_rejects;
 
-			decay_time(&stats->sps1, unaccounted_shares, 1.875, MIN1);
-			decay_time(&stats->sps5, unaccounted_shares, 1.875, MIN5);
-			decay_time(&stats->sps15, unaccounted_shares, 1.875, MIN15);
-			decay_time(&stats->sps60, unaccounted_shares, 1.875, HOUR);
+			decay_time(&stats->sps1, unaccounted_shares, per_tdiff, MIN1);
+			decay_time(&stats->sps5, unaccounted_shares, per_tdiff, MIN5);
+			decay_time(&stats->sps15, unaccounted_shares, per_tdiff, MIN15);
+			decay_time(&stats->sps60, unaccounted_shares, per_tdiff, HOUR);
 
-			decay_time(&stats->dsps1, unaccounted_diff_shares, 1.875, MIN1);
-			decay_time(&stats->dsps5, unaccounted_diff_shares, 1.875, MIN5);
-			decay_time(&stats->dsps15, unaccounted_diff_shares, 1.875, MIN15);
-			decay_time(&stats->dsps60, unaccounted_diff_shares, 1.875, HOUR);
-			decay_time(&stats->dsps360, unaccounted_diff_shares, 1.875, HOUR6);
-			decay_time(&stats->dsps1440, unaccounted_diff_shares, 1.875, DAY);
-			decay_time(&stats->dsps10080, unaccounted_diff_shares, 1.875, WEEK);
+			decay_time(&stats->dsps1, unaccounted_diff_shares, per_tdiff, MIN1);
+			decay_time(&stats->dsps5, unaccounted_diff_shares, per_tdiff, MIN5);
+			decay_time(&stats->dsps15, unaccounted_diff_shares, per_tdiff, MIN15);
+			decay_time(&stats->dsps60, unaccounted_diff_shares, per_tdiff, HOUR);
+			decay_time(&stats->dsps360, unaccounted_diff_shares, per_tdiff, HOUR6);
+			decay_time(&stats->dsps1440, unaccounted_diff_shares, per_tdiff, DAY);
+			decay_time(&stats->dsps10080, unaccounted_diff_shares, per_tdiff, WEEK);
 			mutex_unlock(&sdata->stats_lock);
 		}
 
