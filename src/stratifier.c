@@ -38,7 +38,8 @@ static const double nonces = 4294967296;
 
 #define HERP_N		5 /* 5 * network diff SPLNS */
 #define CBGENLEN	33 /* Maximum extra space required per user in coinbase */
-#define DERP_DUST	5460 /* Minimum payout not dust */
+#define DERP_DUST	5460 /* Minimum DERP to get onto payout list */
+#define PAYOUT_DUST	546 /* Minimum payout not dust */
 #define DERP_SPACE	1000 /* Minimum derp to warrant leaving coinbase space */
 #define PAYOUT_USERS	100 /* Number of top users that get reward each block */
 #define PAYOUT_REWARDS	150 /* Max number of users rewarded each block */
@@ -663,7 +664,7 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 		 * have added users that are still below the dust threshold. */
 		derp = floor(g64 * gen->herp / total_herp);
 		reward = derp;
-		if (reward < DERP_DUST) {
+		if (reward < PAYOUT_DUST) {
 			json_set_double(postponed_entries, user->username, gen->herp);
 			continue;
 		}
