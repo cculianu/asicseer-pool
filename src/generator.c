@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2017 Con Kolivas
+ * Copyright 2014-2018 Con Kolivas
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
@@ -2323,6 +2323,8 @@ static void *passthrough_recv(void *arg)
 	bool alive;
 
 	rename_proc("passrecv");
+
+	proxi->parent = proxi;
 
 	if (proxy_alive(ckp, proxi, cs, false))
 		LOGWARNING("Passthrough proxy %d:%s connection established", proxi->id, proxi->url);
