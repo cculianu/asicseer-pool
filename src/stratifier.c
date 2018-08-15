@@ -5093,16 +5093,15 @@ static worker_instance_t *get_create_worker(sdata_t *sdata, user_instance_t *use
 static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 {
 	char dnam[512], s[512], *username, *buf;
+	int ret, users = 0, workers = 0, fd;
 	user_instance_t *user;
 	struct dirent *dir;
 	struct stat fdbuf;
 	bool new_user;
-	int ret, len;
 	json_t *val;
 	FILE *fp;
 	tv_t now;
 	DIR *d;
-	int fd;
 
 	snprintf(dnam, 511, "%susers", ckp->logdir);
 	d = opendir(dnam);
@@ -5114,6 +5113,9 @@ static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 	tv_time(&now);
 
 	while ((dir = readdir(d)) != NULL) {
+		json_t *worker_array, *arr_val;
+		size_t index;
+
 		username = basename(dir->d_name);
 		if (!strcmp(username, "/") || !strcmp(username, ".") || !strcmp(username, ".."))
 			continue;
@@ -5155,6 +5157,7 @@ static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 			continue;
 		}
 		dealloc(buf);
+		users++;
 
 		copy_tv(&user->last_share, &now);
 		copy_tv(&user->last_decay, &now);
@@ -5168,94 +5171,46 @@ static void read_userstats(ckpool_t *ckp, sdata_t *sdata, int tvsec_diff)
 		LOGDEBUG("Successfully read user %s stats %f %f %f %f %f %f", username,
 			user->dsps1, user->dsps5, user->dsps60, user->dsps1440,
 			user->dsps10080, user->best_diff);
-		json_decref(val);
 		if (tvsec_diff > 60)
 			decay_user(user, 0, &now);
 
-	}
-	closedir(d);
+		worker_array = json_object_get(val, "worker");
+		json_array_foreach(worker_array, index, arr_val) {
+			const char *workername = json_string_value(json_object_get(arr_val, "workername"));
+			worker_instance_t *worker;
+			bool new_worker = false;
 
-	/* Now get all the worker stats */
-	snprintf(dnam, 511, "%sworkers", ckp->logdir);
-	d = opendir(dnam);
-	if (unlikely(!d)) {
-		LOGNOTICE("No worker directory found");
-		return;
-	}
-
-	while ((dir = readdir(d)) != NULL) {
-		char *workername = basename(dir->d_name), *base_username;
-		worker_instance_t *worker;
-		bool new_worker = false;
-
-		if (!strcmp(workername, "/") || !strcmp(workername, ".") || !strcmp(workername, ".."))
-			continue;
-
-		base_username = strdupa(workername);
-		username = strsep(&base_username, "._");
-		if (!username || !strlen(username))
-			username = base_username;
-		len = strlen(username);
-		if (unlikely(len > 127))
-			username[127] = '\0';
-
-		new_user = false;
-		user = get_create_user(sdata, username, &new_user);
-		if (unlikely(new_user)) {
-			/* This shouldn't happen */
-			LOGWARNING("Created new user from worker %s in read_userstats",
-				   workername);
+			if (unlikely(!workername || !strlen(workername)) ||
+			    !strstr(workername, username)) {
+				LOGWARNING("Invalid workername in read_userstats %s", workername);
+				continue;
+			}
+			worker = get_create_worker(sdata, user, workername, &new_worker);
+			if (unlikely(!new_worker)) {
+				LOGWARNING("Duplicate worker in read_userstats %s", workername);
+				continue;
+			}
+			workers++;
+			copy_tv(&worker->last_share, &now);
+			copy_tv(&worker->last_decay, &now);
+			worker->dsps1 = dsps_from_key(arr_val, "hashrate1m");
+			worker->dsps5 = dsps_from_key(arr_val, "hashrate5m");
+			worker->dsps60 = dsps_from_key(arr_val, "hashrate1hr");
+			worker->dsps1440 = dsps_from_key(arr_val, "hashrate1d");
+			worker->dsps10080 = dsps_from_key(arr_val, "hashrate7d");
+			json_get_double(&worker->best_diff, arr_val, "bestshare");
+			json_get_int64(&worker->shares, arr_val, "shares");
+			LOGDEBUG("Successfully read worker %s stats %f %f %f %f %f", worker->workername,
+				worker->dsps1, worker->dsps5, worker->dsps60, worker->dsps1440, worker->best_diff);
+			if (tvsec_diff > 60)
+				decay_worker(worker, 0, &now);
 		}
-		worker = get_create_worker(sdata, user, workername, &new_worker);
-		if (unlikely(!new_worker)) {
-			LOGWARNING("Duplicate worker in read_userstats %s", workername);
-			continue;
-		}
-		snprintf(s, 511, "%s/%s", dnam, workername);
-		fp = fopen(s, "re");
-		if (unlikely(!fp)) {
-			LOGWARNING("Failed to load worker %s logfile to read", workername);
-			continue;
-		}
-		fd = fileno(fp);
-		if (unlikely(fstat(fd, &fdbuf))) {
-			LOGERR("Failed to fstat user %s logfile", username);
-			fclose(fp);
-			continue;
-		}
-		buf = ckzalloc(fdbuf.st_size + 1);
-		ret = fread(buf, 1, fdbuf.st_size, fp);
-		fclose(fp);
-		if (ret < 1) {
-			LOGNOTICE("Failed to read worker %s logfile", workername);
-			dealloc(buf);
-			continue;
-		}
-		val = json_loads(buf, 0, NULL);
-		if (!val) {
-			LOGNOTICE("Failed to json decode worker %s logfile: %s",
-				  workername, buf);
-			dealloc(buf);
-			continue;
-		}
-
-		copy_tv(&worker->last_share, &now);
-		copy_tv(&worker->last_decay, &now);
-		worker->dsps1 = dsps_from_key(val, "hashrate1m");
-		worker->dsps5 = dsps_from_key(val, "hashrate5m");
-		worker->dsps60 = dsps_from_key(val, "hashrate1hr");
-		worker->dsps1440 = dsps_from_key(val, "hashrate1d");
-		worker->dsps10080 = dsps_from_key(val, "hashrate7d");
-		json_get_double(&worker->best_diff, val, "bestshare");
-		json_get_int64(&worker->shares, val, "shares");
-		LOGDEBUG("Successfully read worker %s stats %f %f %f %f %f", worker->workername,
-			worker->dsps1, worker->dsps5, worker->dsps60, worker->dsps1440, worker->best_diff);
 		json_decref(val);
-		if (tvsec_diff > 60)
-			decay_worker(worker, 0, &now);
 	}
 	closedir(d);
 
+	if (likely(users))
+		LOGWARNING("Loaded %d users and %d workers", users, workers);
 }
 
 #define DEFAULT_AUTH_BACKOFF	(3)  /* Set initial backoff to 3 seconds */
@@ -8311,7 +8266,8 @@ static void *statsupdate(void *arg)
 				ghs = worker->dsps10080 * nonces;
 				suffix_string(ghs, suffix10080, 16, 0);
 
-				JSON_CPACK(val, "{ss,ss,ss,ss,ss,si,sI,sf}",
+				JSON_CPACK(val, "{ss,ss,ss,ss,ss,ss,si,sI,sf}",
+					        "workername", worker->workername,
 						"hashrate1m", suffix1,
 						"hashrate5m", suffix5,
 						"hashrate1hr", suffix60,
@@ -8321,10 +8277,6 @@ static void *statsupdate(void *arg)
 						"shares", worker->shares,
 						"bestshare", worker->best_diff);
 
-				ASPRINTF(&fname, "%s/workers/%s", ckp->logdir, worker->workername);
-				s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER | JSON_EOL);
-				add_log_entry(&log_entries, &fname, &s);
-				json_set_string(val, "workername", worker->workername);
 				json_array_append_new(user_array, val);
 				val = NULL;
 			}
