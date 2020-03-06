@@ -1014,7 +1014,7 @@ K_ITEM *_require_name(K_TREE *trf_root, char *name, int len, char *patt,
 
 	if (patt) {
 		int re_flags = REG_NOSUB;
-		if (strchr(re_flags, '('))
+		if (strchr(patt, '('))
 			re_flags |= REG_EXTENDED;
 		if (regcomp(&re, patt, re_flags) != 0) {
 			LOGERR("%s(): failed, field '%s' failed to"
