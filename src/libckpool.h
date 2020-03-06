@@ -561,7 +561,7 @@ bool _hex2bin(void *p, const void *vhexstr, size_t len, const char *file, const 
 char *http_base64(const char *src);
 void b58tobin(char *b58bin, const char *b58);
 /* Does no checksum checks but returns false if the characters in b58 source are invalid, or if b58 is > 35 characters, true otherwise. */
-bool b58tobin_safe(char *b58bin, const char *b58)
+bool b58tobin_safe(char *b58bin, const char *b58);
 int safecmp(const char *a, const char *b);
 int safecasecmp(const char *a, const char *b, int len); // pass len < 0 to compare all
 bool cmdmatch(const char *buf, const char *cmd);
