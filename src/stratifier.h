@@ -10,6 +10,9 @@
 #ifndef STRATIFIER_H
 #define STRATIFIER_H
 
+/* Max depth of the merkle tree. Increase this if blocks ever have more than 4 billion tx's. */
+#define GENWORK_MAX_MERKLE_DEPTH 32
+
 /* Generic structure for both workbase in stratifier and gbtbase in generator */
 struct genwork {
 	/* Hash table data */
@@ -51,8 +54,8 @@ struct genwork {
 	char *txn_data;
 	char *txn_hashes;
 	int merkles;
-	char merklehash[16][68];
-	char merklebin[16][32];
+	char merklehash[GENWORK_MAX_MERKLE_DEPTH][68];
+	char merklebin[GENWORK_MAX_MERKLE_DEPTH][32];
 	json_t *merkle_array;
 
 	/* Template variables, lengths are binary lengths! */

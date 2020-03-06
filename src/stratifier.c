@@ -1293,19 +1293,19 @@ static void update_txns(ckpool_t *ckp, sdata_t *sdata, txntable_t *txns, bool lo
 static txntable_t *wb_merkle_bin_txns(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb,
 				      json_t *txn_array, bool local)
 {
-	int i, j, binleft, binlen;
+	long i, j, binleft, binlen;
 	txntable_t *txns = NULL;
 	json_t *arr_val;
 	uchar *hashbin;
 
 	wb->txns = json_array_size(txn_array);
 	wb->merkles = 0;
-	binlen = wb->txns * 32 + 32;
-	hashbin = alloca(binlen + 32);
+	binlen = (long)wb->txns * 32L + 32L;
+	hashbin = alloca(binlen + 32L);
 	memset(hashbin, 0, 32);
-	binleft = binlen / 32;
+	binleft = binlen / 32L;
 	if (wb->txns) {
-		int len = 1, ofs = 0;
+		long len = 1, ofs = 0;
 		const char *txn;
 
 		for (i = 0; i < wb->txns; i++) {
@@ -1318,8 +1318,8 @@ static txntable_t *wb_merkle_bin_txns(ckpool_t *ckp, sdata_t *sdata, workbase_t 
 			len += strlen(txn);
 		}
 
-		wb->txn_data = ckzalloc(len + 1);
-		wb->txn_hashes = ckzalloc(wb->txns * 65 + 1);
+		wb->txn_data = ckzalloc(len + 1L);
+		wb->txn_hashes = ckzalloc(wb->txns * 65L + 1L);
 		memset(wb->txn_hashes, 0x20, wb->txns * 65); // Spaces
 
 		for (i = 0; i < wb->txns; i++) {
@@ -1346,34 +1346,35 @@ static txntable_t *wb_merkle_bin_txns(ckpool_t *ckp, sdata_t *sdata, workbase_t 
 				LOGERR("Failed to hex2bin hash in gbt_merkle_bins");
 				goto out;
 			}
-			memcpy(wb->txn_hashes + i * 65, txid, 64);
-			bswap_256(hashbin + 32 + 32 * i, binswap);
+			memcpy(wb->txn_hashes + i * 65L, txid, 64);
+			bswap_256(hashbin + 32L + 32L * i, binswap);
 		}
 	} else
 		wb->txn_hashes = ckzalloc(1);
 	wb->merkle_array = json_array();
-	if (binleft > 1) {
-		while (42) {
-			if (binleft == 1)
-				break;
-			memcpy(&wb->merklebin[wb->merkles][0], hashbin + 32, 32);
-			__bin2hex(&wb->merklehash[wb->merkles][0], &wb->merklebin[wb->merkles][0], 32);
-			json_array_append_new(wb->merkle_array, json_string(&wb->merklehash[wb->merkles][0]));
-			LOGDEBUG("MerkleHash %d %s",wb->merkles, &wb->merklehash[wb->merkles][0]);
-			wb->merkles++;
-			if (binleft % 2) {
-				memcpy(hashbin + binlen, hashbin + binlen - 32, 32);
-				binlen += 32;
-				binleft++;
-			}
-			for (i = 32, j = 64; j < binlen; i += 32, j += 64)
-				gen_hash(hashbin + j, hashbin + i, 64);
-			binleft /= 2;
-			binlen = binleft * 32;
+	while (binleft > 1L) {
+		if (unlikely(wb->merkles >= GENWORK_MAX_MERKLE_DEPTH)) {
+			LOGWARNING("Ran out of space for merkle tree! Max depth of %d exceeded!",
+			           GENWORK_MAX_MERKLE_DEPTH);
+			break;
 		}
+		memcpy(&wb->merklebin[wb->merkles][0], hashbin + 32L, 32);
+		__bin2hex(&wb->merklehash[wb->merkles][0], &wb->merklebin[wb->merkles][0], 32);
+		json_array_append_new(wb->merkle_array, json_string(&wb->merklehash[wb->merkles][0]));
+		LOGDEBUG("MerkleHash %d %s", wb->merkles, &wb->merklehash[wb->merkles][0]);
+		wb->merkles++;
+		if (binleft % 2) {
+			memcpy(hashbin + binlen, hashbin + binlen - 32L, 32);
+			binlen += 32L;
+			binleft++;
+		}
+		for (i = 32, j = 64; j < binlen; i += 32L, j += 64L)
+			gen_hash(hashbin + j, hashbin + i, 64);
+		binleft /= 2L;
+		binlen = binleft * 32L;
 	}
 	LOGNOTICE("Stored %s workbase with %d transactions", local ? "local" : "remote",
-		  wb->txns);
+	          wb->txns);
 out:
 	return txns;
 }
@@ -1833,7 +1834,7 @@ share_diff(char *coinbase, const uchar *enonce1bin, const workbase_t *wb, const 
 
 	gen_hash((uchar *)coinbase, merkle_root, *cblen);
 	memcpy(merkle_sha, merkle_root, 32);
-	for (i = 0; i < wb->merkles; i++) {
+	for (i = 0; i < wb->merkles && i < GENWORK_MAX_MERKLE_DEPTH; i++) {
 		memcpy(merkle_sha + 32, &wb->merklebin[i], 32);
 		gen_hash(merkle_sha, merkle_root, 64);
 		memcpy(merkle_sha, merkle_root, 32);
@@ -2932,6 +2933,11 @@ static void update_notify(ckpool_t *ckp, const char *cmd)
 	hex2bin(wb->coinb2bin, wb->coinb2, wb->coinb2len);
 	wb->merkle_array = json_object_dup(val, "merklehash");
 	wb->merkles = json_array_size(wb->merkle_array);
+	if (unlikely(wb->merkles > GENWORK_MAX_MERKLE_DEPTH)) {
+		LOGWARNING("Ran out of space for merkle tree! Max depth of %d exceeded!",
+		           GENWORK_MAX_MERKLE_DEPTH);
+		wb->merkles = GENWORK_MAX_MERKLE_DEPTH;
+	}
 	for (i = 0; i < wb->merkles; i++) {
 		strcpy(&wb->merklehash[i][0], json_string_value(json_array_get(wb->merkle_array, i)));
 		hex2bin(&wb->merklebin[i][0], &wb->merklehash[i][0], 32);
