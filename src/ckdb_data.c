@@ -299,7 +299,7 @@ bool like_address(char *username)
 			break;
 	}
 
-	if (regcomp(&re, addrpatt, REG_NOSUB) != 0) {
+	if (regcomp(&re, addrpatt, REG_NOSUB|REG_EXTENDED) != 0) {
 		LOGEMERG("%s(): failed to compile addrpatt '%s'",
 			 __func__, addrpatt);
 		free(tmp);
@@ -979,7 +979,7 @@ K_ITEM *_optional_name(K_TREE *trf_root, char *name, int len, char *patt,
 }
 
 K_ITEM *_require_name(K_TREE *trf_root, char *name, int len, char *patt,
-			char *reply, size_t siz, WHERE_FFL_ARGS)
+                      char *reply, size_t siz, WHERE_FFL_ARGS)
 {
 	TRANSFER *trf;
 	K_ITEM *item;
@@ -1013,7 +1013,10 @@ K_ITEM *_require_name(K_TREE *trf_root, char *name, int len, char *patt,
 	}
 
 	if (patt) {
-		if (regcomp(&re, patt, REG_NOSUB) != 0) {
+		int re_flags = REG_NOSUB;
+		if (strchr(re_flags, '('))
+			re_flags |= REG_EXTENDED;
+		if (regcomp(&re, patt, re_flags) != 0) {
 			LOGERR("%s(): failed, field '%s' failed to"
 				" compile patt from %s():%d",
 				__func__, name, func, line);

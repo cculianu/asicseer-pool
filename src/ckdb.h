@@ -171,9 +171,9 @@ extern const char *strpatt;
  * disallow it */
 #define ADDR_USER_CHECK 16
 
-// BTC address size
+// BCH address size (accounting for legacy and optional prefix)
 #define ADDR_MIN_LEN 26
-#define ADDR_MAX_LEN 34
+#define ADDR_MAX_LEN 65
 /* All characters in a payaddress are less than this
  * thus setting the 1st char to this will be greater than any payaddress */
 #define MAX_PAYADDR '~'
@@ -1837,7 +1837,7 @@ typedef struct seqset {
 // highlimit ratio (shift down bits)
 #define HIGH_SHIFT 8
 // Smallest highlimit allowed
-#define HIGH_MIN 32 
+#define HIGH_MIN 32
 // Smallest _SIZ allowed
 #define BASE_SIZ (HIGH_MIN << HIGH_SHIFT)
 
@@ -2639,7 +2639,7 @@ extern K_TREE *events_ipc_root;
 extern K_TREE *events_hash_root;
 extern K_LIST *events_free;
 extern K_STORE *events_store;
-// Emulate a list for lock checking     
+// Emulate a list for lock checking
 extern K_LIST *event_limits_free;
 
 #define OC_LIMITS "event_limits_"
