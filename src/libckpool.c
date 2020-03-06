@@ -1798,8 +1798,8 @@ static int address_to_pubkeytxn(char *pkh, const char *addr)
 
 	if (!b58tobin_safe(b58bin, addr)) {
 		static const char *fallback = "1Ca1inCimwRhhcpFX84TPRrPQSryTgKW6N";
-		LOGERR("Could not base58 decode address '%s'! Defaulting to hard-coded fallback of: '%s'. FIX YOUR CONF FILE!",
-		       addr, fallback);
+		LOGWARNING("Could not base58 decode address '%s'! Defaulting to hard-coded fallback of: '%s'. FIX YOUR CONF FILE!",
+		           addr, fallback);
 		b58tobin(b58bin, fallback);
 	}
 	pkh[0] = 0x76;
@@ -1819,8 +1819,8 @@ static int address_to_scripttxn(char *psh, const char *addr)
 
 	if (!b58tobin_safe(b58bin, addr)) {
 		static const char *fallback = "3NoBpEBHZq6YqwUBdPAMW41w5BTJSC7yuQ";
-		LOGERR("Could not base58 decode address '%s'! Defaulting to hard-coded fallback of: '%s'. FIX YOUR CONF FILE!",
-		       addr, fallback);
+		LOGWARNING("Could not base58 decode address '%s'! Defaulting to hard-coded fallback of: '%s'. FIX YOUR CONF FILE!",
+		           addr, fallback);
 		b58tobin(b58bin, fallback);
 	}
 	psh[0] = 0xa9;
