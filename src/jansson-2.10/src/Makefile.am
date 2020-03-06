@@ -1,5 +1,7 @@
 EXTRA_DIST = jansson.def
 
+CFLAGS +=  -Wno-format-truncation -Wno-stringop-overflow
+
 include_HEADERS = jansson.h
 nodist_include_HEADERS = jansson_config.h
 
