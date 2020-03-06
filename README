@@ -1,9 +1,11 @@
 ckpool, C3 Variant
 
+Updated and maintained by Calin Culianu <calin.culianu@gmail.com>
+
 ===
 
-Patched version of [ckpool](https://bitbucket.org/ckolivas/ckpool/) for
-supporting Bitcoin Cash instead of Bitcoin.
+This is a patched version of [ckpool](https://bitbucket.org/ckolivas/ckpool/)
+for supporting Bitcoin Cash instead of Bitcoin.
 
 * Removed segwit
 * Added larger merkle tree support (for mining 32MB blocks)
