@@ -38,6 +38,7 @@
 #include "donation.h"
 #include "sha2.h"
 #include "utlist.h"
+#include "cashaddr.h"
 
 #ifndef UNIX_PATH_MAX
 #define UNIX_PATH_MAX 108
@@ -1637,7 +1638,7 @@ bool b58tobin_safe(char *b58bin, const char *b58)
 
 	memset(bin32, 0, 7 * sizeof(uint32_t));
 	len = strlen((const char *)b58);
-	if (len > 35)
+	if (len > CASHADDR_HEURISTIC_LEN)
 		return false;
 	for (i = 0; i < len; i++) {
 		int32_t c_tmp = b58[i];
@@ -1794,18 +1795,31 @@ static const char *remove_any_cashaddr_prefix(const char *addr)
 static int address_to_pubkeytxn(char *pkh, const char *addr)
 {
 	char b58bin[25] = {};
+	bool decoded_cashaddr = false;
 
-	addr = remove_any_cashaddr_prefix(addr);
+	if (strlen(addr) > CASHADDR_HEURISTIC_LEN) {
+		// address is long -- try parsing it as a cashaddr
+		uint8_t *h160 = cashaddr_decode_hash160(addr);
+		if (h160) {
+			memcpy(&b58bin[1], h160, 20); // hack -- we only care about the hash 160 anyway
+			free(h160);
+			decoded_cashaddr = true;
+		}
+	}
 
-	if (!b58tobin_safe(b58bin, addr)) {
-		LOGWARNING("Could not base58 decode address '%s'! Defaulting to hard-coded fallback of: '%s'. FIX YOUR CONF FILE!",
-		           addr, DONATION_P2PKH);
-		b58tobin(b58bin, DONATION_P2PKH);
+	if (!decoded_cashaddr) {
+		addr = remove_any_cashaddr_prefix(addr);
+
+		if (!b58tobin_safe(b58bin, addr)) {
+			LOGWARNING("Could not base58 decode address '%s'! Defaulting to hard-coded fallback of: '%s'. FIX YOUR CONF FILE!",
+			           addr, DONATION_P2PKH);
+			b58tobin(b58bin, DONATION_P2PKH);
+		}
 	}
 	pkh[0] = 0x76;
 	pkh[1] = 0xa9;
 	pkh[2] = 0x14;
-	memcpy(&pkh[3], &b58bin[1], 20);
+	memcpy(&pkh[3], &b58bin[1], 20); // this hash160 may have come either from cashaddr or base58 decoding above
 	pkh[23] = 0x88;
 	pkh[24] = 0xac;
 	return 25;
@@ -1814,17 +1828,30 @@ static int address_to_pubkeytxn(char *pkh, const char *addr)
 static int address_to_scripttxn(char *psh, const char *addr)
 {
 	char b58bin[25] = {};
+	bool decoded_cashaddr = false;
 
-	addr = remove_any_cashaddr_prefix(addr);
+	if (strlen(addr) > CASHADDR_HEURISTIC_LEN) {
+		// address is long -- try parsing it as a cashaddr
+		uint8_t *h160 = cashaddr_decode_hash160(addr);
+		if (h160) {
+			memcpy(&b58bin[1], h160, 20); // hack -- we only care about the hash 160 anyway
+			free(h160);
+			decoded_cashaddr = true;
+		}
+	}
 
-	if (!b58tobin_safe(b58bin, addr)) {
-		LOGWARNING("Could not base58 decode address '%s'! Defaulting to hard-coded fallback of: '%s'. FIX YOUR CONF FILE!",
-		           addr, DONATION_P2SH);
-		b58tobin(b58bin, DONATION_P2SH);
+	if (!decoded_cashaddr) {
+		addr = remove_any_cashaddr_prefix(addr);
+
+		if (!b58tobin_safe(b58bin, addr)) {
+			LOGWARNING("Could not base58 decode address '%s'! Defaulting to hard-coded fallback of: '%s'. FIX YOUR CONF FILE!",
+			           addr, DONATION_P2SH);
+			b58tobin(b58bin, DONATION_P2SH);
+		}
 	}
 	psh[0] = 0xa9;
 	psh[1] = 0x14;
-	memcpy(&psh[2], &b58bin[1], 20);
+	memcpy(&psh[2], &b58bin[1], 20); // this hash160 may have come either from cashaddr or base58 decoding above
 	psh[22] = 0x87;
 	return 23;
 }
