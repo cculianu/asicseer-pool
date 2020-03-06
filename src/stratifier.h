@@ -50,8 +50,6 @@ struct genwork {
 	int txns;
 	char *txn_data;
 	char *txn_hashes;
-	char witnessdata[80]; //null-terminated ascii
-	bool insert_witness;
 	int merkles;
 	char merklehash[16][68];
 	char merklebin[16][32];
