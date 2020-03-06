@@ -27,29 +27,19 @@ uint8_t *cashaddr_decode_hash160(const char *addr)
     uint8_t *buf = NULL;
     size_t buflen = 0;
     int res = cashaddr_decode(addr, &buf, &buflen);
-    if (res < 0)
+    if (unlikely(res < 0))
         return NULL;
     uint8_t *bits = NULL;
     size_t bitslen = 0;
     ConvertBits(&bits, &bitslen, 5, 8, buf, buflen);
     uint8_t *retval = NULL;
-    if (bitslen >= 21) {
+    if (likely(bits && bitslen >= 21)) {
         retval = (uint8_t *)ckzalloc(20);
         memcpy(retval, bits + 1, 20);
     }
     free(bits);
     free(buf);
     return retval;
-}
-
-/**
- * Convert to lower case.
- *
- * Assume the input is a character.
- */
-static inline uint8_t to_lower_case(uint8_t c) {
-    // ASCII black magic.
-    return c | 0x20;
 }
 
 /**
@@ -206,6 +196,16 @@ static bool cashaddr_verify_checksum(const char *prefix, const uint8_t *payload,
 }
 
 /**
+ * Convert to lower case.
+ *
+ * Assume the input is a character.
+ */
+static inline uint8_t to_lower_case(uint8_t c) {
+    // ASCII black magic.
+    return c | 0x20;
+}
+
+/**
  * Decode a cashaddr string.  *buf will be allocated and *buflen set to its decoded
  * length on success. Returns the length of the prefix (or 0 if no prefix) on success,
  * or -1 on failure.
@@ -217,7 +217,7 @@ static int cashaddr_decode(const char *str, uint8_t **buf, size_t *buflen) {
     bool lower = false, upper = false, hasNumber = false;
     size_t slen = strlen(str ? str : "");
     size_t prefixSize = 0;
-    if (!slen || !buf || !buflen)
+    if (unlikely(!slen || !buf || !buflen))
         return -1;
     *buf = NULL;
     *buflen = 0;
@@ -280,7 +280,7 @@ static int cashaddr_decode(const char *str, uint8_t **buf, size_t *buflen) {
     for (size_t i = 0; i < valuesSize; ++i) {
         uint8_t c = str[i];
         // We have an invalid char in there.
-        if (c > 127 || CHARSET_REV[c] == -1) {
+        if (unlikely(c > 127 || CHARSET_REV[c] == -1)) {
             goto err_out;
         }
 
@@ -303,6 +303,22 @@ err_out:
     return -1;
 }
 
+static inline bool push_back(uint8_t **buf, size_t *len, uint8_t val)
+{
+    // the below is equivalent to a C++ push_back to a vector, more or less, due to how malloc works.
+    uint8_t *newbuf = realloc(*buf, ++(*len)); // allocate 1 more byte; realloc of NULL pointer is just a malloc
+    if (unlikely(!newbuf)) {
+        // realloc failure -- help!
+        free(*buf); // free old buffer, if any
+        *buf = NULL;
+        *len = 0;
+        return false; // indicate failure
+    }
+    *buf = newbuf;
+    newbuf[(*len) - 1] = val;
+    return true;
+}
+
 static bool ConvertBits(uint8_t **out, size_t *outlen, size_t frombits, size_t tobits, const uint8_t *in, size_t inlen) {
     size_t acc = 0;
     size_t bits = 0;
@@ -317,11 +333,11 @@ static bool ConvertBits(uint8_t **out, size_t *outlen, size_t frombits, size_t t
         while (bits >= tobits) {
             bits -= tobits;
             const uint8_t val = (acc >> bits) & maxv;
-            if (*out)
-                *out = (uint8_t *)realloc(*out, ++(*outlen)); // allocate 1 more byte
-            else
-                *out = (uint8_t *)malloc(++(*outlen)); // allocate first byte
-            (*out)[(*outlen)-1] = val; // push_back
+            if (unlikely(!push_back(out, outlen, val))) {
+                // Paranoia -- should never happen. But if it does, make sure to print to log.
+                LOGCRIT("Failed to reallocate a buffer in ConvertBits in %s", __FILE__);
+                return false;
+            }
         }
         ++it;
     }
