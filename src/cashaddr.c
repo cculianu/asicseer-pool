@@ -308,7 +308,8 @@ static inline bool push_back(uint8_t **buf, size_t *len, uint8_t val)
     // the below is equivalent to a C++ push_back to a vector, more or less, due to how malloc works.
     uint8_t *newbuf = realloc(*buf, ++(*len)); // allocate 1 more byte; realloc of NULL pointer is just a malloc
     if (unlikely(!newbuf)) {
-        // realloc failure -- help!
+        // Paranoia -- should never happen. But if it does, make sure to print to log.
+        LOGCRIT("Failed to reallocate a buffer in push_back in %s", __FILE__);
         free(*buf); // free old buffer, if any
         *buf = NULL;
         *len = 0;
@@ -334,8 +335,7 @@ static bool ConvertBits(uint8_t **out, size_t *outlen, size_t frombits, size_t t
             bits -= tobits;
             const uint8_t val = (acc >> bits) & maxv;
             if (unlikely(!push_back(out, outlen, val))) {
-                // Paranoia -- should never happen. But if it does, make sure to print to log.
-                LOGCRIT("Failed to reallocate a buffer in ConvertBits in %s", __FILE__);
+                // memory allocation failure -- very unlikely.
                 return false;
             }
         }
