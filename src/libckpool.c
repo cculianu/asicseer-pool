@@ -1730,53 +1730,6 @@ char *http_base64(const char *src)
 	return (str);
 }
 
-static const int8_t charset_rev[128] = {
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	15, -1, 10, 17, 21, 20, 26, 30,  7,  5, -1, -1, -1, -1, -1, -1,
-	-1, 29, -1, 24, 13, 25,  9,  8, 23, -1, 18, 22, 31, 27, 19, -1,
-	1,  0,  3, 16, 11, 28, 12, 14,  6,  4,  2, -1, -1, -1, -1, -1,
-	-1, 29, -1, 24, 13, 25,  9,  8, 23, -1, 18, 22, 31, 27, 19, -1,
-	1,  0,  3, 16, 11, 28, 12, 14,  6,  4,  2, -1, -1, -1, -1, -1
-};
-
-/* It's assumed that there is no chance of sending invalid chars to these
- * functions as they should have been checked beforehand. */
-static void bech32_decode(uint8_t *data, int *data_len, const char *input)
-{
-	int input_len = strlen(input), hrp_len, i;
-
-	*data_len = 0;
-	while (*data_len < input_len && input[(input_len - 1) - *data_len] != '1')
-		++(*data_len);
-	hrp_len = input_len - (1 + *data_len);
-	*(data_len) -= 6;
-	for (i = hrp_len + 1; i < input_len; i++) {
-		int v = (input[i] & 0x80) ? -1 : charset_rev[(int)input[i]];
-
-		if (i + 6 < input_len)
-			data[i - (1 + hrp_len)] = v;
-	}
-}
-
-static void convert_bits(char *out, int *outlen, const uint8_t *in,
-			 int inlen)
-{
-	const int outbits = 8, inbits = 5;
-	uint32_t val = 0, maxv = (((uint32_t)1) << outbits) - 1;
-	int bits = 0;
-
-	while (inlen--) {
-		val = (val << inbits) | *(in++);
-		bits += inbits;
-		while (bits >= outbits) {
-			bits -= outbits;
-			out[(*outlen)++] = (val >> bits) & maxv;
-		}
-	}
-}
-
 static int address_to_pubkeytxn(char *pkh, const char *addr)
 {
 	char b58bin[25] = {};
