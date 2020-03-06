@@ -31,6 +31,7 @@
 #include "generator.h"
 #include "stratifier.h"
 #include "connector.h"
+#include "donation.h"
 
 ckpool_t *global_ckp;
 
@@ -1818,7 +1819,7 @@ int main(int argc, char **argv)
 			ckp.btcdpass[i] = strdup("pass");
 	}
 
-	ckp.donaddress = "1Ca1inCimwRhhcpFX84TPRrPQSryTgKW6N";
+	ckp.donaddress = DONATION_P2PKH;
 	if (!ckp.btcaddress)
 		ckp.btcaddress = ckp.donaddress;
 	if (!ckp.blockpoll)

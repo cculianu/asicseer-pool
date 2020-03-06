@@ -29,6 +29,7 @@
 #include "utlist.h"
 #include "connector.h"
 #include "generator.h"
+#include "donation.h"
 
 /* Consistent across all pool instances */
 static const char *workpadding = "000000800000000000000000000000000000000000000000000000000000000000000000000000000000000080020000";
@@ -615,8 +616,19 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 
 	// Generation value
 	g64 = wb->coinbasevalue;
-	if (ckp->donvalid) {
-		d64 = g64 / 200; // 0.5% donation
+
+	// Figure out if we can/should donate.  We add the donation output if:
+	// 1. The donation address is valid according to bitcoind
+	// 2. The donation fraction > 0
+	// 3. The resulting donation amount is >= the dust limit (546 sats)
+	// 4. The coinbase reward after subtracting donation is also >= the dust limit (546 sats)
+	d64 = 0;
+	if (ckp->donvalid && DONATION_FRACTION > 0) {
+		d64 = g64 / DONATION_FRACTION; // Default = 200 e.g. 0.5% donation
+		if (unlikely(d64 < DUST_LIMIT_SATS || g64 - d64 < DUST_LIMIT_SATS))
+			d64 = 0; // fails dust checks, no donation (this shouldn't happen for at least another few decades!)
+	}
+	if (d64) {
 		g64 -= d64; // To guarantee integers add up to the original coinbasevalue
 		wb->coinb2bin[wb->coinb2len++] = 2;
 	} else
@@ -630,7 +642,7 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 	memcpy(wb->coinb2bin + wb->coinb2len, sdata->txnbin, sdata->txnlen);
 	wb->coinb2len += sdata->txnlen;
 
-	if (ckp->donvalid) {
+	if (d64) {
 		u64 = (uint64_t *)&wb->coinb2bin[wb->coinb2len];
 		*u64 = htole64(d64);
 		wb->coinb2len += 8;

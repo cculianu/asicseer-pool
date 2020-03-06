@@ -23,4 +23,6 @@ void precious_block(connsock_t *cs, const char *params);
 void submit_txn(connsock_t *cs, const char *params);
 char *get_txn(connsock_t *cs, const char *hash);
 
+#define DUST_LIMIT_SATS 546
+
 #endif /* BITCOIN_H */

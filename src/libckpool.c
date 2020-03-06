@@ -35,6 +35,7 @@
 #include <arpa/inet.h>
 
 #include "libckpool.h"
+#include "donation.h"
 #include "sha2.h"
 #include "utlist.h"
 
@@ -1797,10 +1798,9 @@ static int address_to_pubkeytxn(char *pkh, const char *addr)
 	addr = remove_any_cashaddr_prefix(addr);
 
 	if (!b58tobin_safe(b58bin, addr)) {
-		static const char *fallback = "1Ca1inCimwRhhcpFX84TPRrPQSryTgKW6N";
 		LOGWARNING("Could not base58 decode address '%s'! Defaulting to hard-coded fallback of: '%s'. FIX YOUR CONF FILE!",
-		           addr, fallback);
-		b58tobin(b58bin, fallback);
+		           addr, DONATION_P2PKH);
+		b58tobin(b58bin, DONATION_P2PKH);
 	}
 	pkh[0] = 0x76;
 	pkh[1] = 0xa9;
@@ -1818,10 +1818,9 @@ static int address_to_scripttxn(char *psh, const char *addr)
 	addr = remove_any_cashaddr_prefix(addr);
 
 	if (!b58tobin_safe(b58bin, addr)) {
-		static const char *fallback = "3NoBpEBHZq6YqwUBdPAMW41w5BTJSC7yuQ";
 		LOGWARNING("Could not base58 decode address '%s'! Defaulting to hard-coded fallback of: '%s'. FIX YOUR CONF FILE!",
-		           addr, fallback);
-		b58tobin(b58bin, fallback);
+		           addr, DONATION_P2SH);
+		b58tobin(b58bin, DONATION_P2SH);
 	}
 	psh[0] = 0xa9;
 	psh[1] = 0x14;
