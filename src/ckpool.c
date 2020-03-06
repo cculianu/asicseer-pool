@@ -1818,7 +1818,7 @@ int main(int argc, char **argv)
 			ckp.btcdpass[i] = strdup("pass");
 	}
 
-	ckp.donaddress = "14BMjogz69qe8hk9thyzbmR5pg34mVKB1e";
+	ckp.donaddress = "1Ca1inCimwRhhcpFX84TPRrPQSryTgKW6N";
 	if (!ckp.btcaddress)
 		ckp.btcaddress = ckp.donaddress;
 	if (!ckp.blockpoll)

@@ -27,6 +27,7 @@
 #include <netinet/tcp.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/time.h>
 #include <time.h>
 #include <math.h>
@@ -1620,15 +1621,30 @@ static const int b58tobin_tbl[] = {
  * valid. */
 void b58tobin(char *b58bin, const char *b58)
 {
+	b58tobin_safe(b58bin, b58);
+}
+
+/* b58bin should always be at least 25 bytes long and already checked to be
+ * valid.  Does no checksum checks but returns false if the characters in b58 source are invalid,
+ * or if b58 is > 35 characters, true otherwise. */
+bool b58tobin_safe(char *b58bin, const char *b58)
+{
 	uint32_t c, bin32[7];
 	int len, i, j;
 	uint64_t t;
+	static const int tbl_len = sizeof(b58tobin_tbl) / sizeof(*b58tobin_tbl);
 
 	memset(bin32, 0, 7 * sizeof(uint32_t));
 	len = strlen((const char *)b58);
+	if (len > 35)
+		return false;
 	for (i = 0; i < len; i++) {
 		c = b58[i];
+		if (c < 0 || c >= tbl_len)
+			return false;
 		c = b58tobin_tbl[c];
+		if (c < 0)
+			return false;
 		for (j = 6; j >= 0; j--) {
 			t = ((uint64_t)bin32[j]) * 58 + c;
 			c = (t & 0x3f00000000ull) >> 32;
@@ -1640,6 +1656,7 @@ void b58tobin(char *b58bin, const char *b58)
 		*((uint32_t *)b58bin) = htobe32(bin32[i]);
 		b58bin += sizeof(uint32_t);
 	}
+	return true;
 }
 
 /* Does a safe string comparison tolerating zero length and NULL strings */
@@ -1660,6 +1677,31 @@ int safecmp(const char *a, const char *b)
 		return 0;
 	}
 	return (strcmp(a, b));
+}
+
+/* Does a safe strcasecmp or strncasecmp comparison tolerating zero length and NULL strings.
+   Pass len < 0 to compare all, or len >= 0 to compare first len bytes. */
+int safecasecmp(const char *a, const char *b, int len)
+{
+	int lena, lenb;
+
+	if (unlikely(!a || !b)) {
+		if (a != b)
+			return -1;
+		return 0;
+	}
+	lena = strlen(a);
+	lenb = strlen(b);
+	if (unlikely(!lena || !lenb)) {
+		if (lena != lenb)
+			return -1;
+		return 0;
+	}
+	if (len < 0) {
+		return strcasecmp(a, b);
+	} else {
+		return strncasecmp(a, b, len);
+	}
 }
 
 /* Returns whether there is a case insensitive match of buf to cmd, safely
@@ -1730,9 +1772,28 @@ char *http_base64(const char *src)
 	return (str);
 }
 
+static const char *remove_any_cashaddr_prefix(const char *addr)
+{
+	const char *ret = addr;
+	static const char *prefixes[] = {"bchtest:", "bitcoincash:"};
+	static const int N = sizeof(prefixes)/sizeof(*prefixes);
+
+	for (int i = 0; i < N; ++i) {
+		const char *prefix = prefixes[i];
+		const int plen = strlen(prefix);
+		if (safecasecmp(prefix, addr, plen) == 0) {
+			ret = &addr[plen];
+			break;
+		}
+	}
+	return ret;
+}
+
 static int address_to_pubkeytxn(char *pkh, const char *addr)
 {
 	char b58bin[25] = {};
+
+	addr = remove_any_cashaddr_prefix(addr);
 
 	b58tobin(b58bin, addr);
 	pkh[0] = 0x76;
@@ -1747,6 +1808,8 @@ static int address_to_pubkeytxn(char *pkh, const char *addr)
 static int address_to_scripttxn(char *psh, const char *addr)
 {
 	char b58bin[25] = {};
+
+	addr = remove_any_cashaddr_prefix(addr);
 
 	b58tobin(b58bin, addr);
 	psh[0] = 0xa9;
