@@ -31,7 +31,7 @@ static bool check_required_rule(const char* rule)
 
 /* Take a bitcoin address and do some sanity checks on it, then send it to
  * bitcoind to see if it's a valid address */
-bool validate_address(connsock_t *cs, const char *address, bool *script, bool *segwit)
+bool validate_address(connsock_t *cs, const char *address, bool *script)
 {
 	json_t *val, *res_val, *valid_val, *tmp_val;
 	char rpc_req[128];
@@ -80,12 +80,7 @@ bool validate_address(connsock_t *cs, const char *address, bool *script, bool *s
 		goto out;
 	}
 	*script = json_is_true(tmp_val);
-	tmp_val = json_object_get(res_val, "iswitness");
-	if (unlikely(!tmp_val))
-		goto out;
-	*segwit = json_is_true(tmp_val);
-	LOGDEBUG("Bitcoin address %s IS valid%s%s", address, *script ? " script" : "",
-		 *segwit ? " segwit" : "");
+	LOGDEBUG("Bitcoin address %s IS valid%s", address, *script ? " script" : "");
 out:
 	if (val)
 		json_decref(val);

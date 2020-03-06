@@ -19,7 +19,7 @@
 void generator_add_send(ckpool_t *ckp, json_t *val);
 struct genwork *generator_getbase(ckpool_t *ckp);
 int generator_getbest(ckpool_t *ckp, char *hash);
-bool generator_checkaddr(ckpool_t *ckp, const char *addr, bool *script, bool *segwit);
+bool generator_checkaddr(ckpool_t *ckp, const char *addr, bool *script);
 char *generator_get_txn(ckpool_t *ckp, const char *hash);
 bool generator_submitblock(ckpool_t *ckp, const char *buf);
 void generator_preciousblock(ckpool_t *ckp, const char *hash);

@@ -477,7 +477,7 @@ bool extract_sockaddr(char *url, char **sockaddr_url, char **sockaddr_port)
 		url_len -= 2;
 		url_begin++;
 	}
-	
+
 	if (url_len < 1) {
 		LOGWARNING("Null length URL passed to extract_sockaddr");
 		return false;
@@ -1803,27 +1803,9 @@ static int address_to_scripttxn(char *psh, const char *addr)
 	return 23;
 }
 
-static int segaddress_to_txn(char *p2h, const char *addr)
-{
-	int data_len, witdata_len = 0;
-	char *witdata = &p2h[2];
-	uint8_t data[84];
-
-	bech32_decode(data, &data_len, addr);
-	p2h[0] = data[0];
-	/* Witness version is > 0 */
-	if (p2h[0])
-		p2h[0] += 0x50;
-	convert_bits(witdata, &witdata_len, data + 1, data_len - 1);
-	p2h[1] = witdata_len;
-	return witdata_len + 2;
-}
-
 /* Convert an address to a transaction and return the length of the transaction */
-int address_to_txn(char *p2h, const char *addr, const bool script, const bool segwit)
+int address_to_txn(char *p2h, const char *addr, const bool script)
 {
-	if (segwit)
-		return segaddress_to_txn(p2h, addr);
 	if (script)
 		return address_to_scripttxn(p2h, addr);
 	return address_to_pubkeytxn(p2h, addr);

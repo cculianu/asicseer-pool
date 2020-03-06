@@ -563,7 +563,7 @@ void b58tobin(char *b58bin, const char *b58);
 int safecmp(const char *a, const char *b);
 bool cmdmatch(const char *buf, const char *cmd);
 
-int address_to_txn(char *p2h, const char *addr, const bool script, const bool segwit);
+int address_to_txn(char *p2h, const char *addr, const bool script);
 int ser_number(uchar *s, int32_t val);
 int get_sernumber(uchar *s);
 bool fulltest(const uchar *hash, const uchar *target);

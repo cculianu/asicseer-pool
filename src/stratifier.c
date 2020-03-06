@@ -5333,7 +5333,7 @@ static user_instance_t *generate_user(ckpool_t *ckp, stratum_instance_t *client,
 
 	/* Is this a btc address based username? */
 	if (!ckp->proxy && (new_user || !user->btcaddress))
-		user->btcaddress = generator_checkaddr(ckp, username, &user->script, &user->segwit);
+		user->btcaddress = generator_checkaddr(ckp, username, &user->script);
 	if (new_user) {
 		LOGNOTICE("Added new user %s%s", username, user->btcaddress ?
 			  " as address based registration" : "");
@@ -6887,7 +6887,7 @@ static user_instance_t *generate_remote_user(ckpool_t *ckp, const char *workerna
 
 	/* Is this a btc address based username? */
 	if (!ckp->proxy && (new_user || !user->btcaddress) && (len > 26 && len < 35))
-		user->btcaddress = generator_checkaddr(ckp, username, &user->script, &user->segwit);
+		user->btcaddress = generator_checkaddr(ckp, username, &user->script);
 	if (new_user) {
 		LOGNOTICE("Added new remote user %s%s", username, user->btcaddress ?
 			  " as address based registration" : "");
@@ -8683,18 +8683,18 @@ void *stratifier(void *arg)
 		cksleep_ms(10);
 
 	if (!ckp->proxy) {
-		if (!generator_checkaddr(ckp, ckp->btcaddress, &ckp->script, &ckp->segwit)) {
+		if (!generator_checkaddr(ckp, ckp->btcaddress, &ckp->script)) {
 			LOGEMERG("Fatal: btcaddress invalid according to bitcoind");
 			goto out;
 		}
 
 		/* Store this for use elsewhere */
 		hex2bin(scriptsig_header_bin, scriptsig_header, 41);
-		sdata->txnlen = address_to_txn(sdata->txnbin, ckp->btcaddress, ckp->script, ckp->segwit);
+		sdata->txnlen = address_to_txn(sdata->txnbin, ckp->btcaddress, ckp->script);
 
-		if (generator_checkaddr(ckp, ckp->donaddress, &ckp->donscript, &ckp->donsegwit)) {
+		if (generator_checkaddr(ckp, ckp->donaddress, &ckp->donscript)) {
 			ckp->donvalid = true;
-			sdata->dontxnlen = address_to_txn(sdata->dontxnbin, ckp->donaddress, ckp->donscript, ckp->donsegwit);
+			sdata->dontxnlen = address_to_txn(sdata->dontxnbin, ckp->donaddress, ckp->donscript);
 		}
 	}
 
