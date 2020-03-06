@@ -43,18 +43,6 @@ uint8_t *cashaddr_decode_hash160(const char *addr)
 }
 
 /**
- * The cashaddr character set for decoding.
- */
-static const int8_t CHARSET_REV[128] = {
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 15, -1, 10, 17, 21, 20, 26, 30, 7,
-    5,  -1, -1, -1, -1, -1, -1, -1, 29, -1, 24, 13, 25, 9,  8,  23, -1, 18, 22,
-    31, 27, 19, -1, 1,  0,  3,  16, 11, 28, 12, 14, 6,  4,  2,  -1, -1, -1, -1,
-    -1, -1, 29, -1, 24, 13, 25, 9,  8,  23, -1, 18, 22, 31, 27, 19, -1, 1,  0,
-    3,  16, 11, 28, 12, 14, 6,  4,  2,  -1, -1, -1, -1, -1};
-
-/**
  * This function will compute what 8 5-bit values to XOR into the last 8 input
  * values, in order to make the checksum 0. These 8 values are packed together
  * in a single 40-bit integer. The higher bits correspond to earlier values.
@@ -196,6 +184,18 @@ static bool cashaddr_verify_checksum(const char *prefix, const uint8_t *payload,
 }
 
 /**
+ * The cashaddr character set for decoding.
+ */
+static const int8_t CHARSET_REV[128] = {
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 15, -1, 10, 17, 21, 20, 26, 30, 7,
+    5,  -1, -1, -1, -1, -1, -1, -1, 29, -1, 24, 13, 25, 9,  8,  23, -1, 18, 22,
+    31, 27, 19, -1, 1,  0,  3,  16, 11, 28, 12, 14, 6,  4,  2,  -1, -1, -1, -1,
+    -1, -1, 29, -1, 24, 13, 25, 9,  8,  23, -1, 18, 22, 31, 27, 19, -1, 1,  0,
+    3,  16, 11, 28, 12, 14, 6,  4,  2,  -1, -1, -1, -1, -1};
+
+/**
  * Convert to lower case.
  *
  * Assume the input is a character.
@@ -274,10 +274,9 @@ static int cashaddr_decode(const char *str, uint8_t **buf, size_t *buflen) {
     }
 
     // Decode values.
-    const size_t valuesSize = slen;
-    *buf = ckzalloc(valuesSize);
-    *buflen = valuesSize;
-    for (size_t i = 0; i < valuesSize; ++i) {
+    *buflen = slen;
+    *buf = ckzalloc(*buflen);
+    for (size_t i = 0; i < *buflen; ++i) {
         uint8_t c = str[i];
         // We have an invalid char in there.
         if (unlikely(c > 127 || CHARSET_REV[c] == -1)) {
@@ -288,11 +287,11 @@ static int cashaddr_decode(const char *str, uint8_t **buf, size_t *buflen) {
     }
 
     // Verify the checksum.
-    if (!cashaddr_verify_checksum(prefix, *buf, valuesSize)) {
+    if (!cashaddr_verify_checksum(prefix, *buf, *buflen)) {
         goto err_out;
     }
 
-    *buflen -= 8; // this was in original cashaddr.cpp.. ?? why ??
+    *buflen -= 8; // this was in original cashaddr.cpp; remove the checksum from the end
     free(prefix);
     return (int)prefixSize;
 err_out:
