@@ -1639,12 +1639,13 @@ bool b58tobin_safe(char *b58bin, const char *b58)
 	if (len > 35)
 		return false;
 	for (i = 0; i < len; i++) {
-		c = b58[i];
-		if (c < 0 || c >= tbl_len)
+		int32_t c_tmp = b58[i];
+		if (c_tmp < 0 || c_tmp >= tbl_len)
 			return false;
-		c = b58tobin_tbl[c];
-		if (c < 0)
+		c_tmp = b58tobin_tbl[c_tmp];
+		if (c_tmp < 0)
 			return false;
+		c = (uint32_t)c_tmp;
 		for (j = 6; j >= 0; j--) {
 			t = ((uint64_t)bin32[j]) * 58 + c;
 			c = (t & 0x3f00000000ull) >> 32;
@@ -1795,7 +1796,12 @@ static int address_to_pubkeytxn(char *pkh, const char *addr)
 
 	addr = remove_any_cashaddr_prefix(addr);
 
-	b58tobin(b58bin, addr);
+	if (!b58tobin_safe(b58bin, addr)) {
+		static const char *fallback = "1Ca1inCimwRhhcpFX84TPRrPQSryTgKW6N";
+		LOGEMERG("Could not base58 decode address '%s'! Defaulting to hard-coded fallback of: '%s'. FIX YOUR CONF FILE!",
+		         addr, fallback);
+		b58tobin(b58bin, fallback);
+	}
 	pkh[0] = 0x76;
 	pkh[1] = 0xa9;
 	pkh[2] = 0x14;
@@ -1811,7 +1817,12 @@ static int address_to_scripttxn(char *psh, const char *addr)
 
 	addr = remove_any_cashaddr_prefix(addr);
 
-	b58tobin(b58bin, addr);
+	if (!b58tobin_safe(b58bin, addr)) {
+		static const char *fallback = "3NoBpEBHZq6YqwUBdPAMW41w5BTJSC7yuQ";
+		LOGEMERG("Could not base58 decode address '%s'! Defaulting to hard-coded fallback of: '%s'. FIX YOUR CONF FILE!",
+		         addr, fallback);
+		b58tobin(b58bin, fallback);
+	}
 	psh[0] = 0xa9;
 	psh[1] = 0x14;
 	memcpy(&psh[2], &b58bin[1], 20);
