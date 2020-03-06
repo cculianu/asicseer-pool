@@ -1,4 +1,4 @@
-AC_INIT(ckpool, 0.9.4, kernel@kolivas.org)
+AC_INIT(c3pool, 0.9.9, calin.culianu@gmail.com)
 
 AC_CANONICAL_SYSTEM
 AC_CONFIG_MACRO_DIR([m4])
