@@ -592,7 +592,7 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 	len += wb->enonce2varlen;
 
 	wb->coinb2bin = ckzalloc(512);
-	static const char sw_ident[] = "\x0a""c3pool";
+	static const char sw_ident[] = ("\x0a" HARDCODED_COINBASE_SW_IDENT_STR); //< TODO: figure out if we need this leading 0x0a
 	static const size_t sw_ident_len = sizeof(sw_ident)-1;
 	memcpy(wb->coinb2bin, sw_ident, sw_ident_len);
 	wb->coinb2len = sw_ident_len;
