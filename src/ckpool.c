@@ -1476,11 +1476,17 @@ static void parse_config(ckpool_t *ckp)
 		if (arr_size)
 			parse_btcds(ckp, arr_val, arr_size);
 	}
-	json_get_string(&ckp->btcaddress, json_conf, "btcaddress");
-	json_get_string(&ckp->btcsig, json_conf, "btcsig");
-	if (ckp->btcsig && strlen(ckp->btcsig) > 38) {
-		LOGWARNING("Signature %s too long, truncating to 38 bytes", ckp->btcsig);
-		ckp->btcsig[38] = '\0';
+	// Obsolete keys (renamed to bch*)
+	if (json_object_get(json_conf, "btcaddress"))
+		quit("'btcaddress' key has been renamed to 'bchaddress'. Please update your config file!");
+	if (json_object_get(json_conf, "btcsig"))
+		quit("'btcsig' key has been renamed to 'bchsig'. Please update your config file!");
+	// /End obsolete keys
+	json_get_string(&ckp->bchaddress, json_conf, "bchaddress");
+	json_get_string(&ckp->bchsig, json_conf, "bchsig");
+	if (ckp->bchsig && strlen(ckp->bchsig) > 38) {
+		LOGWARNING("Signature %s too long, truncating to 38 bytes", ckp->bchsig);
+		ckp->bchsig[38] = '\0';
 	}
 	json_get_int(&ckp->blockpoll, json_conf, "blockpoll");
 	json_get_int(&ckp->nonce1length, json_conf, "nonce1length");
@@ -1821,8 +1827,8 @@ int main(int argc, char **argv)
 	}
 
 	ckp.donaddress = DONATION_P2PKH;
-	if (!ckp.btcaddress)
-		ckp.btcaddress = ckp.donaddress;
+	if (!ckp.bchaddress)
+		ckp.bchaddress = ckp.donaddress;
 	if (!ckp.blockpoll)
 		ckp.blockpoll = 100;
 	if (!ckp.nonce1length)

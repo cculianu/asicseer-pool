@@ -243,9 +243,9 @@ struct ckpool_instance {
 	int64_t maxdiff; // No default
 
 	/* Coinbase data */
-	char *btcaddress; // Address to mine to
+	char *bchaddress; // Address to mine to. In SPLNS mode this is used as a fallback address ok worker address failure, etc.
 	bool script; // Address is a script address
-	char *btcsig; // Optional signature to add to coinbase
+	char *bchsig; // Optional signature to add to coinbase
 	char *donaddress; // Donation address
 	bool donscript; // Donation is a script
 	bool donvalid; // Donation address works on this network

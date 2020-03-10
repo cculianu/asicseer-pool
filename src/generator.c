@@ -232,8 +232,8 @@ static bool server_alive(ckpool_t *ckp, server_instance_t *si, bool pinging)
 		goto out;
 	}
 	clear_gbtbase(&gbt);
-	if (!ckp->node && !validate_address(cs, ckp->btcaddress, &ckp->script)) {
-		LOGWARNING("Invalid btcaddress: %s !", ckp->btcaddress);
+	if (!ckp->node && !validate_address(cs, ckp->bchaddress, &ckp->script)) {
+		LOGWARNING("Invalid bchaddress: %s !", ckp->bchaddress);
 		goto out;
 	}
 	si->alive = cs->alive = ret = true;

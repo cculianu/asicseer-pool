@@ -13,11 +13,10 @@
 /* Max depth of the merkle tree. Increase this if blocks ever have more than 4 billion tx's. */
 #define GENWORK_MAX_MERKLE_DEPTH 32
 
-/* This used to be "ckpool" in the original. We now keep it as the empty string, and rely
-   entirely on the configurable coinbase parameter "btcsig". Set this to "ckpool" or "asicseer"
-   if you find you want all extant version to have a hard-coded coinbase string preceeding
-   the configurable one. */
-#define HARDCODED_COINBASE_SW_IDENT_STR ""
+/* This used to be "ckpool" in the original. This is the hard-coded prefix
+   for the coinbase tx. */
+#define HARDCODED_COINBASE_PREFIX_STR "pool.ASICseer.com"
+#define HARDCODED_COINBASE_SUFFIX_STR "BCHN" // currently unused -- TODO: use!
 
 /* Generic structure for both workbase in stratifier and gbtbase in generator */
 struct genwork {

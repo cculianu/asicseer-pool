@@ -278,9 +278,11 @@ with the username "user" and password "pass".
 "proxy" : This is an array in the same format as btcd above but is used in
 proxy and passthrough mode to set the upstream pool and is mandatory.
 
-"btcaddress" : This is the bitcoin address to try to generate blocks to.
+"bchaddress" : This is the bitcoin cash address to try to generate blocks to.
+In SPLNS mode it is the fallback address for leftover dust or in case a worker
+address is invalid.
 
-"btcsig" : This is an optional signature to put into the coinbase of mined
+"bchsig" : This is an optional signature to put into the coinbase of mined
 blocks.
 
 "blockpoll" : This is the frequency in milliseconds for how often to check for

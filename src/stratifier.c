@@ -158,7 +158,7 @@ struct user_instance {
 	char username[128];
 	int id;
 	char *secondaryuserid;
-	bool btcaddress;
+	bool bchaddress;
 	bool script;
 	char txnbin[48];
 	int txnlen;
@@ -749,17 +749,17 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 	len += wb->enonce2varlen;
 
 	wb->coinb2bin = ckzalloc(512 + cbspace);
-	static const char sw_ident[] = ("\x0a" HARDCODED_COINBASE_SW_IDENT_STR); //< TODO: figure out if we need this leading 0x0a
+	static const char sw_ident[] = ("\x0a" HARDCODED_COINBASE_PREFIX_STR); //< TODO: figure out if we need this leading 0x0a
 	static const size_t sw_ident_len = sizeof(sw_ident)-1;
 	memcpy(wb->coinb2bin, sw_ident, sw_ident_len);
 	wb->coinb2len = sw_ident_len;
-	if (ckp->btcsig) {
-		int siglen = strlen(ckp->btcsig);
+	if (ckp->bchsig) {
+		int siglen = strlen(ckp->bchsig);
 
-		LOGDEBUG("Len %d sig %s", siglen, ckp->btcsig);
+		LOGDEBUG("Len %d sig %s", siglen, ckp->bchsig);
 		if (siglen) {
 			wb->coinb2bin[wb->coinb2len++] = siglen;
-			memcpy(wb->coinb2bin + wb->coinb2len, ckp->btcsig, siglen);
+			memcpy(wb->coinb2bin + wb->coinb2len, ckp->bchsig, siglen);
 			wb->coinb2len += siglen;
 		}
 	}
@@ -5591,9 +5591,9 @@ static user_instance_t *get_create_user(sdata_t *sdata, const char *username, bo
 	}
 
 	/* Is this a btc address based username? */
-	if (!ckp->proxy && (*new_user || !user->btcaddress)) {
-		user->btcaddress = generator_checkaddr(ckp, username, &user->script);
-		if (user->btcaddress) {
+	if (!ckp->proxy && (*new_user || !user->bchaddress)) {
+		user->bchaddress = generator_checkaddr(ckp, username, &user->script);
+		if (user->bchaddress) {
 			/* Cache the transaction for use in generation */
 			user->txnlen = address_to_txn(user->txnbin, username, user->script);
 		}
@@ -5694,7 +5694,7 @@ static user_instance_t *generate_user(ckpool_t *ckp, stratum_instance_t *client,
 	ck_wunlock(&sdata->instance_lock);
 
 	if (new_user) {
-		LOGNOTICE("Added new user %s%s", username, user->btcaddress ?
+		LOGNOTICE("Added new user %s%s", username, user->bchaddress ?
 			  " as address based registration" : "");
 	}
 
@@ -5797,7 +5797,7 @@ static int send_recv_auth(stratum_instance_t *client)
 	json_set_string(val, "createby", "code");
 	json_set_string(val, "createcode", __func__);
 	json_set_string(val, "createinet", client->address);
-	if (user->btcaddress)
+	if (user->bchaddress)
 		json_msg = ckdb_msg(ckp, sdata, val, ID_ADDRAUTH);
 	else
 		json_msg = ckdb_msg(ckp, sdata, val, ID_AUTH);
@@ -6033,7 +6033,7 @@ static json_t *parse_authorise(stratum_instance_t *client, const json_t *params_
 		}
 	}
 	if (CKP_STANDALONE(ckp))
-		ret = user->btcaddress;
+		ret = user->bchaddress;
 	else {
 		/* Preauth workers for the first 10 minutes after the user is
 		 * first authorised by ckdb to avoid floods of worker auths.
@@ -7248,7 +7248,7 @@ static user_instance_t *generate_remote_user(ckpool_t *ckp, const char *workerna
 	user = get_create_user(sdata, username, &new_user);
 
 	if (new_user) {
-		LOGNOTICE("Added new remote user %s%s", username, user->btcaddress ?
+		LOGNOTICE("Added new remote user %s%s", username, user->bchaddress ?
 			  " as address based registration" : "");
 	}
 
@@ -8602,7 +8602,7 @@ static void calc_user_paygens(sdata_t *sdata)
 
 	ck_rlock(&sdata->instance_lock);
 	HASH_ITER(hh, sdata->user_instances, user, tmpuser) {
-		if (!user->btcaddress)
+		if (!user->bchaddress)
 			continue;
 		if (user->herp + user->accumulated < 1)
 			continue;
@@ -9374,14 +9374,14 @@ void *stratifier(void *arg)
 		cksleep_ms(10);
 
 	if (!ckp->proxy) {
-		if (!generator_checkaddr(ckp, ckp->btcaddress, &ckp->script)) {
-			LOGEMERG("Fatal: btcaddress invalid according to bitcoind");
+		if (!generator_checkaddr(ckp, ckp->bchaddress, &ckp->script)) {
+			LOGEMERG("Fatal: bchaddress invalid according to bitcoind");
 			goto out;
 		}
 
 		/* Store this for use elsewhere */
 		hex2bin(scriptsig_header_bin, scriptsig_header, 41);
-		sdata->txnlen = address_to_txn(sdata->txnbin, ckp->btcaddress, ckp->script);
+		sdata->txnlen = address_to_txn(sdata->txnbin, ckp->bchaddress, ckp->script);
 
 #if 0
 		/* FIXME Fee is currently disabled. Donvalid will be false */
