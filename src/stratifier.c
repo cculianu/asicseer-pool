@@ -695,14 +695,14 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 		/* Increment number of generation transactions */
 		(*gentxns)++;
 	}
-	if (auto_payout_dust && total < DUST_LIMIT_SATS && max_payee.user) {
+	if (auto_payout_dust && total > 0 && total < DUST_LIMIT_SATS && max_payee.user) {
 		// payout remaining dust to the user with the most hash
-		char * const username = max_payee.user->username;
+		const char * const username = max_payee.user->username;
 		LOGDEBUG("Added %"PRId64" sats in dust to most-hash-payee: %s", total, username);
 		const uint64_t newreward = max_payee.reward + total;
 		*(max_payee.cb_u64) = htole64(newreward); // update coinbase binary
 		total = 0;
-		const double dreward = ((double)newreward) / SATOSHIS;
+		const double dreward = ((double)newreward) / (double)SATOSHIS;
 		json_set_double(payout_entries, username, dreward); // update json
 	}
 
@@ -865,10 +865,16 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 		wb->coinb2bin[wb->coinb2len++] = sdata->txnlen;
 		memcpy(wb->coinb2bin + wb->coinb2len, sdata->txnbin, sdata->txnlen);
 		wb->coinb2len += sdata->txnlen;
+
+		// tabulate this as "pool fee" in json -- TODO: Verify this is correct -Calin
+		double dfee = d64;
+		dfee /= SATOSHIS;
+		json_set_double(wb->payout, "fee", dfee);
+
 		LOGINFO("%"PRId64" sats in change to pool address: %s", d64, ckp->bchaddress);
 		d64 = 0;
 	} else if (d64) {
-		// FIXME -- this branch should never be reached because add_user_generations should
+		// FIXME -- this branch should never be reached because add_user_generation should
 		// have paid dust to largest payee. If we get here it means we couldn't have paid
 		// ourselves (missing pool bchaddress?)
 		LOGWARNING("%"PRId64" sats in change left over after generating coinbase txns! FIXME!", d64);
