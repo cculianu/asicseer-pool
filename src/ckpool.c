@@ -1478,9 +1478,9 @@ static void parse_config(ckpool_t *ckp)
 	}
 	// Obsolete keys (renamed to bch*)
 	if (json_object_get(json_conf, "btcaddress"))
-		quit("'btcaddress' key has been renamed to 'bchaddress'. Please update your config file!");
+		quit(1, "'btcaddress' key has been renamed to 'bchaddress'. Please update your config file!");
 	if (json_object_get(json_conf, "btcsig"))
-		quit("'btcsig' key has been renamed to 'bchsig'. Please update your config file!");
+		quit(1, "'btcsig' key has been renamed to 'bchsig'. Please update your config file!");
 	// /End obsolete keys
 	json_get_string(&ckp->bchaddress, json_conf, "bchaddress");
 	json_get_string(&ckp->bchsig, json_conf, "bchsig");
