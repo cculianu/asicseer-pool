@@ -844,7 +844,6 @@ K_ITEM *users_add(PGconn *conn, INTRANSIENT *in_username, char *emailaddress,
 	char *ins;
 	char tohash[64];
 	uint64_t hash;
-	__maybe_unused uint64_t tmp;
 	bool dup, ok = false;
 	char *params[10 + HISTORYDATECOUNT];
 	int n, par = 0;
@@ -905,7 +904,7 @@ K_ITEM *users_add(PGconn *conn, INTRANSIENT *in_username, char *emailaddress,
 		snprintf(tohash, sizeof(tohash), "%s&#%s",
 						 in_username->str,
 						 emailaddress);
-		HASH_BER(tohash, strlen(tohash), 1, hash, tmp);
+		HASH_BER(tohash, strlen(tohash), hash);
 		__bin2hex(row->secondaryuserid, (void *)(&hash), sizeof(hash));
 	} else
 		STRNCPY(row->secondaryuserid, secondaryuserid);
@@ -2478,7 +2477,7 @@ bool payments_add(PGconn *conn, bool add, K_ITEM *p_item, K_ITEM **old_p_item,
 		if (!begun)
 			goto unparam;
 	}
-		
+
 	if (*old_p_item) {
 		LOGDEBUG("%s(): updating old", __func__);
 
@@ -3101,7 +3100,7 @@ void oc_ips(OPTIONCONTROL *oc, const char *from)
 	colon = strchr(ips.ip, ':');
 	if (colon)
 		*colon = '\0';
-	
+
 	if (strncmp(oc->optionname, OC_IPS_OK, strlen(OC_IPS_OK)) == 0) {
 		e = is_elimitname(ips.eventname, true);
 		ips_add(IPS_GROUP_OK, ips.ip, ips.eventname, e,
@@ -6964,7 +6963,7 @@ bool miningpayouts_add(PGconn *conn, bool add, K_ITEM *mp_item,
 		if (!begun)
 			goto unparam;
 	}
-		
+
 	if (*old_mp_item) {
 		LOGDEBUG("%s(): updating old", __func__);
 
@@ -7631,7 +7630,7 @@ bool payouts_fill(PGconn *conn)
 	n = PQntuples(res);
 	LOGDEBUG("%s(): tree build count %d", __func__, n);
 	ok = true;
-	payoutid_num = height_num = blockhash_num = minerreward_num = 
+	payoutid_num = height_num = blockhash_num = minerreward_num =
 	workinfoidstart_num = workinfoidend_num = elapsed_num = status_num =
 	diffwanted_num = diffused_num = shareacc_num = lastshareacc_num =
 	stats_num = CKPQFUNDEF;
@@ -9781,7 +9780,7 @@ bool marks_fill(PGconn *conn)
 	n = PQntuples(res);
 	LOGDEBUG("%s(): tree build count %d", __func__, n);
 	ok = true;
-	poolinstance_num = workinfoid_num = description_num = extra_num = 
+	poolinstance_num = workinfoid_num = description_num = extra_num =
 	marktype_num = status_num = CKPQFUNDEF;
 	HISTORYDATE_init;
 	K_WLOCK(marks_free);
