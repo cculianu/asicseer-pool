@@ -26,7 +26,7 @@ static bool check_required_rule(const char* rule)
 bool validate_address(connsock_t *cs, const char *address, bool *script)
 {
 	json_t *val, *res_val, *valid_val, *tmp_val;
-	char rpc_req[128];
+	char rpc_req[256];
 	bool ret = false;
 
 	if (unlikely(!address)) {
@@ -34,7 +34,7 @@ bool validate_address(connsock_t *cs, const char *address, bool *script)
 		return ret;
 	}
 
-	snprintf(rpc_req, 128, "{\"method\": \"validateaddress\", \"params\": [\"%s\"]}\n", address);
+	snprintf(rpc_req, 256, "{\"method\": \"validateaddress\", \"params\": [\"%s\"]}\n", address);
 	val = json_rpc_response(cs, rpc_req);
 	if (!val) {
 		/* May get a parse error with an invalid address */
@@ -220,7 +220,7 @@ bool get_blockhash(connsock_t *cs, int height, char *hash)
 {
 	json_t *val, *res_val;
 	const char *res_ret;
-	char rpc_req[128];
+	char rpc_req[256];
 	bool ret = false;
 
 	sprintf(rpc_req, "{\"method\": \"getblockhash\", \"params\": [%d]}\n", height);
