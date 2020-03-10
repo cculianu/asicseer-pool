@@ -700,7 +700,7 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 		LOGDEBUG("Auto paying %"PRId64" sats in coinbase change to most-hash-payee: %s", total, user->username);
 		*(max_payee.cb_u64) += total; // update coinbase binary
 		total = 0;
-		const double dreward = double(*(max_payee.cb_u64)) / SATOSHIS;
+		const double dreward = *(max_payee.cb_u64) / (double)SATOSHIS;
 		json_set_double(payout_entries, user->username, dreward); // update json
 	}
 
