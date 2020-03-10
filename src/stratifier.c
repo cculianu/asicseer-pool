@@ -620,7 +620,7 @@ static int postponed_sort(generation_t *a, generation_t *b)
 /* Add generation transactions to the coinbase for each user, return any spare
  * change. */
 static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
-				   uint64_t *gentxns, const bool auto_payout_change)
+				   uint64_t *gentxns, const bool auto_payout_dust)
 {
 	json_t *payout = json_object(), *payout_entries = json_object(),
 		*postponed_entries;
@@ -679,7 +679,7 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 		/* Set the user's coinbase reward */
 		u64 = (uint64_t *)&wb->coinb2bin[wb->coinb2len];
 		*u64 = htole64(reward);
-		if (auto_payout_change && reward > max_payee.reward) {
+		if (auto_payout_dust && reward > max_payee.reward) {
 			// remember this as the largest payee in case we need to give them leftover dust
 			max_payee.reward = reward;
 			max_payee.cb_u64 = u64;
@@ -695,10 +695,10 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 		/* Increment number of generation transactions */
 		(*gentxns)++;
 	}
-	if (auto_payout_change && total && max_payee.user) {
+	if (auto_payout_dust && total < DUST_LIMIT_SATS && max_payee.user) {
 		// payout remaining dust to the user with the most hash
 		char * const username = max_payee.user->username;
-		LOGDEBUG("Auto paying %"PRId64" sats in coinbase change to most-hash-payee: %s", total, username);
+		LOGDEBUG("Added %"PRId64" sats in dust to most-hash-payee: %s", total, username);
 		const uint64_t newreward = max_payee.reward + total;
 		*(max_payee.cb_u64) = htole64(newreward); // update coinbase binary
 		total = 0;
@@ -844,7 +844,8 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 		wb->coinb2len += sdata->txnlen;
 	}
 
-	if (d64 >= DUST_LIMIT_SATS && ckp->donvalid) { // FIXME: this branch not taken -- where to put change?!
+	if (d64 >= DUST_LIMIT_SATS && ckp->donvalid) {
+		// FIXME: this branch not taken -- no donations in SPLNS
 		(*gentxns)++;
 		u64 = (uint64_t *)&wb->coinb2bin[wb->coinb2len];
 		*u64 = htole64(d64);
@@ -853,8 +854,23 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 		wb->coinb2bin[wb->coinb2len++] = sdata->dontxnlen;
 		memcpy(wb->coinb2bin + wb->coinb2len, sdata->dontxnbin, sdata->dontxnlen);
 		wb->coinb2len += sdata->dontxnlen;
+	} else if (d64 >= DUST_LIMIT_SATS && sdata->txnlen) {
+		// pay extra change > dust limit back to pool
+		(*gentxns)++;
+
+		u64 = (uint64_t *)&wb->coinb2bin[wb->coinb2len];
+		*u64 = htole64(d64);
+		wb->coinb2len += 8;
+
+		wb->coinb2bin[wb->coinb2len++] = sdata->txnlen;
+		memcpy(wb->coinb2bin + wb->coinb2len, sdata->txnbin, sdata->txnlen);
+		wb->coinb2len += sdata->txnlen;
+		LOGINFO("%"PRId64" sats in change to pool address: %s", d64, ckp->bchaddress);
+		d64 = 0;
 	} else if (d64) {
-		// FIXME
+		// FIXME -- this branch should never be reached because add_user_generations should
+		// have paid dust to largest payee. If we get here it means we couldn't have paid
+		// ourselves (missing pool bchaddress?)
 		LOGWARNING("%"PRId64" sats in change left over after generating coinbase txns! FIXME!", d64);
 	}
 
@@ -5590,6 +5606,24 @@ static user_instance_t *__create_user(sdata_t *sdata, const char *username)
 	return user;
 }
 
+// Attempt to parse the address for the user based on username, if that fails, then
+// fall back to pool address.  In the unlikely case that also fails, quits immediately.
+static void cache_user_address_cscript(ckpool_t *ckp, user_instance_t *user, const char *username)
+{
+	user->txnlen = address_to_txn(user->txnbin, username, user->script);
+	if (!user->txnlen) {
+		if (ckp->bchaddress) {
+			user->txnlen = address_to_txn(user->txnbin, ckp->bchaddress, ckp->script);
+		}
+		if (user->txnlen) {
+			LOGWARNING("Failed to parse user address '%s', fell back to using pool address '%s'", username, ckp->bchaddress ? : "");
+		} else {
+			quit(1, "Failed to parse user address '%s', and fallback of pool address '%s' also failed to parse! FIXME!",
+			        username, ckp->bchaddress ? : "");
+		}
+	}
+
+}
 
 /* Find user by username or create one if it doesn't already exist */
 static user_instance_t *get_create_user(sdata_t *sdata, const char *username, bool *new_user)
@@ -5616,7 +5650,7 @@ static user_instance_t *get_create_user(sdata_t *sdata, const char *username, bo
 		user->bchaddress = generator_checkaddr(ckp, username, &user->script);
 		if (user->bchaddress) {
 			/* Cache the transaction for use in generation */
-			user->txnlen = address_to_txn(user->txnbin, username, user->script);
+			cache_user_address_cscript(ckp, user, username); //< may quit here if no valid pool address (ckp->bchaddress).
 		}
 	}
 
@@ -9403,12 +9437,18 @@ void *stratifier(void *arg)
 		/* Store this for use elsewhere */
 		hex2bin(scriptsig_header_bin, scriptsig_header, 41);
 		sdata->txnlen = address_to_txn(sdata->txnbin, ckp->bchaddress, ckp->script);
+		if (!sdata->txnlen) {
+			quit(1, "Failed to parse pool address '%s'. FIXME!", ckp->bchaddress);
+		}
 
 #if 0
 		/* FIXME Fee is currently disabled. Donvalid will be false */
 		if (generator_checkaddr(ckp, ckp->donaddress, &ckp->donscript)) {
 			ckp->donvalid = true;
 			sdata->dontxnlen = address_to_txn(sdata->txnbin, ckp->donaddress, ckp->donscript);
+			if (!sdata->dontxnlen) {
+				quit(1, "Failed to parse donation address '%s'. FIXME!", ckp->donaddress);
+			}
 		}
 #endif
 	}
