@@ -697,11 +697,13 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 	}
 	if (auto_payout_change && total && max_payee.user) {
 		// payout remaining dust to the user with the most hash
-		LOGDEBUG("Auto paying %"PRId64" sats in coinbase change to most-hash-payee: %s", total, user->username);
-		*(max_payee.cb_u64) += total; // update coinbase binary
+		char * const username = max_payee.user->username;
+		LOGDEBUG("Auto paying %"PRId64" sats in coinbase change to most-hash-payee: %s", total, username);
+		const uint64_t newreward = max_payee.reward + total;
+		*(max_payee.cb_u64) = htole64(newreward); // update coinbase binary
 		total = 0;
-		const double dreward = *(max_payee.cb_u64) / (double)SATOSHIS;
-		json_set_double(payout_entries, user->username, dreward); // update json
+		const double dreward = ((double)newreward) / SATOSHIS;
+		json_set_double(payout_entries, username, dreward); // update json
 	}
 
 	wb->payout = payout;
