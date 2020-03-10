@@ -12,7 +12,7 @@
 
 typedef struct genwork gbtbase_t;
 
-bool validate_address(connsock_t *cs, const char *address, bool *script, bool *segwit);
+bool validate_address(connsock_t *cs, const char *address, bool *script);
 bool gen_gbtbase(connsock_t *cs, gbtbase_t *gbt);
 void clear_gbtbase(gbtbase_t *gbt);
 int get_blockcount(connsock_t *cs);
@@ -22,5 +22,7 @@ bool submit_block(connsock_t *cs, const char *params);
 void precious_block(connsock_t *cs, const char *params);
 void submit_txn(connsock_t *cs, const char *params);
 char *get_txn(connsock_t *cs, const char *hash);
+
+#define DUST_LIMIT_SATS 546
 
 #endif /* BITCOIN_H */

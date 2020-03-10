@@ -19,7 +19,7 @@ endif
 	yasm -f x64 -f elf64 -X gnu -g dwarf2 -D LINUX -o $@ $<
 
 noinst_LIBRARIES = libckpool.a
-libckpool_a_SOURCES = libckpool.c libckpool.h sha2.c sha2.h
+libckpool_a_SOURCES = libckpool.c libckpool.h sha2.c sha2.h cashaddr.c cashaddr.h
 libckpool_a_LIBADD = $(native_objs)
 
 bin_PROGRAMS = ckpool ckpmsg notifier summariser

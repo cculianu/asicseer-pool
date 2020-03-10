@@ -212,7 +212,7 @@ static bool server_alive(ckpool_t *ckp, server_instance_t *si, bool pinging)
 	cs->auth = http_base64(userpass);
 	dealloc(userpass);
 	if (!cs->auth) {
-		LOGWARNING("Failed to create base64 auth from %s", userpass);
+		LOGWARNING("Failed to create base64 auth from %s:%s", si->auth, si->pass);
 		return ret;
 	}
 
@@ -232,7 +232,7 @@ static bool server_alive(ckpool_t *ckp, server_instance_t *si, bool pinging)
 		goto out;
 	}
 	clear_gbtbase(&gbt);
-	if (!ckp->node && !validate_address(cs, ckp->btcaddress, &ckp->script, &ckp->segwit)) {
+	if (!ckp->node && !validate_address(cs, ckp->btcaddress, &ckp->script)) {
 		LOGWARNING("Invalid btcaddress: %s !", ckp->btcaddress);
 		goto out;
 	}
@@ -878,7 +878,7 @@ out:
 	return ret;
 }
 
-bool generator_checkaddr(ckpool_t *ckp, const char *addr, bool *script, bool *segwit)
+bool generator_checkaddr(ckpool_t *ckp, const char *addr, bool *script)
 {
 	gdata_t *gdata = ckp->gdata;
 	server_instance_t *si;
@@ -891,7 +891,7 @@ bool generator_checkaddr(ckpool_t *ckp, const char *addr, bool *script, bool *se
 		goto out;
 	}
 	cs = &si->cs;
-	ret = validate_address(cs, addr, script, segwit);
+	ret = validate_address(cs, addr, script);
 out:
 	return ret;
 }

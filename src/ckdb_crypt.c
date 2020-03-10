@@ -138,7 +138,7 @@ bool check_2fa(USERS *users, int32_t value)
 	unsigned char tim[sizeof(int64_t)], *bin, *hash;
 	unsigned int reslen;
 	size_t binlen;
-	HMAC_CTX ctx;
+	HMAC_CTX *ctx = NULL;
 	int64_t now;
 	int32_t otp;
 	int i, offset;
@@ -174,10 +174,14 @@ bool check_2fa(USERS *users, int32_t value)
 	if (!hash)
 		quithere(1, "malloc OOM");
 
-	HMAC_CTX_init(&ctx);
-	HMAC_Init_ex(&ctx, bin, binlen, EVP_sha256(), NULL);
-	HMAC_Update(&ctx, (unsigned char *)&tim, sizeof(tim));
-	HMAC_Final(&ctx, hash, &reslen);
+	ctx = HMAC_CTX_new();
+	if (!ctx)
+		quithere(1, "HMAC_CTX_new returned NULL");
+	HMAC_Init_ex(ctx, bin, binlen, EVP_sha256(), NULL);
+	HMAC_Update(ctx, (unsigned char *)&tim, sizeof(tim));
+	HMAC_Final(ctx, hash, &reslen);
+	HMAC_CTX_free(ctx);
+	ctx = NULL;
 
 	LOGDEBUG("%s() '%s/%s hash=%s", __func__,
 		 st = safe_text_nonull(users->in_username),

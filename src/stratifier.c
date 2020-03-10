@@ -29,6 +29,7 @@
 #include "utlist.h"
 #include "connector.h"
 #include "generator.h"
+#include "donation.h"
 
 /* Consistent across all pool instances */
 static const char *workpadding = "000000800000000000000000000000000000000000000000000000000000000000000000000000000000000080020000";
@@ -159,7 +160,6 @@ struct user_instance {
 	char *secondaryuserid;
 	bool btcaddress;
 	bool script;
-	bool segwit;
 	char txnbin[48];
 	int txnlen;
 
@@ -605,8 +605,6 @@ static void info_msg_entries(char_entry_t **entries)
 	}
 }
 
-static const int witnessdata_size = 36; // commitment header + hash
-
 /* Sort from highest to lowest herp */
 static double herp_sort(generation_t *a, generation_t *b)
 {
@@ -691,6 +689,8 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 
 	if (total < 0)
 		LOGWARNING("Negative change in add_user_generation of %"PRId64, total);
+	else if (total > 0)
+		LOGINFO("%"PRId64" sats in change left over from payouts", total);
 
 	return total;
 }
@@ -748,10 +748,11 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 	len += wb->enonce1varlen;
 	len += wb->enonce2varlen;
 
-	/* Leave room for coinbase generation txns and witness data */
-	wb->coinb2bin = ckzalloc(512 + cbspace + wb->insert_witness * (8 + witnessdata_size + 2));
-	memcpy(wb->coinb2bin, "\x0a\x63\x6b\x70\x6f\x6f\x6c", 7);
-	wb->coinb2len = 7;
+	wb->coinb2bin = ckzalloc(512 + cbspace);
+	static const char sw_ident[] = ("\x0a" HARDCODED_COINBASE_SW_IDENT_STR); //< TODO: figure out if we need this leading 0x0a
+	static const size_t sw_ident_len = sizeof(sw_ident)-1;
+	memcpy(wb->coinb2bin, sw_ident, sw_ident_len);
+	wb->coinb2len = sw_ident_len;
 	if (ckp->btcsig) {
 		int siglen = strlen(ckp->btcsig);
 
@@ -775,10 +776,27 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 	gentxns = (uint64_t *)&wb->coinb2bin[wb->coinb2len++];
 	// Generation value
 	g64 = wb->coinbasevalue;
-	if (ckp->donvalid) {
-		d64 = g64 / 200; // 0.5% donation
-		g64 -= d64; // To guarantee integers add up to the original coinbasevalue
+	d64 = 0;
+
+#if 0
+	// FIXME: Fee is currently ignored
+
+	// Figure out if we can/should donate.  We add the donation output if:
+	// 1. The donation address is valid according to bitcoind
+	// 2. The donation fraction > 0
+	// 3. The resulting donation amount is >= the dust limit (546 sats)
+	// 4. The coinbase reward after subtracting donation is also >= the dust limit (546 sats)
+	if (ckp->donvalid && DONATION_FRACTION > 0) {
+		d64 = g64 / DONATION_FRACTION; // Default = 200 e.g. 0.5% donation
+		if (unlikely(d64 < DUST_LIMIT_SATS || g64 - d64 < DUST_LIMIT_SATS)) {
+			// fails dust checks, no donation (this shouldn't happen for at least another few decades!)
+			d64 = 0;
+		} else {
+			// subtract donation from total payout sum
+			g64 -= d64;
+		}
 	}
+#endif
 
 	/* Add any change left over from user gen to donation */
 	if (CKP_STANDALONE(ckp)) {
@@ -791,7 +809,7 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 		dfee /= SATOSHIS;
 		json_set_double(wb->payout, "fee", dfee);
 #else
-		add_user_generation(sdata, wb, g64, gentxns);
+		d64 += add_user_generation(sdata, wb, g64, gentxns);  // FIXME: where to put this dust?
 #endif
 	} else {
 		(*gentxns)++;
@@ -805,23 +823,8 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 		wb->coinb2len += sdata->txnlen;
 	}
 
-	if (wb->insert_witness) {
+	if (d64 >= DUST_LIMIT_SATS && ckp->donvalid) { // FIXME: this branch not taken -- where to put change?!
 		(*gentxns)++;
-
-		// 0 value
-		wb->coinb2len += 8;
-
-		wb->coinb2bin[wb->coinb2len++] = witnessdata_size + 2; // total scriptPubKey size
-		wb->coinb2bin[wb->coinb2len++] = 0x6a; // OP_RETURN
-		wb->coinb2bin[wb->coinb2len++] = witnessdata_size;
-
-		hex2bin(&wb->coinb2bin[wb->coinb2len], wb->witnessdata, witnessdata_size);
-		wb->coinb2len += witnessdata_size;
-	}
-
-	if (ckp->donvalid) {
-		(*gentxns)++;
-
 		u64 = (uint64_t *)&wb->coinb2bin[wb->coinb2len];
 		*u64 = htole64(d64);
 		wb->coinb2len += 8;
@@ -829,6 +832,9 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 		wb->coinb2bin[wb->coinb2len++] = sdata->dontxnlen;
 		memcpy(wb->coinb2bin + wb->coinb2len, sdata->dontxnbin, sdata->dontxnlen);
 		wb->coinb2len += sdata->dontxnlen;
+	} else if (d64) {
+		// FIXME
+		LOGWARNING("%"PRId64" sats in change left over after generating coinbase txns!", d64);
 	}
 
 	wb->coinb2len += 4; // Blank lock
@@ -1477,17 +1483,17 @@ static void update_txns(ckpool_t *ckp, sdata_t *sdata, txntable_t *txns, bool lo
 static txntable_t *wb_merkle_bin_txns(ckpool_t *ckp, sdata_t *sdata, workbase_t *wb,
 				      json_t *txn_array, bool local)
 {
-	int i, j, binleft, binlen;
+	long i, j, binleft, binlen;
 	txntable_t *txns = NULL;
 	json_t *arr_val;
 	uchar *hashbin;
 
 	wb->txns = json_array_size(txn_array);
 	wb->merkles = 0;
-	binlen = wb->txns * 32 + 32;
-	hashbin = alloca(binlen + 32);
+	binlen = (long)wb->txns * 32L + 32L;
+	hashbin = alloca(binlen + 32L);
 	memset(hashbin, 0, 32);
-	binleft = binlen / 32;
+	binleft = binlen / 32L;
 	if (wb->txns) {
 		int len = 1, ofs = 0, length, max_len;
 		const char *txn;
@@ -1506,7 +1512,7 @@ static txntable_t *wb_merkle_bin_txns(ckpool_t *ckp, sdata_t *sdata, workbase_t 
 		max_len = len;
 
 		wb->txn_data = ckzalloc(max_len + 1);
-		wb->txn_hashes = ckzalloc(wb->txns * 65 + 1);
+		wb->txn_hashes = ckzalloc(wb->txns * 65L + 1L);
 		memset(wb->txn_hashes, 0x20, wb->txns * 65); // Spaces
 		len = 1;
 
@@ -1535,88 +1541,37 @@ static txntable_t *wb_merkle_bin_txns(ckpool_t *ckp, sdata_t *sdata, workbase_t 
 				LOGERR("Failed to hex2bin hash in gbt_merkle_bins");
 				goto out;
 			}
-			memcpy(wb->txn_hashes + i * 65, txid, 64);
-			bswap_256(hashbin + 32 + 32 * i, binswap);
+			memcpy(wb->txn_hashes + i * 65L, txid, 64);
+			bswap_256(hashbin + 32L + 32L * i, binswap);
 		}
 	} else
 		wb->txn_hashes = ckzalloc(1);
 	wb->merkle_array = json_array();
-	if (binleft > 1) {
-		while (42) {
-			if (binleft == 1)
-				break;
-			memcpy(&wb->merklebin[wb->merkles][0], hashbin + 32, 32);
-			__bin2hex(&wb->merklehash[wb->merkles][0], &wb->merklebin[wb->merkles][0], 32);
-			json_array_append_new(wb->merkle_array, json_string(&wb->merklehash[wb->merkles][0]));
-			LOGDEBUG("MerkleHash %d %s",wb->merkles, &wb->merklehash[wb->merkles][0]);
-			wb->merkles++;
-			if (binleft % 2) {
-				memcpy(hashbin + binlen, hashbin + binlen - 32, 32);
-				binlen += 32;
-				binleft++;
-			}
-			for (i = 32, j = 64; j < binlen; i += 32, j += 64)
-				gen_hash(hashbin + j, hashbin + i, 64);
-			binleft /= 2;
-			binlen = binleft * 32;
+	while (binleft > 1L) {
+		if (unlikely(wb->merkles >= GENWORK_MAX_MERKLE_DEPTH)) {
+			LOGWARNING("Ran out of space for merkle tree! Max depth of %d exceeded!",
+			           GENWORK_MAX_MERKLE_DEPTH);
+			break;
 		}
+		memcpy(&wb->merklebin[wb->merkles][0], hashbin + 32L, 32);
+		__bin2hex(&wb->merklehash[wb->merkles][0], &wb->merklebin[wb->merkles][0], 32);
+		json_array_append_new(wb->merkle_array, json_string(&wb->merklehash[wb->merkles][0]));
+		LOGDEBUG("MerkleHash %d %s", wb->merkles, &wb->merklehash[wb->merkles][0]);
+		wb->merkles++;
+		if (binleft % 2) {
+			memcpy(hashbin + binlen, hashbin + binlen - 32L, 32);
+			binlen += 32L;
+			binleft++;
+		}
+		for (i = 32, j = 64; j < binlen; i += 32L, j += 64L)
+			gen_hash(hashbin + j, hashbin + i, 64);
+		binleft /= 2L;
+		binlen = binleft * 32L;
 	}
 	LOGNOTICE("Stored %s workbase with %d transactions", local ? "local" : "remote",
-		  wb->txns);
+	          wb->txns);
 out:
 	return txns;
-}
-
-static const unsigned char witness_nonce[32] = {0};
-static const int witness_nonce_size = sizeof(witness_nonce);
-static const unsigned char witness_header[] = {0xaa, 0x21, 0xa9, 0xed};
-static const int witness_header_size = sizeof(witness_header);
-
-static void gbt_witness_data(workbase_t *wb, json_t *txn_array)
-{
-	int i, binlen, txncount = json_array_size(txn_array);
-	const char* hash;
-	json_t *arr_val;
-	uchar *hashbin;
-
-	binlen = txncount * 32 + 32;
-	hashbin = alloca(binlen + 32);
-	memset(hashbin, 0, 32);
-
-	for (i = 0; i < txncount; i++) {
-		char binswap[32];
-
-		arr_val = json_array_get(txn_array, i);
-		hash = json_string_value(json_object_get(arr_val, "hash"));
-		if (unlikely(!hash)) {
-			LOGERR("Hash missing for transaction");
-			return;
-		}
-		if (!hex2bin(binswap, hash, 32)) {
-			LOGERR("Failed to hex2bin hash in gbt_witness_data");
-			return;
-		}
-		bswap_256(hashbin + 32 + 32 * i, binswap);
-	}
-
-	// Build merkle root (copied from libblkmaker)
-	for (txncount++ ; txncount > 1 ; txncount /= 2) {
-		if (txncount % 2) {
-			// Odd number, duplicate the last
-			memcpy(hashbin + 32 * txncount, hashbin + 32 * (txncount - 1), 32);
-			txncount++;
-		}
-		for (i = 0; i < txncount; i += 2) {
-			// We overlap input and output here, on the first pair
-			gen_hash(hashbin + 32 * i, hashbin + 32 * (i / 2), 64);
-		}
-	}
-
-	memcpy(hashbin + 32, &witness_nonce, witness_nonce_size);
-	gen_hash(hashbin, hashbin + witness_header_size, 32 + witness_nonce_size);
-	memcpy(hashbin, witness_header, witness_header_size);
-	__bin2hex(wb->witnessdata, hashbin, 32 + witness_header_size);
-	wb->insert_witness = true;
 }
 
 static user_instance_t *get_user(sdata_t *sdata, const char *username);
@@ -1745,8 +1700,7 @@ static void check_unconfirmed(ckpool_t *ckp, sdata_t *sdata, const int height)
  * are serialised. */
 static void block_update(ckpool_t *ckp, int *prio)
 {
-	const char* witnessdata_check, *rule;
-	json_t *txn_array, *rules_array;
+	json_t *txn_array;
 	sdata_t *sdata = ckp->sdata;
 	bool new_block = false;
 	int i, retries = 0;
@@ -1782,31 +1736,23 @@ retry:
 	 * for user generation transactions */
 	txns = wb_merkle_bin_txns(ckp, sdata, wb, txn_array, true);
 
-	wb->insert_witness = false;
-	rules_array = json_object_get(wb->json, "rules");
 
-	if (rules_array) {
-		int rule_count = json_array_size(rules_array);
+#if 0 // This block currently a no-op. Was here for segwit support but removed for BCH.
+	{
+		json_t *rules_array = json_object_get(wb->json, "rules");
+		if (rules_array) {
+			int rule_count = json_array_size(rules_array);
 
-		for (i = 0; i < rule_count; i++) {
-			rule = json_string_value(json_array_get(rules_array, i));
-			if (!rule)
-				continue;
-			if (*rule == '!')
-				rule++;
-			if (safecmp(rule, "segwit")) {
-				witnessdata_check = json_string_value(json_object_get(wb->json, "default_witness_commitment"));
-				gbt_witness_data(wb, txn_array);
-				// Verify against the pre-calculated value if it exists. Skip the size/OP_RETURN bytes.
-				if (!sdata->stats.cbspace && wb->insert_witness &&
-				    witnessdata_check[0] && safecmp(witnessdata_check + 4,
-				    wb->witnessdata) != 0)
-					LOGERR("Witness from btcd: %s. Calculated Witness: %s", witnessdata_check + 4, wb->witnessdata);
-				break;
+			for (i = 0; i < rule_count; i++) {
+				const char *rule = json_string_value(json_array_get(rules_array, i));
+				if (!rule)
+					continue;
+				if (*rule == '!')
+					rule++;
 			}
 		}
 	}
-
+#endif
 	generate_coinbase(ckp, wb);
 
 	add_base(ckp, sdata, wb, &new_block);
@@ -2266,7 +2212,7 @@ share_diff(char *coinbase, const uchar *enonce1bin, const workbase_t *wb, const 
 
 	gen_hash((uchar *)coinbase, merkle_root, *cblen);
 	memcpy(merkle_sha, merkle_root, 32);
-	for (i = 0; i < wb->merkles; i++) {
+	for (i = 0; i < wb->merkles && i < GENWORK_MAX_MERKLE_DEPTH; i++) {
 		memcpy(merkle_sha + 32, &wb->merklebin[i], 32);
 		gen_hash(merkle_sha, merkle_root, 64);
 		memcpy(merkle_sha, merkle_root, 32);
@@ -3382,6 +3328,11 @@ static void update_notify(ckpool_t *ckp, const char *cmd)
 	hex2bin(wb->coinb2bin, wb->coinb2, wb->coinb2len);
 	wb->merkle_array = json_object_dup(val, "merklehash");
 	wb->merkles = json_array_size(wb->merkle_array);
+	if (unlikely(wb->merkles > GENWORK_MAX_MERKLE_DEPTH)) {
+		LOGWARNING("Ran out of space for merkle tree! Max depth of %d exceeded!",
+		           GENWORK_MAX_MERKLE_DEPTH);
+		wb->merkles = GENWORK_MAX_MERKLE_DEPTH;
+	}
 	for (i = 0; i < wb->merkles; i++) {
 		strcpy(&wb->merklehash[i][0], json_string_value(json_array_get(wb->merkle_array, i)));
 		hex2bin(&wb->merklebin[i][0], &wb->merklehash[i][0], 32);
@@ -5641,10 +5592,10 @@ static user_instance_t *get_create_user(sdata_t *sdata, const char *username, bo
 
 	/* Is this a btc address based username? */
 	if (!ckp->proxy && (*new_user || !user->btcaddress)) {
-		user->btcaddress = generator_checkaddr(ckp, username, &user->script, &user->segwit);
+		user->btcaddress = generator_checkaddr(ckp, username, &user->script);
 		if (user->btcaddress) {
 			/* Cache the transaction for use in generation */
-			user->txnlen = address_to_txn(user->txnbin, username, user->script, user->segwit);
+			user->txnlen = address_to_txn(user->txnbin, username, user->script);
 		}
 	}
 
@@ -9423,20 +9374,20 @@ void *stratifier(void *arg)
 		cksleep_ms(10);
 
 	if (!ckp->proxy) {
-		if (!generator_checkaddr(ckp, ckp->btcaddress, &ckp->script, &ckp->segwit)) {
+		if (!generator_checkaddr(ckp, ckp->btcaddress, &ckp->script)) {
 			LOGEMERG("Fatal: btcaddress invalid according to bitcoind");
 			goto out;
 		}
 
 		/* Store this for use elsewhere */
 		hex2bin(scriptsig_header_bin, scriptsig_header, 41);
-		sdata->txnlen = address_to_txn(sdata->txnbin, ckp->btcaddress, ckp->script, ckp->segwit);
+		sdata->txnlen = address_to_txn(sdata->txnbin, ckp->btcaddress, ckp->script);
 
 #if 0
 		/* FIXME Fee is currently disabled. Donvalid will be false */
-		if (generator_checkaddr(ckp, ckp->donaddress, &ckp->donscript, &ckp->donsegwit)) {
+		if (generator_checkaddr(ckp, ckp->donaddress, &ckp->donscript)) {
 			ckp->donvalid = true;
-			sdata->dontxnlen = address_to_txn(sdata->txnbin, ckp->donaddress, ckp->donscript, ckp->donsegwit);
+			sdata->dontxnlen = address_to_txn(sdata->txnbin, ckp->donaddress, ckp->donscript);
 		}
 #endif
 	}

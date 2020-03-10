@@ -31,6 +31,7 @@
 #include "generator.h"
 #include "stratifier.h"
 #include "connector.h"
+#include "donation.h"
 
 ckpool_t *global_ckp;
 
@@ -1296,6 +1297,13 @@ static void parse_btcds(ckpool_t *ckp, const json_t *arr_val, const int arr_size
 	}
 }
 
+static void assert_json_get_ok(bool b, const char *obj, const char *key)
+{
+	if (!b) {
+		quit(1, "Required key '%s' in json object '%s' missing!", key ? : "null", obj ? : "null");
+	}
+}
+
 static void parse_proxies(ckpool_t *ckp, const json_t *arr_val, const int arr_size)
 {
 	json_t *val;
@@ -1307,9 +1315,18 @@ static void parse_proxies(ckpool_t *ckp, const json_t *arr_val, const int arr_si
 	ckp->proxypass = ckzalloc(sizeof(char *) * arr_size);
 	for (i = 0; i < arr_size; i++) {
 		val = json_array_get(arr_val, i);
-		json_get_string(&ckp->proxyurl[i], val, "url");
-		json_get_string(&ckp->proxyauth[i], val, "auth");
-		json_get_string(&ckp->proxypass[i], val, "pass");
+		// we need to use this assert boilerplate here because
+		// downstream code assumes all these pointers are valid
+		// and never checks for NULL, hence segfaults.
+		assert_json_get_ok(
+			json_get_string(&ckp->proxyurl[i], val, "url"),
+			"proxies", "url" );
+		assert_json_get_ok(
+			json_get_string(&ckp->proxyauth[i], val, "auth"),
+			"proxies", "auth" );
+		assert_json_get_ok(
+			json_get_string(&ckp->proxypass[i], val, "pass"),
+			"proxies", "pass" );
 	}
 }
 
@@ -1803,7 +1820,7 @@ int main(int argc, char **argv)
 			ckp.btcdpass[i] = strdup("pass");
 	}
 
-	ckp.donaddress = "14BMjogz69qe8hk9thyzbmR5pg34mVKB1e";
+	ckp.donaddress = DONATION_P2PKH;
 	if (!ckp.btcaddress)
 		ckp.btcaddress = ckp.donaddress;
 	if (!ckp.blockpoll)

@@ -1,4 +1,4 @@
-AC_INIT(ckpool, 0.9.4, kernel@kolivas.org)
+AC_INIT(asicseer-pool, 0.9.9, calin.culianu@gmail.com)
 
 AC_CANONICAL_SYSTEM
 AC_CONFIG_MACRO_DIR([m4])
@@ -86,9 +86,9 @@ AC_SEARCH_LIBS(pthread_mutex_trylock, pthread, , "Error: Required library pthrea
 if test "x$ckdb" != "xno"; then
 	AC_SEARCH_LIBS(PQdb, pq, , echo "Error: Required library pq
 		not found. Install it or disable support by removing --with-ckdb" && exit 1)
-	AC_SEARCH_LIBS(BN_init, crypto, , echo "Error: Required library crypto
+	AC_SEARCH_LIBS(HMAC_Init_ex, crypto, , echo "Error: Required library crypto
 		not found. Install them or disable support by removing --with-ckdb" && exit 1)
-	AC_SEARCH_LIBS(SSL_accept, ssl, , echo "Error: Required libraries ssl
+	AC_SEARCH_LIBS(SSL_accept, ssl, , echo "Error: Required library ssl
 		not found. Install them or disable support by removing --with-ckdb" && exit 1)
 	AC_SEARCH_LIBS(cblas_dgemm, gslcblas, ,echo "Error: Required library gslcblas
 		not found. Install them or disable support by removing --with-ckdb" && exit 1)

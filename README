@@ -1,3 +1,20 @@
+ckpool, ASICseer Variant
+
+Updated and maintained by Calin Culianu <calin.culianu@gmail.com>
+
+===
+
+This is a patched version of [ckpool-splns](https://bitbucket.org/ckolivas-splns/ckpool/)
+for supporting Bitcoin Cash instead of Bitcoin.
+
+* Removed segwit
+* Added larger merkle tree support (for mining 32MB blocks)
+* Added cash address support
+
+Original README follows:
+
+---
+
 CKPOOL + CKDB + libckpool by Con Kolivas and Andrew Smith.
 
 Ultra low overhead massively scalable multi-process, multi-threaded modular
