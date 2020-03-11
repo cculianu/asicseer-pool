@@ -5,13 +5,18 @@ Updated and maintained by Calin Culianu <calin.culianu@gmail.com>
 ===
 
 This is a patched version of [ckpool-splns](https://bitbucket.org/ckolivas-splns/ckpool/)
-for supporting Bitcoin Cash instead of Bitcoin.
+for supporting Bitcoin Cash (rather than Bitcoin).
 
 * Removed segwit
 * Added larger merkle tree support (for mining 32MB blocks)
 * Added cash address support
+* Configurable pool fee support
+   - Features 20% of pool fee as a dev donation to Calin (me), and Bitcoin Cash Node
+     wallets, by default.
+* Updated ckdb sources to actually compile on modern Linux
+* Fixed bugs
 
-Original README follows:
+README follows (modified by Calin from the original to reflect added config options):
 
 ---
 
