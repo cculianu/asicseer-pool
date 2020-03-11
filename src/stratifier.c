@@ -841,19 +841,19 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 			const double fee = pf64 / (double)SATOSHIS;
 			LOGDEBUG("%f pool fee to pool address: %s", fee, ckp->bchaddress);
 			// now add donations for each dev
-			uint64_t leftover = df64;
+			int64_t leftover = df64;
 			if (df64 && don_each) {
-				for (int i = 0; i < DONATION_NUM_ADDRESSES; ++i) {
-					if (sdata->donation_data[i].txnlen) {
+				for (int i = 0; i < DONATION_NUM_ADDRESSES && leftover > 0; ++i) {
+					if (sdata->donation_data[i].txnlen && ckp->dev_donations[i].valid) {
 						// good address
 						_add_txnbin(wb, gentxns, don_each, sdata->donation_data[i].txnbin, sdata->donation_data[i].txnlen);
-						leftover -= don_each;
+						leftover -= (int64_t)don_each;
 						const double d = don_each / (double)SATOSHIS;
 						LOGDEBUG("%f dev donation to address: %s", d, ckp->dev_donations[i].address);
 					}
 				}
 			}
-			if (unlikely(leftover)) { // this branch is here to enforce correctness but should never be taken.
+			if (unlikely(leftover > 0)) { // this branch is here to enforce correctness but should never be taken.
 				// leftover from paying out dev donations -- back to pool
 				const double d = leftover / (double)SATOSHIS;
 				pf64 += leftover;
@@ -861,6 +861,9 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 				leftover = 0;
 				*p64 = htole64(pf64);
 				LOGDEBUG("%f leftover from dev donations back to pool address: %s", d, ckp->bchaddress);
+			} else if (unlikely(leftover < 0)) {
+				// This should never happen but is here as a defensive programming measure.
+				LOGEMERG("Negative sats left over after paying out dev donations: %"PRId64". FIXME!", leftover);
 			}
 		} else {
 			// fee too small, just ignore
