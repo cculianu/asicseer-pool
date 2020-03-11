@@ -620,13 +620,26 @@ static int postponed_sort(generation_t *a, generation_t *b)
 	return (b->postponed - a->postponed);
 }
 
+// add an amount,scriptbin to the current coinb2bin generation. Returns a pointer to the amount64 for the txn.
+static uint64_t *_add_txnbin(workbase_t *wb, uint64_t *gentxns, uint64_t amount, const void *txnbin, size_t txnlen)
+{
+	uint64_t *u64 = (uint64_t *)&wb->coinb2bin[wb->coinb2len];
+	*u64 = htole64(amount);
+	wb->coinb2len += 8;
+
+	wb->coinb2bin[wb->coinb2len++] = (uchar)txnlen;
+	memcpy(wb->coinb2bin + wb->coinb2len, txnbin, txnlen);
+	wb->coinb2len += txnlen;
+	/* Increment number of generation transactions */
+	*gentxns = htole64(le64toh(*gentxns) + 1UL);
+	return u64;
+}
 /* Add generation transactions to the coinbase for each user, return any spare
  * change. */
 static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
-				   uint64_t *gentxns, const bool auto_payout_dust)
+                                   uint64_t *gentxns, const bool auto_payout_dust)
 {
-	json_t *payout = json_object(), *payout_entries = json_object(),
-		*postponed_entries;
+	json_t *payout = json_object(), *payout_entries = json_object(), *postponed_entries;
 	double derp, total_herp = 0, dreward;
 	generation_t *gen, paygens[PAYOUT_REWARDS + 1];
 	user_instance_t *user;
@@ -679,24 +692,14 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 		json_set_double(payout_entries, user->username, dreward);
 		total -= reward;
 		LOGINFO("User %s reward %"PRId64, user->username, reward);
-		/* Set the user's coinbase reward */
-		u64 = (uint64_t *)&wb->coinb2bin[wb->coinb2len];
-		*u64 = htole64(reward);
+		/* Add the user's coinbase reward, using the cached cscript */
+		u64 = _add_txnbin(wb, gentxns, reward, user->txnbin, user->txnlen);
 		if (auto_payout_dust && reward > max_payee.reward) {
 			// remember this as the largest payee in case we need to give them leftover dust
 			max_payee.reward = reward;
 			max_payee.cb_u64 = u64;
 			max_payee.user = user;
 		}
-		wb->coinb2len += 8;
-
-		/* Add the user's cached transaction */
-		wb->coinb2bin[wb->coinb2len++] = user->txnlen;
-		memcpy(wb->coinb2bin + wb->coinb2len, user->txnbin, user->txnlen);
-		wb->coinb2len += user->txnlen;
-
-		/* Increment number of generation transactions */
-		(*gentxns)++;
 	}
 	if (auto_payout_dust && total > 0 && total < DUST_LIMIT_SATS && max_payee.user) {
 		// payout remaining dust to the user with the most hash
@@ -721,7 +724,7 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 
 static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 {
-	uint64_t *u64, g64, d64 = 0, *gentxns;
+	uint64_t *p64 = NULL, g64 = 0, f64 = 0, d64 = 0, *gentxns = NULL;
 	sdata_t *sdata = ckp->sdata;
 	int len, ofs = 0, cbspace;
 	char header[228];
@@ -806,90 +809,52 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 
 	gentxns = (uint64_t *)&wb->coinb2bin[wb->coinb2len++];
 	// Generation value
-	g64 = wb->coinbasevalue;
-	d64 = 0;
+	g64 = wb->coinbasevalue; // generation (reward)
+	f64 = round(g64 * (ckp->pool_fee/100.0)); // pool fee
+	d64 = 0; // leftover change/dust
 
-#if 0
-	// FIXME: Fee is currently ignored
-
-	// Figure out if we can/should donate.  We add the donation output if:
-	// 1. The donation address is valid according to bitcoind
-	// 2. The donation fraction > 0
-	// 3. The resulting donation amount is >= the dust limit (546 sats)
-	// 4. The coinbase reward after subtracting donation is also >= the dust limit (546 sats)
-	if (ckp->donvalid && DONATION_FRACTION > 0) {
-		d64 = g64 / DONATION_FRACTION; // Default = 200 e.g. 0.5% donation
-		if (unlikely(d64 < DUST_LIMIT_SATS || g64 - d64 < DUST_LIMIT_SATS)) {
-			// fails dust checks, no donation (this shouldn't happen for at least another few decades!)
-			d64 = 0;
-		} else {
-			// subtract donation from total payout sum
-			g64 -= d64;
-		}
-	}
-#endif
-
-	/* Add any change left over from user gen to donation */
 	if (CKP_STANDALONE(ckp)) {
-#if 0
-		/* FIXME Fee is currently ignored */
-		double dfee;
+		// payout to miners directly in SPLNS mode
 
-		d64 += add_user_generation(sdata, wb, g64, gentxns, true);
-		dfee = d64;
-		dfee /= SATOSHIS;
-		json_set_double(wb->payout, "fee", dfee);
-#else
-		d64 += add_user_generation(sdata, wb, g64, gentxns, true);
-#endif
+		// first, add pool fee, if any
+		if (f64 >= DUST_LIMIT_SATS && sdata->txnlen) {
+			p64 = _add_txnbin(wb, gentxns, f64, sdata->txnbin, sdata->txnlen);
+			const double fee = f64 / (double)SATOSHIS;
+			LOGDEBUG("%f pool fee to pool address: %s", fee, ckp->bchaddress);
+		} else {
+			// fee too small, just ignore
+			f64 = 0;
+		}
+
+		d64 += add_user_generation(sdata, wb, g64 - f64, gentxns, true); // add miner payouts, minus fee
+
+		/* Add any change left over from user gen to pool */
+		if ( d64 && (p64 || d64 >= DUST_LIMIT_SATS) && sdata->txnlen) {
+			if (!p64) {
+				// pay extra change > dust limit back to pool, new output at end
+				p64 = _add_txnbin(wb, gentxns, f64 + d64, sdata->txnbin, sdata->txnlen);
+			} else {
+				// pay dust back to pool, re-use pool fee output (output 0)
+				*p64 = htole64( f64 + d64 );
+			}
+			LOGINFO("%"PRId64" sats in change to pool address: %s, total pool payout: %"PRId64" sats", d64, ckp->bchaddress, le64toh(*p64));
+		} else if (d64 || (!p64 && f64)) {
+			// FIXME -- this branch should never be reached because add_user_generation should
+			// have paid dust to largest payee. If we get here it means we couldn't have paid
+			// ourselves (missing pool bchaddress?)
+			if (d64)
+				LOGWARNING("%"PRId64" sats in change left over after generating coinbase outs! FIXME!", d64);
+			if (!p64 && f64)
+				LOGWARNING("%"PRId64" sats in pool fee left over after generating coinbase outs! FIXME!", f64);
+		}
+		if (p64 && wb->payout) {
+			// tabulate this as "pool fee" in json
+			json_set_double(wb->payout, "fee", le64toh(*p64) / (double)SATOSHIS);
+		}
 	} else {
-		(*gentxns)++;
-
-		u64 = (uint64_t *)&wb->coinb2bin[wb->coinb2len];
-		*u64 = htole64(g64);
-		wb->coinb2len += 8;
-
-		wb->coinb2bin[wb->coinb2len++] = sdata->txnlen;
-		memcpy(wb->coinb2bin + wb->coinb2len, sdata->txnbin, sdata->txnlen);
-		wb->coinb2len += sdata->txnlen;
+		// payout directly to pool in this mode (ckdb mode)
+		p64 = _add_txnbin(wb, gentxns, g64, sdata->txnbin, sdata->txnlen);
 	}
-
-	if (d64 >= DUST_LIMIT_SATS && ckp->donvalid) {
-		// FIXME: this branch not taken -- no donations in SPLNS
-		(*gentxns)++;
-		u64 = (uint64_t *)&wb->coinb2bin[wb->coinb2len];
-		*u64 = htole64(d64);
-		wb->coinb2len += 8;
-
-		wb->coinb2bin[wb->coinb2len++] = sdata->dontxnlen;
-		memcpy(wb->coinb2bin + wb->coinb2len, sdata->dontxnbin, sdata->dontxnlen);
-		wb->coinb2len += sdata->dontxnlen;
-	} else if (d64 >= DUST_LIMIT_SATS && sdata->txnlen) {
-		// pay extra change > dust limit back to pool
-		(*gentxns)++;
-
-		u64 = (uint64_t *)&wb->coinb2bin[wb->coinb2len];
-		*u64 = htole64(d64);
-		wb->coinb2len += 8;
-
-		wb->coinb2bin[wb->coinb2len++] = sdata->txnlen;
-		memcpy(wb->coinb2bin + wb->coinb2len, sdata->txnbin, sdata->txnlen);
-		wb->coinb2len += sdata->txnlen;
-
-		// tabulate this as "pool fee" in json -- TODO: Verify this is correct -Calin
-		double dfee = d64;
-		dfee /= SATOSHIS;
-		json_set_double(wb->payout, "fee", dfee);
-
-		LOGINFO("%"PRId64" sats in change to pool address: %s", d64, ckp->bchaddress);
-		d64 = 0;
-	} else if (d64) {
-		// FIXME -- this branch should never be reached because add_user_generation should
-		// have paid dust to largest payee. If we get here it means we couldn't have paid
-		// ourselves (missing pool bchaddress?)
-		LOGWARNING("%"PRId64" sats in change left over after generating coinbase txns! FIXME!", d64);
-	}
-
 	wb->coinb2len += 4; // Blank lock
 
 	wb->coinb2 = bin2hex(wb->coinb2bin, wb->coinb2len);
@@ -9505,7 +9470,7 @@ void *stratifier(void *arg)
 		}
 
 #if 0
-		/* FIXME Fee is currently disabled. Donvalid will be false */
+		/* FIXME Donation is currently disabled. Donvalid will be false */
 		if (generator_checkaddr(ckp, ckp->donaddress, &ckp->donscript)) {
 			ckp->donvalid = true;
 			sdata->dontxnlen = address_to_txn(sdata->txnbin, ckp->donaddress, ckp->donscript);

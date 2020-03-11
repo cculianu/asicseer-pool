@@ -256,6 +256,8 @@ struct ckpool_instance {
 	bool donscript; // Donation is a script
 	bool donvalid; // Donation address works on this network
 
+	double pool_fee; // comes from "pool_fee" in config, as a percentage. Defaults to 1.0 if unspecified. SPLNS mode only.
+
 	/* Stratum options */
 	server_instance_t **servers;
 	char **serverurl; // Array of URLs to bind our server/proxy to

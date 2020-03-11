@@ -1486,7 +1486,17 @@ static void parse_config(ckpool_t *ckp)
 	// /End obsolete keys
 	json_get_string(&ckp->bchaddress, json_conf, "bchaddress");
 	json_get_string(&ckp->bchsig, json_conf, "bchsig");
+	// bchsig
 	normalize_bchsig(ckp->bchsig); // modifies buffer in-place, noop if NULL
+	// pool_fee
+	if (! json_get_double(&ckp->pool_fee, json_conf, "pool_fee") ) {
+		ckp->pool_fee = 1.0; // default fee is 1%
+	} else {
+		// verify sanity
+		if (ckp->pool_fee < 0.0) ckp->pool_fee = 0.0;
+		else if (ckp->pool_fee > 100.0) ckp->pool_fee = 100.0;
+	}
+	LOGNOTICE("Using pool fee: %1.3f%%", ckp->pool_fee);
 	json_get_int(&ckp->blockpoll, json_conf, "blockpoll");
 	json_get_int(&ckp->nonce1length, json_conf, "nonce1length");
 	json_get_int(&ckp->nonce2length, json_conf, "nonce2length");
