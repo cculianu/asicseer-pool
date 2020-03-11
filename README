@@ -273,17 +273,24 @@ The options recognised are as follows:
 which match the configured bitcoind. The optional boolean field notify tells
 ckpool this btcd is using the notifier and does not need to be polled for block
 changes. If no btcd is specified, ckpool will look for one on localhost:8332
-with the username "user" and password "pass".
+with the username "user" and password "pass". This maintainers of this software
+recommend BCHN as the bitcoind node implementation to use.
 
 "proxy" : This is an array in the same format as btcd above but is used in
 proxy and passthrough mode to set the upstream pool and is mandatory.
 
 "bchaddress" : This is the bitcoin cash address to try to generate blocks to.
 In SPLNS mode it is the fallback address for leftover dust or in case a worker
-address is invalid.
+address is invalid. Both legacy and cashaddr formats are supported.
 
-"bchsig" : This is an optional signature to put into the coinbase of mined
+"bchsig" : This is optional text to put into the coinbase transaction of mined
 blocks.
+
+"pool_fee" : The percentage to pay out to the pool "bchaddress" for each found
+block, as a floating point percentage of the total mining reward. If unspecified,
+1.0 is the default (1%). The pool fee is taken from the total coinbase reward.
+Set this value to 0.0 to disable. Values >= 100.0 will be clamped to 100.0.
+The pool_fee will appear as the first output in the coinbase transaction.
 
 "blockpoll" : This is the frequency in milliseconds for how often to check for
 new network blocks and is 100 by default. It is intended to be a backup only
