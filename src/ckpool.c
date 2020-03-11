@@ -1484,10 +1484,7 @@ static void parse_config(ckpool_t *ckp)
 	// /End obsolete keys
 	json_get_string(&ckp->bchaddress, json_conf, "bchaddress");
 	json_get_string(&ckp->bchsig, json_conf, "bchsig");
-	if (ckp->bchsig && strlen(ckp->bchsig) > 38) {
-		LOGWARNING("Signature %s too long, truncating to 38 bytes", ckp->bchsig);
-		ckp->bchsig[38] = '\0';
-	}
+	normalize_bchsig(ckp->bchsig); // modifies buffer in-place, noop if NULL
 	json_get_int(&ckp->blockpoll, json_conf, "blockpoll");
 	json_get_int(&ckp->nonce1length, json_conf, "nonce1length");
 	json_get_int(&ckp->nonce2length, json_conf, "nonce2length");

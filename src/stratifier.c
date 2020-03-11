@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <ctype.h>
 #include <dirent.h>
 #include <fcntl.h>
 #include <math.h>
@@ -770,21 +771,28 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 	len += wb->enonce2varlen;
 
 	wb->coinb2bin = ckzalloc(512 + cbspace);
-	static const char sw_ident[] = ("\x0a" HARDCODED_COINBASE_PREFIX_STR); //< TODO: figure out if we need this leading 0x0a
-	static const size_t sw_ident_len = sizeof(sw_ident)-1;
-	memcpy(wb->coinb2bin, sw_ident, sw_ident_len);
-	wb->coinb2len = sw_ident_len;
-	if (ckp->bchsig) {
-		int siglen = strlen(ckp->bchsig);
+	{
+		static const char cbprefix[] = "#/" HARDCODED_COINBASE_PREFIX_STR " ";
+		static const char cbsuffix[] = " " HARDCODED_COINBASE_SUFFIX_STR "/";
+		static const size_t cbprefix_len = sizeof(cbprefix)-1, cbsuffix_len = sizeof(cbsuffix)-1;
+		memcpy(wb->coinb2bin, cbprefix, cbprefix_len);
+		wb->coinb2len = cbprefix_len;
+		if (ckp->bchsig) {
+			int siglen = strlen(ckp->bchsig);
 
-		LOGDEBUG("Len %d sig %s", siglen, ckp->bchsig);
-		if (siglen) {
-			wb->coinb2bin[wb->coinb2len++] = siglen;
-			memcpy(wb->coinb2bin + wb->coinb2len, ckp->bchsig, siglen);
-			wb->coinb2len += siglen;
+			LOGDEBUG("Len %d sig %s", siglen, ckp->bchsig);
+			if (siglen) {
+				memcpy(wb->coinb2bin + wb->coinb2len, ckp->bchsig, siglen);
+				wb->coinb2len += siglen;
+			}
 		}
+		memcpy(wb->coinb2bin + wb->coinb2len, cbsuffix, cbsuffix_len);
+		wb->coinb2len += cbsuffix_len;
+		// mark length at beginning of text just before first '/', just to be sure
+		wb->coinb2bin[0] = (uchar)(wb->coinb2len-1);
 	}
 	len += wb->coinb2len;
+
 
 	wb->coinb1bin[41] = len - 1; /* Set the length now */
 	__bin2hex(wb->coinb1, wb->coinb1bin, wb->coinb1len);
@@ -9410,6 +9418,26 @@ out:
 		decay_time(&stats->dsps1440, 0, *tvsec_diff, DAY);
 		decay_time(&stats->dsps10080, 0, *tvsec_diff, WEEK);
 	}
+}
+
+void normalize_bchsig(char *s)
+{
+	char buf[MAX_USER_COINBASE_LEN + 1];
+	int i = 0, j = 0;
+	memset(buf, 0, MAX_USER_COINBASE_LEN + 1);
+	if (!s || !*s)
+		return;
+	for (i = 0; isspace(s[i]) || s[i] == '/'; ++i)
+		/* ffwd past leading whitespace and '/' */ ;
+	for (j = 0; j < MAX_USER_COINBASE_LEN && s[i]; ++i) {
+		if (s[i] == '/')
+			continue;
+		buf[j++] = s[i];
+	}
+	buf[MAX_USER_COINBASE_LEN] = 0; // enforce max length
+	if (strcmp(buf, s))
+		LOGWARNING("Signature '%s' normalized to -> '%s'", s, buf);
+	strncpy(s, buf, MAX_USER_COINBASE_LEN + 1); // this is guaranteed to be terminated with NUL here.
 }
 
 void *stratifier(void *arg)
