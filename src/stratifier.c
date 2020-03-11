@@ -778,17 +778,18 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 	wb->coinb2bin = ckzalloc(512 + cbspace);
 	{
 		static const char cbprefix[] = "#/" HARDCODED_COINBASE_PREFIX_STR " ";
-		static const char cbsuffix[] = " " HARDCODED_COINBASE_SUFFIX_STR "/";
+		static const char cbsuffix[] = HARDCODED_COINBASE_SUFFIX_STR "/";
 		static const size_t cbprefix_len = sizeof(cbprefix)-1, cbsuffix_len = sizeof(cbsuffix)-1;
 		memcpy(wb->coinb2bin, cbprefix, cbprefix_len);
 		wb->coinb2len = cbprefix_len;
 		if (ckp->bchsig) {
-			int siglen = strlen(ckp->bchsig);
+			const int siglen = strlen(ckp->bchsig);
 
 			LOGDEBUG("Len %d sig %s", siglen, ckp->bchsig);
 			if (siglen) {
 				memcpy(wb->coinb2bin + wb->coinb2len, ckp->bchsig, siglen);
 				wb->coinb2len += siglen;
+				wb->coinb2bin[wb->coinb2len++] = ' '; // add a space for suffix
 			}
 		}
 		memcpy(wb->coinb2bin + wb->coinb2len, cbsuffix, cbsuffix_len);
