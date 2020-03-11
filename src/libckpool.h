@@ -567,7 +567,7 @@ int safecasecmp(const char *a, const char *b, int len); // pass len < 0 to compa
 bool cmdmatch(const char *buf, const char *cmd);
 
 // returns 0 on address parse failure, otherwise returns length of generated CScript
-int address_to_txn(char *p2h, const char *addr, const bool script);
+int address_to_txn(char *p2h, const char *addr, const bool script, const char *default_cashaddr_prefix);
 
 int ser_number(uchar *s, int32_t val);
 int get_sernumber(uchar *s);

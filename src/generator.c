@@ -878,6 +878,24 @@ out:
 	return ret;
 }
 
+bool generator_get_chain(ckpool_t *ckp, char *chain)
+{
+	gdata_t *gdata = ckp->gdata;
+	server_instance_t *si;
+	bool ret = false;
+	connsock_t *cs;
+
+	si = gdata->current_si;
+	if (unlikely(!si)) {
+		LOGWARNING("No live current server in generator_get_chain");
+		goto out;
+	}
+	cs = &si->cs;
+	ret = get_chain(cs, chain);
+out:
+	return ret;
+}
+
 bool generator_checkaddr(ckpool_t *ckp, const char *addr, bool *script)
 {
 	gdata_t *gdata = ckp->gdata;

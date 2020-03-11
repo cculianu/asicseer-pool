@@ -1792,14 +1792,14 @@ static const char *remove_any_cashaddr_prefix(const char *addr)
 	return ret;
 }
 
-static int address_to_pubkeytxn(char *pkh, const char *addr)
+static int address_to_pubkeytxn(char *pkh, const char *addr, const char *cashaddr_prefix)
 {
 	char b58bin[25] = {};
 	bool decoded_cashaddr = false;
 
 	if (strlen(addr) > CASHADDR_HEURISTIC_LEN) {
 		// address is long -- try parsing it as a cashaddr
-		uint8_t *h160 = cashaddr_decode_hash160(addr);
+		uint8_t *h160 = cashaddr_decode_hash160(addr, cashaddr_prefix);
 		if (h160) {
 			memcpy(&b58bin[1], h160, 20); // hack -- we only care about the hash 160 anyway
 			free(h160);
@@ -1824,14 +1824,14 @@ static int address_to_pubkeytxn(char *pkh, const char *addr)
 	return 25;
 }
 
-static int address_to_scripttxn(char *psh, const char *addr)
+static int address_to_scripttxn(char *psh, const char *addr, const char *cashaddr_prefix)
 {
 	char b58bin[25] = {};
 	bool decoded_cashaddr = false;
 
 	if (strlen(addr) > CASHADDR_HEURISTIC_LEN) {
 		// address is long -- try parsing it as a cashaddr
-		uint8_t *h160 = cashaddr_decode_hash160(addr);
+		uint8_t *h160 = cashaddr_decode_hash160(addr, cashaddr_prefix);
 		if (h160) {
 			memcpy(&b58bin[1], h160, 20); // hack -- we only care about the hash 160 anyway
 			free(h160);
@@ -1855,11 +1855,11 @@ static int address_to_scripttxn(char *psh, const char *addr)
 }
 
 /* Convert an address to a transaction and return the length of the transaction */
-int address_to_txn(char *p2h, const char *addr, const bool script)
+int address_to_txn(char *p2h, const char *addr, const bool script, const char *cashaddr_prefix)
 {
 	if (script)
-		return address_to_scripttxn(p2h, addr);
-	return address_to_pubkeytxn(p2h, addr);
+		return address_to_scripttxn(p2h, addr, cashaddr_prefix);
+	return address_to_pubkeytxn(p2h, addr, cashaddr_prefix);
 }
 
 /*  For encoding nHeight into coinbase, return how many bytes were used */

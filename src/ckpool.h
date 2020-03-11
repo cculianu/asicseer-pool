@@ -186,9 +186,9 @@ struct ckpool_instance {
 	proc_instance_t stratifier;
 	proc_instance_t connector;
 
-	bool generator_ready;
-	bool stratifier_ready;
-	bool connector_ready;
+	volatile bool generator_ready; // TODO: use a real atomic value here
+	volatile bool stratifier_ready; // TODO: use a real atomic value here
+	volatile bool connector_ready; // TODO: use a real atomic value here
 
 	/* Threads of main process */
 	pthread_t pth_listener;
@@ -241,6 +241,12 @@ struct ckpool_instance {
 	int64_t mindiff; // Default 1
 	int64_t startdiff; // Default 42
 	int64_t maxdiff; // No default
+
+	/* Which chain are we on: "main", "test", or "regtest". Defaults to "main" but may be read
+	   from bitcoind and updated if !proxy instance.
+	   If you change these buffer sizes, update bitcoin.c get_chain(). */
+	char chain[16];
+	char cashaddr_prefix[16]; // defaults to "bitcoincash" but may be "bchtest" or "bchreg" after chain is correctly updated from bitcoind
 
 	/* Coinbase data */
 	char *bchaddress; // Address to mine to. In SPLNS mode this is used as a fallback address ok worker address failure, etc.

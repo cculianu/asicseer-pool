@@ -10,7 +10,7 @@
 #include <string.h>
 
 // FWD decls
-static int cashaddr_decode(const char *str, uint8_t **buf, size_t *buflen);
+static int cashaddr_decode(const char *str, uint8_t **buf, size_t *buflen, const char *default_prefix);
 static bool ConvertBits(uint8_t **out, size_t *outlen, size_t frombits, size_t tobits,
                         const uint8_t *in, size_t inlen);
 
@@ -22,11 +22,11 @@ static bool ConvertBits(uint8_t **out, size_t *outlen, size_t frombits, size_t t
  *
  * The returned buffer must be freed by the caller.
  */
-uint8_t *cashaddr_decode_hash160(const char *addr)
+uint8_t *cashaddr_decode_hash160(const char *addr, const char *default_prefix)
 {
     uint8_t *buf = NULL;
     size_t buflen = 0;
-    int res = cashaddr_decode(addr, &buf, &buflen);
+    int res = cashaddr_decode(addr, &buf, &buflen, default_prefix);
     if (unlikely(res < 0))
         return NULL;
     uint8_t *bits = NULL;
@@ -212,7 +212,7 @@ static inline uint8_t to_lower_case(uint8_t c) {
  *
  * Note the *buf will need to be freed on successful return.
  */
-static int cashaddr_decode(const char *str, uint8_t **buf, size_t *buflen) {
+static int cashaddr_decode(const char *str, uint8_t **buf, size_t *buflen, const char *default_prefix) {
     // Go over the string and do some sanity checks.
     bool lower = false, upper = false, hasNumber = false;
     size_t slen = strlen(str ? str : "");
@@ -270,7 +270,10 @@ static int cashaddr_decode(const char *str, uint8_t **buf, size_t *buflen) {
         str += prefixSize;
         slen -= prefixSize;
     } else {
-        prefix = strdup("bitcoincash"); // default prefix, without the :
+        // default prefix, without the :
+        prefix = strdup(default_prefix && *default_prefix
+                        ? default_prefix
+                        : CASHADDR_PREFIX_MAIN);
     }
 
     // Decode values.

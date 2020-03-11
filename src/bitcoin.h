@@ -22,6 +22,9 @@ bool submit_block(connsock_t *cs, const char *params);
 void precious_block(connsock_t *cs, const char *params);
 void submit_txn(connsock_t *cs, const char *params);
 char *get_txn(connsock_t *cs, const char *hash);
+/* Request getblockchaininfo from bitcoind for "chain", writing the value into "chain"
+ * which should be at least 16 bytes long. */
+bool get_chain(connsock_t *cs, char *chain);
 
 #define DUST_LIMIT_SATS 546
 

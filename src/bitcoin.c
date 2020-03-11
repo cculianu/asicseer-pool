@@ -246,6 +246,48 @@ out:
 	return ret;
 }
 
+/* Request getblockchaininfo from bitcoind for "chain", writing the value into "chain"
+ * which should be at least 16 bytes long. */
+bool get_chain(connsock_t *cs, char *chain)
+{
+	json_t *val, *res_val;
+	const char *res_ret;
+	char rpc_req[256];
+	bool ret = false;
+	char *tmpbuf = NULL;
+
+	if (unlikely(!chain)) {
+		LOGWARNING("Null out buffer passed to get_chain");
+		return ret;
+	}
+
+	chain[0] = 0; // ensure truncated string no matter what happens.
+
+	sprintf(rpc_req, "{\"method\": \"getblockchaininfo\", \"params\": []}\n");
+	val = json_rpc_call(cs, rpc_req);
+	if (unlikely(!val)) {
+		LOGWARNING("%s:%s Failed to get valid json response to getblockchaininfo", cs->url, cs->port);
+		return ret;
+	}
+	res_val = json_object_get(val, "result");
+	if (unlikely(!res_val)) {
+		LOGWARNING("Failed to get result in json response to getblockchaininfo");
+		goto out;
+	}
+	if ( unlikely(! json_get_string(&tmpbuf, res_val, "chain") || !tmpbuf || !strlen(tmpbuf)) ) {
+		LOGWARNING("Could not read \"chain\" from getblockchaininfo results");
+		goto out;
+	}
+	strncpy(chain, tmpbuf, 16);
+	chain[15] = 0;
+	ret = true;
+out:
+	if (likely(tmpbuf)) { free(tmpbuf); tmpbuf = 0; }
+	json_decref(val);
+	return ret;
+}
+
+
 static const char *bestblockhash_req = "{\"method\": \"getbestblockhash\"}\n";
 
 /* Request getbestblockhash from bitcoind. bitcoind 0.9+ only */

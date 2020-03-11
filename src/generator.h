@@ -25,5 +25,8 @@ bool generator_submitblock(ckpool_t *ckp, const char *buf);
 void generator_preciousblock(ckpool_t *ckp, const char *hash);
 bool generator_get_blockhash(ckpool_t *ckp, int height, char *hash);
 void *generator(void *arg);
-
+/* A wrapper around bitcoin.c get_chain:
+ * Request getblockchaininfo from bitcoind for "chain", writing the value into "chain"
+ * which should be at least 16 bytes long. */
+bool generator_get_chain(ckpool_t *ckp, char *chain);
 #endif /* GENERATOR_H */

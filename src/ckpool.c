@@ -15,6 +15,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <assert.h>
 #include <ctype.h>
 #include <fenv.h>
 #include <getopt.h>
@@ -26,6 +27,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "cashaddr.h"
 #include "ckpool.h"
 #include "libckpool.h"
 #include "generator.h"
@@ -1796,6 +1798,15 @@ int main(int argc, char **argv)
 
 		ckp.ckdb_sockname = ckp.ckdb_sockdir;
 		realloc_strcat(&ckp.ckdb_sockname, "listener");
+	}
+
+	// setup default chain and prefix
+	{
+		const size_t len1 = sizeof(ckp.chain);
+		const size_t len2 = sizeof(ckp.cashaddr_prefix);
+		assert(len1 && len2);
+		strncpy(ckp.chain, "main", len1); ckp.chain[len1-1] = 0;
+		strncpy(ckp.cashaddr_prefix, CASHADDR_PREFIX_MAIN, len2); ckp.cashaddr_prefix[len2-1] = 0;
 	}
 
 	/* Ignore sigpipe */

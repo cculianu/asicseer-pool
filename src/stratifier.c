@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <assert.h>
 #include <ctype.h>
 #include <dirent.h>
 #include <fcntl.h>
@@ -21,6 +22,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "cashaddr.h"
 #include "ckpool.h"
 #include "libckpool.h"
 #include "bitcoin.h"
@@ -5624,10 +5626,10 @@ static user_instance_t *__create_user(sdata_t *sdata, const char *username)
 // fall back to pool address.  In the unlikely case that also fails, quits immediately.
 static void cache_user_address_cscript(ckpool_t *ckp, user_instance_t *user, const char *username)
 {
-	user->txnlen = address_to_txn(user->txnbin, username, user->script);
+	user->txnlen = address_to_txn(user->txnbin, username, user->script, ckp->cashaddr_prefix);
 	if (!user->txnlen) {
 		if (ckp->bchaddress) {
-			user->txnlen = address_to_txn(user->txnbin, ckp->bchaddress, ckp->script);
+			user->txnlen = address_to_txn(user->txnbin, ckp->bchaddress, ckp->script, ckp->cashaddr_prefix);
 		}
 		if (user->txnlen) {
 			LOGWARNING("Failed to parse user address '%s', fell back to using pool address '%s'", username, ckp->bchaddress ? : "");
@@ -9442,6 +9444,26 @@ void normalize_bchsig(char *s)
 	strncpy(s, buf, MAX_USER_COINBASE_LEN + 1); // this is guaranteed to be terminated with NUL here.
 }
 
+static bool get_chain_and_prefix(ckpool_t *ckp)
+{
+	const size_t len = sizeof(ckp->cashaddr_prefix);
+	assert(len > strlen(CASHADDR_PREFIX_MAIN));
+	if (! generator_get_chain(ckp, ckp->chain))
+		return false;
+	if (!strcmp(ckp->chain, "test")) // testnet
+		strncpy(ckp->cashaddr_prefix, CASHADDR_PREFIX_TEST, len);
+	else if (!strcmp(ckp->chain, "regtest")) // regtest
+		strncpy(ckp->cashaddr_prefix, CASHADDR_PREFIX_REGTEST, len);
+	else
+		// default to mainnet
+		strncpy(ckp->cashaddr_prefix, CASHADDR_PREFIX_MAIN, len);
+	if (likely(len))
+		ckp->cashaddr_prefix[len-1] = 0; // ensure NUL termination
+
+	LOGINFO("chain: \"%s\" cashaddr prefix: \"%s\"", ckp->chain, ckp->cashaddr_prefix);
+	return true;
+}
+
 void *stratifier(void *arg)
 {
 	proc_instance_t *pi = (proc_instance_t *)arg;
@@ -9465,6 +9487,11 @@ void *stratifier(void *arg)
 		cksleep_ms(10);
 
 	if (!ckp->proxy) {
+		if (!get_chain_and_prefix(ckp)) {
+			LOGEMERG("Fatal: failed to get the current chain from bitcoind");
+			goto out;
+		}
+
 		if (!generator_checkaddr(ckp, ckp->bchaddress, &ckp->script)) {
 			LOGEMERG("Fatal: bchaddress invalid according to bitcoind");
 			goto out;
@@ -9472,7 +9499,7 @@ void *stratifier(void *arg)
 
 		/* Store this for use elsewhere */
 		hex2bin(scriptsig_header_bin, scriptsig_header, 41);
-		sdata->txnlen = address_to_txn(sdata->txnbin, ckp->bchaddress, ckp->script);
+		sdata->txnlen = address_to_txn(sdata->txnbin, ckp->bchaddress, ckp->script, ckp->cashaddr_prefix);
 		if (!sdata->txnlen) {
 			quit(1, "Failed to parse pool address '%s'. FIXME!", ckp->bchaddress);
 		}
