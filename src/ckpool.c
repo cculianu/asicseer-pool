@@ -1478,14 +1478,13 @@ static void parse_config(ckpool_t *ckp)
 		if (arr_size)
 			parse_btcds(ckp, arr_val, arr_size);
 	}
-	// Obsolete keys (renamed to bch*)
+	// Obsolete key detection (keys were renamed from btc* to bch*)
 	if (json_object_get(json_conf, "btcaddress"))
-		quit(1, "'btcaddress' key has been renamed to 'bchaddress'. Please update your config file!");
+		quit(1, "\"btcaddress\" key has been renamed to \"bchaddress\". Please update your config file!");
 	if (json_object_get(json_conf, "btcsig"))
-		quit(1, "'btcsig' key has been renamed to 'bchsig'. Please update your config file!");
-	// /End obsolete keys
-	if (! json_get_string(&ckp->bchaddress, json_conf, "bchaddress") )
-		quit(1, "'bchaddress' not specified in config!");
+		quit(1, "\"btcsig\" key has been renamed to \"bchsig\". Please update your config file!");
+	// /End obsolete key detection
+	json_get_string(&ckp->bchaddress, json_conf, "bchaddress");
 	json_get_string(&ckp->bchsig, json_conf, "bchsig");
 	// bchsig
 	normalize_bchsig(ckp->bchsig); // modifies buffer in-place, noop if NULL
