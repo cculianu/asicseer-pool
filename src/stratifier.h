@@ -105,7 +105,7 @@ char *stratifier_stats(ckpool_t *ckp, void *data);
 void _stratifier_add_recv(ckpool_t *ckp, json_t *val, const char *file, const char *func, const int line);
 #define stratifier_add_recv(ckp, val) _stratifier_add_recv(ckp, val, __FILE__, __func__, __LINE__)
 
-// Strips leading and trailing whitespace and any '/' characters from bchsig message.
+// Strips leading & trailing whitespace and strips any '/' characters from bchsig message.
 // Rewrites the string in-place.
 void normalize_bchsig(char *);
 

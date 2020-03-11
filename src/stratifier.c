@@ -9428,13 +9428,15 @@ void normalize_bchsig(char *s)
 	if (!s || !*s)
 		return;
 	for (i = 0; isspace(s[i]) || s[i] == '/'; ++i)
-		/* ffwd past leading whitespace and '/' */ ;
+		; /* ffwd past leading whitespace and '/' */
 	for (j = 0; j < MAX_USER_COINBASE_LEN && s[i]; ++i) {
 		if (s[i] == '/')
 			continue;
 		buf[j++] = s[i];
 	}
-	buf[MAX_USER_COINBASE_LEN] = 0; // enforce max length
+	while (j > 0 && isspace(buf[j-1])) // strip trailing whitespace
+		--j;
+	buf[j] = 0; // truncate string in case loop above decremented j
 	if (strcmp(buf, s))
 		LOGWARNING("Signature '%s' normalized to -> '%s'", s, buf);
 	strncpy(s, buf, MAX_USER_COINBASE_LEN + 1); // this is guaranteed to be terminated with NUL here.
