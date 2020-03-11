@@ -24,6 +24,7 @@
 
 #include "cashaddr.h"
 #include "ckpool.h"
+#include "donation.h"
 #include "libckpool.h"
 #include "bitcoin.h"
 #include "sha2.h"
@@ -464,8 +465,11 @@ struct stratifier_data {
 
 	char txnbin[48];
 	int txnlen;
-	char dontxnbin[48];
-	int dontxnlen;
+	struct {
+		char txnbin[48];
+		int txnlen;
+	} donation_data[DONATION_NUM_ADDRESSES];
+	int n_good_donation; // the number of donation addresses above that were correctly parsed
 
 	pool_stats_t stats;
 	/* Protects changes to pool stats */
@@ -665,7 +669,9 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 	dreward /= SATOSHIS;
 	json_set_double(payout, "reward", dreward);
 	/* Will be overwritten, just looks nicer in this position */
-	json_set_double(payout, "fee", 0);
+	json_set_double(payout, "fee", 0.);
+	json_set_double(payout, "net_fee", 0.);
+	json_set_double(payout, "dev_donation", 0.);
 	json_object_set_new_nocheck(payout, "payouts", payout_entries);
 	json_set_double(payout, "herp", total_herp);
 	json_object_set_new_nocheck(payout, "postponed", postponed_entries);
@@ -724,7 +730,7 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 
 static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 {
-	uint64_t *p64 = NULL, g64 = 0, f64 = 0, d64 = 0, *gentxns = NULL;
+	uint64_t *p64 = NULL, g64 = 0, f64 = 0, pf64 = 0, df64 = 0, c64 = 0, *gentxns = NULL;
 	sdata_t *sdata = ckp->sdata;
 	int len, ofs = 0, cbspace;
 	char header[228];
@@ -811,46 +817,84 @@ static void generate_coinbase(const ckpool_t *ckp, workbase_t *wb)
 	gentxns = (uint64_t *)&wb->coinb2bin[wb->coinb2len++];
 	// Generation value
 	g64 = wb->coinbasevalue; // generation (reward)
-	f64 = round(g64 * (ckp->pool_fee/100.0)); // pool fee
-	d64 = 0; // leftover change/dust
+	f64 = round(g64 * (ckp->pool_fee/100.0)); // pool fee gross (including dev donation)
+	pf64 = f64; // pool fee net (minus dev donation), starts off as f64 initially but may be decreased below
+	df64 = 0; // total dev donations (10% of f64 * num_devs), 0 initially, may be increased below
+	c64 = 0; // leftover change/dust, 0 initially, may increase below
 
 	if (CKP_STANDALONE(ckp)) {
-		// payout to miners directly in SPLNS mode
+		// payout to miners directly in SPLNS mode (also pay out hard-coded dev donations)
 
 		// first, add pool fee, if any
-		if (f64 >= DUST_LIMIT_SATS && sdata->txnlen) {
-			p64 = _add_txnbin(wb, gentxns, f64, sdata->txnbin, sdata->txnlen);
-			const double fee = f64 / (double)SATOSHIS;
+		if (likely(f64 >= DUST_LIMIT_SATS && sdata->txnlen)) {
+			df64 = DONATION_FRACTION > 0 ? (f64 / DONATION_FRACTION) * sdata->n_good_donation : 0;
+			uint64_t don_each = sdata->n_good_donation ? df64 / sdata->n_good_donation : 0;
+			if (unlikely(don_each < DUST_LIMIT_SATS || f64 - df64 < DUST_LIMIT_SATS)) {
+				// can't make the outputs -- one of them would end up below dust limit. Don't pay out devs here.
+				df64 = 0;
+				don_each = 0;
+			}
+			pf64 = f64 - df64;
+
+			// add pool net fee
+			p64 = _add_txnbin(wb, gentxns, pf64, sdata->txnbin, sdata->txnlen);
+			const double fee = pf64 / (double)SATOSHIS;
 			LOGDEBUG("%f pool fee to pool address: %s", fee, ckp->bchaddress);
+			// now add donations for each dev
+			uint64_t leftover = df64;
+			if (df64 && don_each) {
+				for (int i = 0; i < DONATION_NUM_ADDRESSES; ++i) {
+					if (sdata->donation_data[i].txnlen) {
+						// good address
+						_add_txnbin(wb, gentxns, don_each, sdata->donation_data[i].txnbin, sdata->donation_data[i].txnlen);
+						leftover -= don_each;
+						const double d = don_each / (double)SATOSHIS;
+						LOGDEBUG("%f dev donation to address: %s", d, ckp->dev_donations[i].address);
+					}
+				}
+			}
+			if (unlikely(leftover)) { // this branch is here to enforce correctness but should never be taken.
+				// leftover from paying out dev donations -- back to pool
+				const double d = leftover / (double)SATOSHIS;
+				pf64 += leftover;
+				df64 -= leftover;
+				leftover = 0;
+				*p64 = htole64(pf64);
+				LOGDEBUG("%f leftover from dev donations back to pool address: %s", d, ckp->bchaddress);
+			}
 		} else {
 			// fee too small, just ignore
-			f64 = 0;
+			f64 = pf64 = 0;
 		}
 
-		d64 += add_user_generation(sdata, wb, g64 - f64, gentxns, true); // add miner payouts, minus fee
+		c64 += add_user_generation(sdata, wb, g64 - f64, gentxns, true); // add miner payouts, minus total fee
 
 		/* Add any change left over from user gen to pool */
-		if ( d64 && (p64 || d64 >= DUST_LIMIT_SATS) && sdata->txnlen) {
+		if ( c64 && (p64 || c64 >= DUST_LIMIT_SATS) && sdata->txnlen) {
 			if (!p64) {
 				// pay extra change > dust limit back to pool, new output at end
-				p64 = _add_txnbin(wb, gentxns, f64 + d64, sdata->txnbin, sdata->txnlen);
+				p64 = _add_txnbin(wb, gentxns, pf64 + c64, sdata->txnbin, sdata->txnlen);
 			} else {
 				// pay dust back to pool, re-use pool fee output (output 0)
-				*p64 = htole64( f64 + d64 );
+				*p64 = htole64( le64toh(*p64) + c64 );
 			}
-			LOGINFO("%"PRId64" sats in change to pool address: %s, total pool payout: %"PRId64" sats", d64, ckp->bchaddress, le64toh(*p64));
-		} else if (d64 || (!p64 && f64)) {
+			LOGINFO("%"PRId64" sats in change to pool address: %s, total pool payout: %"PRId64" sats", c64, ckp->bchaddress, le64toh(*p64));
+			pf64 += c64; // tally total for correctness below in json
+			c64 = 0;
+		} else if (c64 || (!p64 && f64)) {
 			// FIXME -- this branch should never be reached because add_user_generation should
 			// have paid dust to largest payee. If we get here it means we couldn't have paid
 			// ourselves (missing pool bchaddress?)
-			if (d64)
-				LOGWARNING("%"PRId64" sats in change left over after generating coinbase outs! FIXME!", d64);
+			if (c64)
+				LOGWARNING("%"PRId64" sats in change left over after generating coinbase outs! FIXME!", c64);
 			if (!p64 && f64)
 				LOGWARNING("%"PRId64" sats in pool fee left over after generating coinbase outs! FIXME!", f64);
 		}
 		if (p64 && wb->payout) {
 			// tabulate this as "pool fee" in json
-			json_set_double(wb->payout, "fee", le64toh(*p64) / (double)SATOSHIS);
+			json_set_double(wb->payout, "fee", f64 / (double)SATOSHIS);
+			json_set_double(wb->payout, "net_fee", le64toh(*p64) / (double)SATOSHIS);
+			json_set_double(wb->payout, "dev_donation", df64 / (double)SATOSHIS);
 		}
 	} else {
 		// payout directly to pool in this mode (ckdb mode)
@@ -1755,23 +1799,6 @@ retry:
 	 * for user generation transactions */
 	txns = wb_merkle_bin_txns(ckp, sdata, wb, txn_array, true);
 
-
-#if 0 // This block currently a no-op. Was here for segwit support but removed for BCH.
-	{
-		json_t *rules_array = json_object_get(wb->json, "rules");
-		if (rules_array) {
-			int rule_count = json_array_size(rules_array);
-
-			for (i = 0; i < rule_count; i++) {
-				const char *rule = json_string_value(json_array_get(rules_array, i));
-				if (!rule)
-					continue;
-				if (*rule == '!')
-					rule++;
-			}
-		}
-	}
-#endif
 	generate_coinbase(ckp, wb);
 
 	add_base(ckp, sdata, wb, &new_block);
@@ -2716,8 +2743,10 @@ static sdata_t *duplicate_sdata(const sdata_t *sdata)
 	dsdata->ckp = sdata->ckp;
 
 	/* Copy the transaction binaries for workbase creation */
-	memcpy(dsdata->txnbin, sdata->txnbin, 48);
-	memcpy(dsdata->dontxnbin, sdata->dontxnbin, 48);
+	memcpy(dsdata->txnbin, sdata->txnbin, 48); // FIXME: why are we not copying txnlen? -Calin
+	for (int i = 0; i < DONATION_NUM_ADDRESSES; ++i) {
+		memcpy(dsdata->donation_data[i].txnbin, sdata->donation_data[i].txnbin, 48); // FIXME: why are we not copying txnlen? -Calin
+	}
 
 	/* Use the same work queues for all subproxies */
 	dsdata->ssends = sdata->ssends;
@@ -9416,13 +9445,17 @@ static bool get_chain_and_prefix(ckpool_t *ckp)
 	assert(len > strlen(CASHADDR_PREFIX_MAIN));
 	if (! generator_get_chain(ckp, ckp->chain))
 		return false;
-	if (!strcmp(ckp->chain, "test")) // testnet
+	if (!strcmp(ckp->chain, "test")) { // testnet
 		strncpy(ckp->cashaddr_prefix, CASHADDR_PREFIX_TEST, len);
-	else if (!strcmp(ckp->chain, "regtest")) // regtest
+		ckp->not_mainnet = true;
+	} else if (!strcmp(ckp->chain, "regtest")) { // regtest
 		strncpy(ckp->cashaddr_prefix, CASHADDR_PREFIX_REGTEST, len);
-	else
+		ckp->not_mainnet = true;
+	} else {
 		// default to mainnet
 		strncpy(ckp->cashaddr_prefix, CASHADDR_PREFIX_MAIN, len);
+		ckp->not_mainnet = false;
+	}
 	if (likely(len))
 		ckp->cashaddr_prefix[len-1] = 0; // ensure NUL termination
 
@@ -9467,19 +9500,23 @@ void *stratifier(void *arg)
 		hex2bin(scriptsig_header_bin, scriptsig_header, 41);
 		sdata->txnlen = address_to_txn(sdata->txnbin, ckp->bchaddress, ckp->script, ckp->cashaddr_prefix);
 		if (!sdata->txnlen) {
-			quit(1, "Failed to parse pool address '%s'. FIXME!", ckp->bchaddress);
+			LOGEMERG("Failed to parse pool address '%s'. FIXME!", ckp->bchaddress);
+			goto out;
 		}
 
-#if 0
-		/* FIXME Donation is currently disabled. Donvalid will be false */
-		if (generator_checkaddr(ckp, ckp->donaddress, &ckp->donscript)) {
-			ckp->donvalid = true;
-			sdata->dontxnlen = address_to_txn(sdata->txnbin, ckp->donaddress, ckp->donscript);
-			if (!sdata->dontxnlen) {
-				quit(1, "Failed to parse donation address '%s'. FIXME!", ckp->donaddress);
+		for (int i = 0; i < DONATION_NUM_ADDRESSES; ++i) {
+			if (generator_checkaddr(ckp, ckp->dev_donations[i].address, &ckp->dev_donations[i].isscript)) {
+				ckp->dev_donations[i].valid = true;
+				sdata->n_good_donation++;
+				sdata->donation_data[i].txnlen =
+					address_to_txn(sdata->donation_data[i].txnbin, ckp->dev_donations[i].address,
+					               ckp->dev_donations[i].isscript, ckp->cashaddr_prefix);
+				if (!sdata->donation_data[i].txnlen) {
+					LOGEMERG("Failed to parse donation address '%s'. FIXME!", ckp->dev_donations[i].address);
+					goto out;
+				}
 			}
 		}
-#endif
 	}
 
 	randomiser = time(NULL);

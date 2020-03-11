@@ -17,6 +17,7 @@
 #include <sys/types.h>
 #include <inttypes.h>
 
+#include "donation.h"
 #include "libckpool.h"
 #include "uthash.h"
 
@@ -247,14 +248,17 @@ struct ckpool_instance {
 	   If you change these buffer sizes, update bitcoin.c get_chain(). */
 	char chain[16];
 	char cashaddr_prefix[16]; // defaults to "bitcoincash" but may be "bchtest" or "bchreg" after chain is correctly updated from bitcoind
+	bool not_mainnet; // if true, we are not on main net but rather on test net or regtest net
 
 	/* Coinbase data */
 	char *bchaddress; // Address to mine to. In SPLNS mode this is used as a fallback address ok worker address failure, etc.
 	bool script; // Address is a script address
 	char *bchsig; // Optional signature to add to coinbase
-	char *donaddress; // Donation address
-	bool donscript; // Donation is a script
-	bool donvalid; // Donation address works on this network
+	struct {
+		char *address;
+		bool isscript;
+		bool valid;
+	} dev_donations[DONATION_NUM_ADDRESSES];  // [0] = calin, [1] = bchn -- see donation.h
 
 	double pool_fee; // comes from "pool_fee" in config, as a percentage. Defaults to 1.0 if unspecified. SPLNS mode only.
 

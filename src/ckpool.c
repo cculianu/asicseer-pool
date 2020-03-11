@@ -1484,7 +1484,8 @@ static void parse_config(ckpool_t *ckp)
 	if (json_object_get(json_conf, "btcsig"))
 		quit(1, "'btcsig' key has been renamed to 'bchsig'. Please update your config file!");
 	// /End obsolete keys
-	json_get_string(&ckp->bchaddress, json_conf, "bchaddress");
+	if (! json_get_string(&ckp->bchaddress, json_conf, "bchaddress") )
+		quit(1, "'bchaddress' not specified in config!");
 	json_get_string(&ckp->bchsig, json_conf, "bchsig");
 	// bchsig
 	normalize_bchsig(ckp->bchsig); // modifies buffer in-place, noop if NULL
@@ -1844,9 +1845,13 @@ int main(int argc, char **argv)
 			ckp.btcdpass[i] = strdup("pass");
 	}
 
-	ckp.donaddress = DONATION_P2PKH;
+	// set up donation addresses
+	{
+		ckp.dev_donations[0].address = (char *) DONATION_ADDRESS_CALIN;
+		ckp.dev_donations[1].address = (char *) DONATION_ADDRESS_BCHN;
+	}
 	if (!ckp.bchaddress)
-		ckp.bchaddress = ckp.donaddress;
+		ckp.bchaddress = ckp.dev_donations[0].address;
 	if (!ckp.blockpoll)
 		ckp.blockpoll = 100;
 	if (!ckp.nonce1length)
