@@ -1472,6 +1472,12 @@ static void parse_mindiff_overrides(ckpool_t *ckp, json_t *obj, const size_t n_k
 		else if (json_is_real(jval))
 			mindiff = json_real_value(jval);
 		if (mindiff > 0 && useragent && *useragent) {
+			if (mindiff <= ckp->mindiff || (ckp->maxdiff > 0 && mindiff > ckp->maxdiff)) {
+				// ignore mindiff overrides above global maximum or below global minimum
+				LOGWARNING("mindiff_overrides: override value %"PRId64" for \"%s\" is out of range of global maximum/minimum set in config, skipping",
+				           mindiff, useragent ? : "");
+				continue;
+			}
 			arr[n_ok].useragent = strdup(useragent);
 			arr[n_ok].ualen = strlen(arr[n_ok].useragent); // cache strlen to save cycles later
 			arr[n_ok].mindiff = mindiff;
@@ -1565,6 +1571,7 @@ static void parse_config(ckpool_t *ckp)
 	json_get_int64(&ckp->startdiff, json_conf, "startdiff");
 	json_get_int64(&ckp->maxdiff, json_conf, "maxdiff");
 	{
+		// parse mindiff_overrides -- this must be called after mindiff and maxdiff above are already set up
 		json_t * obj = json_object_get(json_conf, "mindiff_overrides");
 		if (obj) {
 			size_t n_keys = 0;
