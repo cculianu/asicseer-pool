@@ -330,7 +330,7 @@ struct stratum_instance {
 	time_t last_txns; /* Last time this worker requested txn hashes */
 	time_t disconnected_time; /* Time this instance disconnected */
 
-	int64_t suggest_diff; /* Stratum client suggested diff */
+	int64_t suggest_diff; /* Stratum client suggested diff  - note this may also come from mindiff_overrides */
 	double best_diff; /* Best share found by this instance */
 
 	sdata_t *sdata; /* Which sdata this client is bound to */
@@ -5252,6 +5252,29 @@ out_unlock:
 	return ret;
 }
 
+static void __client_apply_mindiff_override(stratum_instance_t *client)
+{
+	ckpool_t *ckp = client->ckp;
+
+	if (!ckp->n_mindiff_overrides || !client->useragent || !*client->useragent)
+		return;
+	for (unsigned i = 0; i < ckp->n_mindiff_overrides; ++i) {
+		// linear search through known overrides based on useragent prefix
+		const mindiff_override_t * const ovr = ckp->mindiff_overrides + i;
+		if (ovr->mindiff <= ckp->mindiff)
+			continue; // ignore mindiff overrides below global minimum
+		if (ckp->maxdiff > 0 && ovr->mindiff > ckp->maxdiff)
+			continue; // ignore mindiff overrides above global maximum
+		if (0 == strncasecmp(client->useragent, ovr->useragent, ovr->ualen)) {
+			// match, apply suggested_diff to client, which will clamp
+			// the minimum difficulty for this client for all workers to be >= ovr->mindiff
+			client->suggest_diff = client->old_diff = client->diff = ovr->mindiff;
+			LOGDEBUG("mindiff_overrides: Applied minimum difficulty = %"PRId64" to client %"PRId64" matching \"%s\"", ovr->mindiff, client->id, ovr->useragent);
+			return;
+		}
+	}
+}
+
 /* Extranonce1 must be set here. Needs to be entered with client holding a ref
  * count. */
 static json_t *parse_subscribe(stratum_instance_t *client, const int64_t client_id, const json_t *params_val)
@@ -5359,6 +5382,14 @@ static json_t *parse_subscribe(stratum_instance_t *client, const int64_t client_
 	JSON_CPACK(ret, "[[[s,s]],s,i]", "mining.notify", sessionid, client->enonce1,
 			n2len);
 	ck_runlock(&sdata->workbase_lock);
+
+	// Apply any mindiff_overrides from config here.
+	// This sets client->suggest_diff, and initial client->diff, if any overrides match for this client
+	// (based on useragent).
+	// Known issue here: It's assumed the client sends mining.subscribe after initial connect.
+	// This call here won't spam a new difficulty change notification message, since the normal
+	// call path will send the initial difficulty message in init_client() later anyway. -Calin
+	__client_apply_mindiff_override(client);
 
 	client->subscribed = true;
 

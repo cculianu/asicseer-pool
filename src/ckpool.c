@@ -1458,6 +1458,47 @@ out:
 	return ret;
 }
 
+static void parse_mindiff_overrides(ckpool_t *ckp, json_t *obj, const size_t n_keys)
+{
+	if (!n_keys || !obj || !ckp) return; // paranoia
+	mindiff_override_t *arr = ckzalloc(sizeof(mindiff_override_t) * n_keys);
+	size_t n_ok = 0;
+	for (void *it = json_object_iter(obj); it; it = json_object_iter_next(obj, it)) {
+		const char *useragent = json_object_iter_key(it);
+		const json_t *jval = json_object_iter_value(it);
+		int64_t mindiff = 0;
+		if (json_is_integer(jval))
+			mindiff = json_integer_value(jval);
+		else if (json_is_real(jval))
+			mindiff = json_real_value(jval);
+		if (mindiff > 0 && useragent && *useragent) {
+			arr[n_ok].useragent = strdup(useragent);
+			arr[n_ok].ualen = strlen(arr[n_ok].useragent); // cache strlen to save cycles later
+			arr[n_ok].mindiff = mindiff;
+			++n_ok;
+		}  else {
+			LOGWARNING("mindiff_overrides: failed to parse \"%s\", expected numeric value > 0", useragent ? : "");
+		}
+		assert(n_ok <= n_keys);
+	}
+	if (n_ok) {
+		// Save info to ckp struct. Note we are being stingy with memory here and we realloc
+		// the array to the smaller size, just to be tidy.
+		ckp->mindiff_overrides = realloc(arr, sizeof(mindiff_override_t) * n_ok);
+		if (unlikely(!ckp->mindiff_overrides))
+			// realloc failure on startup.. this can't be good -- just re-use array.
+			ckp->mindiff_overrides = arr;
+		ckp->n_mindiff_overrides = n_ok;
+		// debug sanity check, print out to log what we parsed
+		for (size_t i = 0; i < n_ok; ++i) {
+			LOGDEBUG("mindiff_overrides: parsed \"%s\" mindiff %"PRId64,
+			         ckp->mindiff_overrides[i].useragent,
+			         ckp->mindiff_overrides[i].mindiff);
+		}
+		LOGDEBUG("mindiff_overrides: %d override(s) parsed ok", (int)ckp->n_mindiff_overrides);
+	} else
+		dealloc(arr); // none parsed, just free memory for the pre-allocated array.
+}
 
 static void parse_config(ckpool_t *ckp)
 {
@@ -1523,6 +1564,18 @@ static void parse_config(ckpool_t *ckp)
 	json_get_int64(&ckp->mindiff, json_conf, "mindiff");
 	json_get_int64(&ckp->startdiff, json_conf, "startdiff");
 	json_get_int64(&ckp->maxdiff, json_conf, "maxdiff");
+	{
+		json_t * obj = json_object_get(json_conf, "mindiff_overrides");
+		if (obj) {
+			size_t n_keys = 0;
+			if (!json_is_object(obj)) {
+				LOGWARNING("\"mindiff_overrides\" invalid, expected object, e.g. { ... } ");
+			} else if ((n_keys = json_object_size(obj))) {
+				parse_mindiff_overrides(ckp, obj, n_keys);
+			}
+		}
+	}
+
 	json_get_string(&ckp->logdir, json_conf, "logdir");
 	json_get_int(&ckp->maxclients, json_conf, "maxclients");
 	arr_val = json_object_get(json_conf, "proxy");

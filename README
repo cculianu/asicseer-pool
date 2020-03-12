@@ -337,6 +337,20 @@ miners to in redirector mode. They must be valid resolvable URLs+ports.
 "maxdiff" : Optional maximum diff that vardiff will clamp to where zero is no
 maximum.
 
+"mindiff_overrides" : Optional JSON object (dictionary) of useragent, mindiff
+pairs, e.g: `"mindiff_overrides" : { "nicehash" : 500000, "foohash" : 750000 }`
+This is a mechanism to support a raised minimum difficulty for clients
+connecting to the pool based on their "useragent" string (that they normally
+send via `mining.subscribe` on initial connect).  The "useragent" specified
+here is a prefix match (case insensitive).  If a client's useragent matches the
+specified prefix, then it will have its minimum and starting difficulty set to
+the override value.  Note: The override values specified here cannot be lower
+than the pool's "mindiff" setting -- they must always be higher (similarly this
+value must also be below "maxdiff").  This mechanism was initially designed so
+that NiceHash clients can connect to a pool and get a special-cased raised
+difficulty  (since NiceHash refuses to operate if share difficulty is < 500000
+as of the time of this writing).
+
 "logdir" : Which directory to store pool and client logs. Default "logs"
 
 "maxclients" : Optional upper limit on the number of clients ckpool will
