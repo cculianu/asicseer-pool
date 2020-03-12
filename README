@@ -11,12 +11,16 @@ for supporting Bitcoin Cash (rather than Bitcoin).
 * Added larger merkle tree support (for mining 32MB blocks)
 * Added cash address support
 * Configurable pool fee support
-   - Features 20% of pool fee as a dev donation to Calin (me), and Bitcoin Cash Node
-     wallets, by default.
+   - Features 20% of pool fee as a dev donation to Calin (me), and Bitcoin Cash
+     Node wallets, by default.
+* Added "mindiff_overrides" which allows a pool to give out larger minimum
+  and starting difficulty for stratum clients matching a particular user agent
+  string (useful for NiceHash, which requires pools have a high difficulty).
 * Updated ckdb sources to actually compile on modern Linux
 * Fixed bugs
 
-README follows (modified by Calin from the original to reflect added config options):
+README follows (modified by Calin from the original to reflect added config
+options):
 
 ---
 
