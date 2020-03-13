@@ -1,4 +1,6 @@
 /*
+ * Copyright (c) 2020 Calin Culianu <calin.culianu@gmail.com>
+ * Copyright (c) 2020 ASICseer https://asicseer.com
  * Copyright 2014-2016 Con Kolivas
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -59,5 +61,3 @@ int main(int argc, char **argv)
 	LOGNOTICE("Notified stratifier of block update");
 	exit(0);
 }
-
-

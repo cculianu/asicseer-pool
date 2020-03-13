@@ -1,7 +1,8 @@
-/* Cash Address decode for ckpool.
- * Code adapted to C from C++ by Calin Culianu <calin.culianu@gmail.com>
- * LICENSE: MIT
+/* Cash Address decode for asicseer-pool.
+ * Copyright (c) 2020 Calin Culianu <calin.culianu@gmail.com>
+ * Code adapted to C from C++ by Calin Culianu
  * Original C++ sources: Bitcoin Cash Node https://gitlab.com/bitcoin-cash-node/bitcoin-cash-node
+ * LICENSE: MIT
  */
 #include "cashaddr.h"
 #include "libckpool.h"

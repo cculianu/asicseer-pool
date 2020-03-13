@@ -1,4 +1,6 @@
 /*
+ * Copyright (c) 2020 Calin Culianu <calin.culianu@gmail.com>
+ * Copyright (c) 2020 ASICseer https://asicseer.com
  * Copyright 1995-2016 Andrew Smith
  * Copyright 2014 Con Kolivas
  *
