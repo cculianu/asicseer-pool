@@ -183,8 +183,10 @@ static inline void flip_80(void *dest_p, const void *src_p)
 #define ck_runlock(_lock) _ck_runlock(_lock, __FILE__, __func__, __LINE__)
 #define ck_wunlock(_lock) _ck_wunlock(_lock, __FILE__, __func__, __LINE__)
 
-#define ckalloc(len) _ckalloc(len, __FILE__, __func__, __LINE__)
-#define ckzalloc(len) _ckzalloc(len, __FILE__, __func__, __LINE__)
+#define ckalloc(len) _ckzrealloc(NULL, len, false, __FILE__, __func__, __LINE__)
+#define ckzalloc(len) _ckzrealloc(NULL, len, true, __FILE__, __func__, __LINE__)
+#define ckrealloc(buf, len) _ckzrealloc(buf, len, false, __FILE__, __func__, __LINE__)
+#define ckzrealloc(buf, len) _ckzrealloc(buf, len, true, __FILE__, __func__, __LINE__)
 
 #define dealloc(ptr) do { \
 	free(ptr); \
@@ -557,9 +559,8 @@ bool rotating_log(const char *path, const char *msg);
 void align_len(size_t *len);
 void realloc_strcat(char **ptr, const char *s);
 void trail_slash(char **buf);
-void *_ckalloc(size_t len, const char *file, const char *func, const int line);
 void *json_ckalloc(size_t size);
-void *_ckzalloc(size_t len, const char *file, const char *func, const int line);
+void *_ckzrealloc(void *old, size_t len, bool zeromem, const char *file, const char *func, const int line);
 size_t round_up_page(size_t len);
 
 extern const int hex2bin_tbl[];

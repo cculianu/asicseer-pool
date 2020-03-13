@@ -1401,8 +1401,6 @@ void align_len(size_t *len)
 void realloc_strcat(char **ptr, const char *s)
 {
 	size_t old, new, len;
-	int backoff = 1;
-	void *new_ptr;
 	char *ofs;
 
 	if (unlikely(!*s)) {
@@ -1419,17 +1417,7 @@ void realloc_strcat(char **ptr, const char *s)
 	else
 		old = strlen(*ptr);
 	len = old + new + 1;
-	align_len(&len);
-	while (42) {
-		new_ptr = realloc(*ptr, len);
-		if (likely(new_ptr))
-			break;
-		if (backoff == 1)
-			fprintf(stderr, "Failed to realloc %d, retrying\n", (int)len);
-		cksleep_ms(backoff);
-		backoff <<= 1;
-	}
-	*ptr = new_ptr;
+	*ptr = (char *)ckrealloc(*ptr, len); // always either succeeds or keeps retrying
 	ofs = *ptr + old;
 	sprintf(ofs, "%s", s);
 }
@@ -1443,49 +1431,36 @@ void trail_slash(char **buf)
 		realloc_strcat(buf, "/");
 }
 
-void *_ckalloc(size_t len, const char *file, const char *func, const int line)
-{
-	int backoff = 1;
-	void *ptr;
-
-	align_len(&len);
-	while (42) {
-		ptr = malloc(len);
-		if (likely(ptr))
-			break;
-		if (backoff == 1) {
-			fprintf(stderr, "Failed to ckalloc %d, retrying from %s %s:%d\n",
-				(int)len, file, func, line);
-		}
-		cksleep_ms(backoff);
-		backoff <<= 1;
-	}
-	return ptr;
-}
-
 void *json_ckalloc(size_t size)
 {
-	return _ckalloc(size, __FILE__, __func__, __LINE__);
+	return ckalloc(size);
 }
 
-void *_ckzalloc(size_t len, const char *file, const char *func, const int line)
+void *_ckzrealloc(void *oldbuf, size_t len, bool zeromem, const char *file, const char *func, const int line)
 {
 	int backoff = 1;
 	void *ptr;
 
 	align_len(&len);
-	while (42) {
-		ptr = calloc(len, 1);
-		if (likely(ptr))
-			break;
+	while (1) {
+		// NB: old may be NULL, in which case this behaves like malloc()
+		ptr = realloc(oldbuf, len);
+		if (likely(ptr)) {
+			if (zeromem)
+				memset(ptr, 0, len);
+			return ptr;
+		}
 		if (backoff == 1) {
-			fprintf(stderr, "Failed to ckzalloc %d, retrying from %s %s:%d\n",
-				(int)len, file, func, line);
+			fprintf(stderr, "Failed to alloc %lu bytes, retrying.... (from: %s %s:%d)\n",
+			        (unsigned long)len, file, func, line);
 		}
 		cksleep_ms(backoff);
 		backoff <<= 1;
+		if (unlikely(!backoff))
+			// overflow past end, start over -- this is here for correctness but should never
+			// happen in practice as it indicates we have been sleeping for 2 million seconds
+			backoff = 1;
 	}
-	return ptr;
 }
 
 /* Round up to the nearest page size for efficient malloc */

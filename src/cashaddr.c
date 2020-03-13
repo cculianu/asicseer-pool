@@ -35,7 +35,7 @@ uint8_t *cashaddr_decode_hash160(const char *addr, const char *default_prefix)
     ConvertBits(&bits, &bitslen, 5, 8, buf, buflen);
     uint8_t *retval = NULL;
     if (likely(bits && bitslen >= 21)) {
-        retval = (uint8_t *)ckzalloc(20);
+        retval = (uint8_t *)ckalloc(20);
         memcpy(retval, bits + 1, 20);
     }
     free(bits);
@@ -162,7 +162,7 @@ static uint64_t PolyMod(const uint8_t *v, size_t vlen) {
  */
 static uint8_t *ExpandPrefix(const char *prefix) {
     const size_t plen = strlen(prefix);
-    uint8_t *ret = ckzalloc(plen + 1);
+    uint8_t *ret = ckalloc(plen + 1);
     for (size_t i = 0; i < plen; ++i) {
         ret[i] = prefix[i] & 0x1f;
     }
@@ -177,7 +177,7 @@ static bool cashaddr_verify_checksum(const char *prefix, const uint8_t *payload,
 {
     size_t pflen = strlen(prefix) + 1;
     uint8_t *buf = ExpandPrefix(prefix);
-    buf = realloc(buf, pflen + plen);
+    buf = ckrealloc(buf, pflen + plen);
     memcpy(buf + pflen, payload, plen);
     const uint64_t val = PolyMod(buf, pflen + plen);
     free(buf);
@@ -263,7 +263,7 @@ static int cashaddr_decode(const char *str, uint8_t **buf, size_t *buflen, const
     char *prefix = NULL;
     if (prefixSize) {
         // copy out the prefix sans ':'
-        prefix = ckzalloc(prefixSize);
+        prefix = ckalloc(prefixSize);
         for (int i = 0; i < (int)prefixSize-1; ++i)
             prefix[i] = to_lower_case(str[i]);
         prefix[prefixSize-1] = 0; // NUL
@@ -279,7 +279,7 @@ static int cashaddr_decode(const char *str, uint8_t **buf, size_t *buflen, const
 
     // Decode values.
     *buflen = slen;
-    *buf = ckzalloc(*buflen);
+    *buf = ckalloc(*buflen);
     for (size_t i = 0; i < *buflen; ++i) {
         uint8_t c = str[i];
         // We have an invalid char in there.
@@ -309,15 +309,8 @@ err_out:
 static inline bool push_back(uint8_t **buf, size_t *len, uint8_t val)
 {
     // the below is equivalent to a C++ push_back to a vector, more or less, due to how malloc works.
-    uint8_t *newbuf = realloc(*buf, ++(*len)); // allocate 1 more byte; realloc of NULL pointer is just a malloc
-    if (unlikely(!newbuf)) {
-        // Paranoia -- should never happen. But if it does, make sure to print to log.
-        LOGCRIT("Failed to reallocate a buffer in push_back in %s", __FILE__);
-        free(*buf); // free old buffer, if any
-        *buf = NULL;
-        *len = 0;
-        return false; // indicate failure
-    }
+    uint8_t *newbuf = ckrealloc(*buf, ++(*len)); // allocate 1 more byte; realloc of NULL pointer is just a malloc
+    // NB: ckrealloc above either always succeeds or keeps retrying until it succeeds.
     *buf = newbuf;
     newbuf[(*len) - 1] = val;
     return true;
@@ -337,10 +330,7 @@ static bool ConvertBits(uint8_t **out, size_t *outlen, size_t frombits, size_t t
         while (bits >= tobits) {
             bits -= tobits;
             const uint8_t val = (acc >> bits) & maxv;
-            if (unlikely(!push_back(out, outlen, val))) {
-                // memory allocation failure -- very unlikely.
-                return false;
-            }
+            push_back(out, outlen, val); // always succeeds or hangs until it succeeds (ckrealloc)
         }
         ++it;
     }
