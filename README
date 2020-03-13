@@ -18,7 +18,7 @@ bitcoincash:qplw0d304x9fshz420lkvys2jxup38m9symky6k028
 This software is originally based on the work of Con Kolivas' ckpool
    [ckpool-splns](https://bitbucket.org/ckolivas-splns/ckpool/)
 
-It has been updated and reworked to add a features and to support Bitcoin Cash
+It has been updated and reworked to add features and to support Bitcoin Cash
 (rather than Bitcoin).
 
 * Removed segwit
