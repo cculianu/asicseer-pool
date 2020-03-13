@@ -10,7 +10,7 @@
  * any later version.  See COPYING for more details.
  */
 
-#include "ckdb.h"
+#include "asicseer-db.h"
 
 #define BTCKEY ((const char *)"result")
 

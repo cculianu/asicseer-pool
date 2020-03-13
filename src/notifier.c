@@ -15,7 +15,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "libckpool.h"
+#include "libasicseerpool.h"
 
 int main(int argc, char **argv)
 {
@@ -41,9 +41,9 @@ int main(int argc, char **argv)
 	trail_slash(&socket_dir);
 	if (!name) {
 		if (proxy)
-			name = strdup("ckproxy");
+			name = strdup(PROXY_PROGNAME);
 		else
-			name = strdup("ckpool");
+			name = strdup(POOL_PROGNAME);
 	}
 	realloc_strcat(&socket_dir, name);
 	dealloc(name);

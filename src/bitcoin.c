@@ -13,8 +13,8 @@
 
 #include <string.h>
 
-#include "ckpool.h"
-#include "libckpool.h"
+#include "asicseer-pool.h"
+#include "libasicseerpool.h"
 #include "bitcoin.h"
 #include "stratifier.h"
 
@@ -62,16 +62,8 @@ bool validate_address(connsock_t *cs, const char *address, bool *script)
 	tmp_val = json_object_get(res_val, "isscript");
 	if (unlikely(!tmp_val)) {
 		/* All recent bitcoinds with wallet support built in should
-		 * support this, if not, look for addresses the braindead way
-		 * to tell if it's a script address. */
-		LOGDEBUG("No isscript support from bitcoind");
-		if (address[0] == '3' || address[0] == '2')
-			*script = true;
-		/* Now look to see this isn't a bech32: We can't support
-		 * bech32 without knowing if it's a pubkey or a script */
-		else if (address[0] != '1' && address[0] != 'm')
-			ret = false;
-		goto out;
+		 * support this, if not, quit here to keep things simple. */
+		quit(1, "No isscript support from bitcoind -- please use a bitcoind with wallet support.");
 	}
 	*script = json_is_true(tmp_val);
 	LOGDEBUG("Bitcoin address %s IS valid%s", address, *script ? " script" : "");

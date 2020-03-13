@@ -13,7 +13,7 @@
 #ifndef KLIST_H
 #define KLIST_H
 
-#include "libckpool.h"
+#include "libasicseerpool.h"
 
 #define quithere(status, fmt, ...) \
 	quitfrom(status, __FILE__, __func__, __LINE__, fmt, ##__VA_ARGS__)
@@ -31,7 +31,7 @@ extern const char *tree_node_list_name;
 
 /* Code to check the state of locks being requested and also check
  *  the state of locks when accessing the klist or ktree
- * You can disable it with ckpmsg 'locks.ID.locks' so you can compare
+ * You can disable it with asicseer-pmsg 'locks.ID.locks' so you can compare
  *  CPU usage with and later without it
  *  (or just completely disable it by defining LOCK_CHECK 0 below)
  *
@@ -75,8 +75,8 @@ extern const char *tree_node_list_name;
 /* Deadlock prediction is part of LOCK_CHECK coz it uses the CHECK_LOCK() macro
  * If you want only deadlock checking, edit klist.c and set check_locks
  *  default to false,
- *  or turn off check_locks during ckdb startup with a ckpmsg 'locks.ID.locks'
- * If you turn deadlock prediction on with ckpmsg 'locks.1.deadlocks=y'
+ *  or turn off check_locks during asicseer-db startup with a asicseer-pmsg 'locks.ID.locks'
+ * If you turn deadlock prediction on with asicseer-pmsg 'locks.1.deadlocks=y'
  *  it will not re-enable it for any thread that has already predicted
  *  a deadlock */
 

@@ -2,7 +2,7 @@ AC_INIT(asicseer-pool, 0.9.9, calin.culianu@gmail.com)
 
 AC_CANONICAL_SYSTEM
 AC_CONFIG_MACRO_DIR([m4])
-AC_CONFIG_SRCDIR([src/ckpool.c])
+AC_CONFIG_SRCDIR([src/asicseer-pool.c])
 AC_CONFIG_HEADERS([config.h])
 
 AM_INIT_AUTOMAKE([foreign subdir-objects])
@@ -74,29 +74,29 @@ JANSSON_LIBS="jansson-2.10/src/.libs/libjansson.a"
 
 AC_SUBST(JANSSON_LIBS)
 
-AC_ARG_WITH([ckdb],
-	[AC_HELP_STRING([--with-ckdb],[Compile ckpool with ckdb database support (default disabled)])],
-	[ckdb=$withval],[ckdb=no]
+AC_ARG_WITH([asicseer-db],
+	[AC_HELP_STRING([--with-asicseer-db],[Compile asicseer-pool with asicseer-db database support (default disabled)])],
+	[asicseer_db=$withval],[asicseer_db=no]
 	)
 
 AC_SEARCH_LIBS(clock_nanosleep, rt, , "Error: Required library rt not found." && exit 1)
 AC_SEARCH_LIBS(exp, m, , echo "Error: Required library math not found." && exit 1)
 AC_SEARCH_LIBS(pthread_mutex_trylock, pthread, , "Error: Required library pthreads not found." && exit 1)
 
-if test "x$ckdb" != "xno"; then
+if test "x$asicseer_db" != "xno"; then
 	AC_SEARCH_LIBS(PQdb, pq, , echo "Error: Required library pq
-		not found. Install it or disable support by removing --with-ckdb" && exit 1)
+		not found. Install it or disable support by removing --with-asicseer-db" && exit 1)
 	AC_SEARCH_LIBS(HMAC_Init_ex, crypto, , echo "Error: Required library crypto
-		not found. Install them or disable support by removing --with-ckdb" && exit 1)
+		not found. Install them or disable support by removing --with-asicseer-db" && exit 1)
 	AC_SEARCH_LIBS(SSL_accept, ssl, , echo "Error: Required library ssl
-		not found. Install them or disable support by removing --with-ckdb" && exit 1)
+		not found. Install them or disable support by removing --with-asicseer-db" && exit 1)
 	AC_SEARCH_LIBS(cblas_dgemm, gslcblas, ,echo "Error: Required library gslcblas
-		not found. Install them or disable support by removing --with-ckdb" && exit 1)
+		not found. Install them or disable support by removing --with-asicseer-db" && exit 1)
 	AC_SEARCH_LIBS(gsl_blas_dgemm, gsl, , echo "Error: Required library gsl
-		not found. Install them or disable support by removing --with-ckdb" && exit 1)
-	AC_DEFINE([USE_CKDB], [1], [Defined to 1 if ckdb support required])
+		not found. Install them or disable support by removing --with-asicseer-db" && exit 1)
+	AC_DEFINE([USE_ASICSEER_DB], [1], [Defined to 1 if asicseer-db support required])
 fi
-AM_CONDITIONAL([WANT_CKDB], [test "x$ckdb" != "xno"])
+AM_CONDITIONAL([WANT_ASICSEER_DB], [test "x$asicseer_db" != "xno"])
 AC_SUBST(DB_LIBS)
 
 AC_OUTPUT([Makefile] [src/Makefile])
@@ -110,6 +110,7 @@ echo "  CPPFLAGS.............: $CPPFLAGS"
 echo "  CFLAGS...............: $CFLAGS"
 echo "  LDFLAGS..............: $LDFLAGS"
 echo "  LDADD................: $LIBS $JANSSON_LIBS"
+echo "  asicseer-db          : $asicseer_db"
 echo
 echo "Installation...........: make install (as root if needed, with 'su' or 'sudo')"
 echo "  prefix...............: $prefix"

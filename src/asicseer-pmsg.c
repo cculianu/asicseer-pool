@@ -20,7 +20,7 @@
 #include <unistd.h>
 #include <ctype.h>
 
-#include "libckpool.h"
+#include "libasicseerpool.h"
 #include "utlist.h"
 
 struct input_log {
@@ -119,7 +119,7 @@ int get_line(char **buf)
 	*buf = NULL;
 
 	/* If we're not reading from a terminal, parse lines at a time allowing
-	 * us to script usage of ckpmsg */
+	 * us to script usage of asicseer-pmsg */
 	if (!isatty(fileno((FILE *)stdin))) do {
 		size_t n;
 
@@ -256,9 +256,9 @@ int main(int argc, char **argv)
 	trail_slash(&socket_dir);
 	if (!name) {
 		if (proxy)
-			name = strdup("ckproxy");
+			name = strdup(PROXY_PROGNAME);
 		else
-			name = strdup("ckpool");
+			name = strdup(POOL_PROGNAME);
 	}
 	realloc_strcat(&socket_dir, name);
 	dealloc(name);

@@ -16,7 +16,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "libckpool.h"
+#include "libasicseerpool.h"
 
 bool json_get_int(int *store, const json_t *val, const char *res)
 {

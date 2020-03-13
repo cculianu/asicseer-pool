@@ -9,7 +9,7 @@
  * any later version.  See COPYING for more details.
  */
 
-#include "ckdb.h"
+#include "asicseer-db.h"
 
 /*
  * Allow overriding the username however the username must still be present
@@ -8685,7 +8685,7 @@ out:
  *   then the reply will be .timestamp.status.information
  *   i.e. a zero length 'ID' at the start of the reply
  *
- *  Data from ckpool starts with a fld1: json={...} of field data
+ *  Data from asicseer-pool starts with a fld1: json={...} of field data
  *  This is assumed to be the only field data sent and any other fields after
  *   it will cause a json error
  *  Any fields before it will circumvent the json interpretation of {...} and
@@ -8693,7 +8693,7 @@ out:
  *   'json' - which will (usually) mean the command will fail if it requires
  *   actual field data
  *
- *  Examples of the commands not from ckpool with an example reply
+ *  Examples of the commands not from asicseer-pool with an example reply
  *  STAMP is the unix timestamp in seconds
  *   With no ID:
  *	ping

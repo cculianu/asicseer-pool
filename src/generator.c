@@ -17,8 +17,8 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "ckpool.h"
-#include "libckpool.h"
+#include "asicseer-pool.h"
+#include "libasicseerpool.h"
 #include "generator.h"
 #include "stratifier.h"
 #include "bitcoin.h"
@@ -86,7 +86,7 @@ struct proxy_instance {
 	proxy_instance_t *next; /* For dead proxy list */
 	proxy_instance_t *prev; /* For dead proxy list */
 
-	ckpool_t *ckp;
+	pool_t *ckp;
 	connsock_t cs;
 	bool passthrough;
 	bool node;
@@ -159,7 +159,7 @@ struct proxy_instance {
 
 /* Private data for the generator */
 struct generator_data {
-	ckpool_t *ckp;
+	pool_t *ckp;
 	mutex_t lock; /* Lock protecting linked lists */
 	proxy_instance_t *proxies; /* Hash list of all proxies */
 	proxy_instance_t *dead_proxies; /* Disabled proxies */
@@ -192,7 +192,7 @@ struct generator_data {
 typedef struct generator_data gdata_t;
 
 /* Use a temporary fd when testing server_alive to avoid races on cs->fd */
-static bool server_alive(ckpool_t *ckp, server_instance_t *si, bool pinging)
+static bool server_alive(pool_t *ckp, server_instance_t *si, bool pinging)
 {
 	char *userpass = NULL;
 	bool ret = false;
@@ -247,7 +247,7 @@ out:
 }
 
 /* Find the highest priority server alive and return it */
-static server_instance_t *live_server(ckpool_t *ckp, gdata_t *gdata)
+static server_instance_t *live_server(pool_t *ckp, gdata_t *gdata)
 {
 	server_instance_t *alive = NULL;
 	connsock_t *cs;
@@ -313,7 +313,7 @@ static void clear_unix_msg(unix_msg_t **umsg)
 	}
 }
 
-bool generator_submitblock(ckpool_t *ckp, const char *buf)
+bool generator_submitblock(pool_t *ckp, const char *buf)
 {
 	gdata_t *gdata = ckp->gdata;
 	server_instance_t *si;
@@ -331,7 +331,7 @@ bool generator_submitblock(ckpool_t *ckp, const char *buf)
 	return submit_block(cs, buf);
 }
 
-void generator_preciousblock(ckpool_t *ckp, const char *hash)
+void generator_preciousblock(pool_t *ckp, const char *hash)
 {
 	gdata_t *gdata = ckp->gdata;
 	server_instance_t *si;
@@ -345,7 +345,7 @@ void generator_preciousblock(ckpool_t *ckp, const char *hash)
 	precious_block(cs, hash);
 }
 
-bool generator_get_blockhash(ckpool_t *ckp, int height, char *hash)
+bool generator_get_blockhash(pool_t *ckp, int height, char *hash)
 {
 	gdata_t *gdata = ckp->gdata;
 	server_instance_t *si;
@@ -363,7 +363,7 @@ static void gen_loop(proc_instance_t *pi)
 {
 	server_instance_t *si = NULL, *old_si;
 	unix_msg_t *umsg = NULL;
-	ckpool_t *ckp = pi->ckp;
+	pool_t *ckp = pi->ckp;
 	char *buf = NULL;
 	connsock_t *cs;
 	gbtbase_t gbt;
@@ -468,7 +468,7 @@ out:
 	kill_server(si);
 }
 
-static bool connect_proxy(ckpool_t *ckp, connsock_t *cs, proxy_instance_t *proxy)
+static bool connect_proxy(pool_t *ckp, connsock_t *cs, proxy_instance_t *proxy)
 {
 	if (cs->fd > 0) {
 		epoll_ctl(proxy->epfd, EPOLL_CTL_DEL, cs->fd, NULL);
@@ -683,7 +683,7 @@ out:
 }
 
 /* cs semaphore must be held */
-static bool subscribe_stratum(ckpool_t *ckp, connsock_t *cs, proxy_instance_t *proxi)
+static bool subscribe_stratum(pool_t *ckp, connsock_t *cs, proxy_instance_t *proxi)
 {
 	bool ret = false;
 	json_t *req;
@@ -822,14 +822,14 @@ out:
 	return ret;
 }
 
-static void send_notify(ckpool_t *ckp, proxy_instance_t *proxi, notify_instance_t *ni);
+static void send_notify(pool_t *ckp, proxy_instance_t *proxi, notify_instance_t *ni);
 
-static void reconnect_generator(ckpool_t *ckp)
+static void reconnect_generator(pool_t *ckp)
 {
 	send_proc(ckp->generator, "reconnect");
 }
 
-struct genwork *generator_getbase(ckpool_t *ckp)
+struct genwork *generator_getbase(pool_t *ckp)
 {
 	gdata_t *gdata = ckp->gdata;
 	gbtbase_t *gbt = NULL;
@@ -854,7 +854,7 @@ out:
 	return gbt;
 }
 
-int generator_getbest(ckpool_t *ckp, char *hash)
+int generator_getbest(pool_t *ckp, char *hash)
 {
 	gdata_t *gdata = ckp->gdata;
 	int ret = GETBEST_FAILED;
@@ -880,7 +880,7 @@ out:
 	return ret;
 }
 
-bool generator_get_chain(ckpool_t *ckp, char *chain)
+bool generator_get_chain(pool_t *ckp, char *chain)
 {
 	gdata_t *gdata = ckp->gdata;
 	server_instance_t *si;
@@ -898,7 +898,7 @@ out:
 	return ret;
 }
 
-bool generator_checkaddr(ckpool_t *ckp, const char *addr, bool *script)
+bool generator_checkaddr(pool_t *ckp, const char *addr, bool *script)
 {
 	gdata_t *gdata = ckp->gdata;
 	server_instance_t *si;
@@ -916,7 +916,7 @@ out:
 	return ret;
 }
 
-char *generator_get_txn(ckpool_t *ckp, const char *hash)
+char *generator_get_txn(pool_t *ckp, const char *hash)
 {
 	gdata_t *gdata = ckp->gdata;
 	server_instance_t *si;
@@ -934,7 +934,7 @@ out:
 	return ret;
 }
 
-static bool parse_notify(ckpool_t *ckp, proxy_instance_t *proxi, json_t *val)
+static bool parse_notify(pool_t *ckp, proxy_instance_t *proxi, json_t *val)
 {
 	const char *prev_hash, *bbversion, *nbit, *ntime;
 	gdata_t *gdata = proxi->ckp->gdata;
@@ -1061,8 +1061,8 @@ static void prepare_proxy(proxy_instance_t *proxi);
 
 /* Creates a duplicate instance or proxi to be used as a subproxy, ignoring
  * fields we don't use in the subproxy. */
-static proxy_instance_t *create_subproxy(ckpool_t *ckp, gdata_t *gdata, proxy_instance_t *proxi,
-					 const char *url, const char *baseurl)
+static proxy_instance_t *create_subproxy(pool_t *ckp, gdata_t *gdata, proxy_instance_t *proxi,
+                                         const char *url, const char *baseurl)
 {
 	proxy_instance_t *subproxy;
 
@@ -1131,7 +1131,7 @@ static void store_proxy(gdata_t *gdata, proxy_instance_t *proxy)
 /* The difference between a dead proxy and a deleted one is the parent proxy entry
  * is not removed from the stratifier as it assumes it is down whereas a deleted
  * proxy has had its entry removed from the generator. */
-static void send_stratifier_deadproxy(ckpool_t *ckp, const int id, const int subid)
+static void send_stratifier_deadproxy(pool_t *ckp, const int id, const int subid)
 {
 	char buf[256];
 
@@ -1141,7 +1141,7 @@ static void send_stratifier_deadproxy(ckpool_t *ckp, const int id, const int sub
 	send_proc(ckp->stratifier, buf);
 }
 
-static void send_stratifier_delproxy(ckpool_t *ckp, const int id, const int subid)
+static void send_stratifier_delproxy(pool_t *ckp, const int id, const int subid)
 {
 	char buf[256];
 
@@ -1190,7 +1190,7 @@ static void disable_subproxy(gdata_t *gdata, proxy_instance_t *proxi, proxy_inst
 static bool parse_reconnect(proxy_instance_t *proxy, json_t *val)
 {
 	bool sameurl = false, ret = false;
-	ckpool_t *ckp = proxy->ckp;
+	pool_t *ckp = proxy->ckp;
 	gdata_t *gdata = ckp->gdata;
 	proxy_instance_t *parent;
 	const char *new_url;
@@ -1262,7 +1262,7 @@ out:
 	return ret;
 }
 
-static void send_diff(ckpool_t *ckp, proxy_instance_t *proxi)
+static void send_diff(pool_t *ckp, proxy_instance_t *proxi)
 {
 	proxy_instance_t *proxy = proxi->parent;
 	json_t *json_msg;
@@ -1284,7 +1284,7 @@ static void send_diff(ckpool_t *ckp, proxy_instance_t *proxi)
 	free(buf);
 }
 
-static void send_notify(ckpool_t *ckp, proxy_instance_t *proxi, notify_instance_t *ni)
+static void send_notify(pool_t *ckp, proxy_instance_t *proxi, notify_instance_t *ni)
 {
 	proxy_instance_t *proxy = proxi->parent;
 	json_t *json_msg, *merkle_arr;
@@ -1316,7 +1316,7 @@ static void send_notify(ckpool_t *ckp, proxy_instance_t *proxi, notify_instance_
 	send_diff(ckp, proxi);
 }
 
-static bool parse_method(ckpool_t *ckp, proxy_instance_t *proxi, const char *msg)
+static bool parse_method(pool_t *ckp, proxy_instance_t *proxi, const char *msg)
 {
 	json_t *val = NULL, *method, *err_val, *params;
 	json_error_t err;
@@ -1402,7 +1402,7 @@ out:
 }
 
 /* cs semaphore must be held */
-static bool auth_stratum(ckpool_t *ckp, connsock_t *cs, proxy_instance_t *proxi)
+static bool auth_stratum(pool_t *ckp, connsock_t *cs, proxy_instance_t *proxi)
 {
 	json_t *val = NULL, *res_val, *req, *err_val;
 	char *buf = NULL;
@@ -1502,7 +1502,7 @@ static proxy_instance_t *proxy_by_id(gdata_t *gdata, const int id)
 	return proxi;
 }
 
-static void send_subscribe(ckpool_t *ckp, proxy_instance_t *proxi)
+static void send_subscribe(pool_t *ckp, proxy_instance_t *proxi)
 {
 	json_t *json_msg;
 	char *msg, *buf;
@@ -1562,7 +1562,7 @@ static void drop_proxy(gdata_t *gdata, const char *buf)
 	disable_subproxy(gdata, proxy, subproxy);
 }
 
-static void stratifier_reconnect_client(ckpool_t *ckp, const int64_t id)
+static void stratifier_reconnect_client(pool_t *ckp, const int64_t id)
 {
 	char buf[256];
 
@@ -1597,7 +1597,7 @@ static int add_share(gdata_t *gdata, const int64_t client_id, const double diff)
 static void submit_share(gdata_t *gdata, json_t *val)
 {
 	proxy_instance_t *proxy, *proxi;
-	ckpool_t *ckp = gdata->ckp;
+	pool_t *ckp = gdata->ckp;
 	int id, subid, share_id;
 	bool success = false;
 	stratum_msg_t *msg;
@@ -1830,7 +1830,7 @@ static void add_json_msgq(cs_msg_t **csmsgq, proxy_instance_t *proxy, json_t **v
 /* For processing and sending shares. proxy refers to parent proxy here */
 static void *proxy_send(void *arg)
 {
-	ckpool_t *ckp = (ckpool_t *)arg;
+	pool_t *ckp = (pool_t *)arg;
 	gdata_t *gdata = ckp->gdata;
 	stratum_msg_t *msg = NULL;
 	cs_msg_t *csmsgq = NULL;
@@ -1926,7 +1926,7 @@ static void *proxy_send(void *arg)
 	return NULL;
 }
 
-static void passthrough_send(ckpool_t *ckp, pass_msg_t *pm)
+static void passthrough_send(pool_t *ckp, pass_msg_t *pm)
 {
 	proxy_instance_t *proxy = pm->proxy;
 	connsock_t *cs = pm->cs;
@@ -1961,7 +1961,7 @@ static void passthrough_add_send(proxy_instance_t *proxy, char *msg)
 	ckmsgq_add(proxy->passsends, pm);
 }
 
-void generator_add_send(ckpool_t *ckp, json_t *val)
+void generator_add_send(pool_t *ckp, json_t *val)
 {
 	gdata_t *gdata = ckp->gdata;
 	char *buf;
@@ -1984,7 +1984,7 @@ out:
 	json_decref(val);
 }
 
-static bool proxy_alive(ckpool_t *ckp, proxy_instance_t *proxi, connsock_t *cs,
+static bool proxy_alive(pool_t *ckp, proxy_instance_t *proxi, connsock_t *cs,
 			bool pinging)
 {
 	bool ret = false;
@@ -2079,7 +2079,7 @@ out:
 static void *proxy_recruit(void *arg)
 {
 	proxy_instance_t *proxy, *parent = (proxy_instance_t *)arg;
-	ckpool_t *ckp = parent->ckp;
+	pool_t *ckp = parent->ckp;
 	gdata_t *gdata = ckp->gdata;
 	bool recruit, alive;
 
@@ -2144,7 +2144,7 @@ static void *proxy_reconnect(void *arg)
 {
 	proxy_instance_t *proxy = (proxy_instance_t *)arg;
 	connsock_t *cs = &proxy->cs;
-	ckpool_t *ckp = proxy->ckp;
+	pool_t *ckp = proxy->ckp;
 
 	pthread_detach(pthread_self());
 	proxy_alive(ckp, proxy, cs, true);
@@ -2169,7 +2169,7 @@ static void *passthrough_recv(void *arg)
 {
 	proxy_instance_t *proxi = (proxy_instance_t *)arg;
 	connsock_t *cs = &proxi->cs;
-	ckpool_t *ckp = proxi->ckp;
+	pool_t *ckp = proxi->ckp;
 	bool alive;
 
 	rename_proc("passrecv");
@@ -2238,7 +2238,7 @@ static void *proxy_recv(void *arg)
 	proxy_instance_t *proxi = (proxy_instance_t *)arg;
 	connsock_t *cs = &proxi->cs;
 	proxy_instance_t *subproxy;
-	ckpool_t *ckp = proxi->ckp;
+	pool_t *ckp = proxi->ckp;
 	gdata_t *gdata = ckp->gdata;
 	struct epoll_event event;
 	bool alive;
@@ -2384,7 +2384,7 @@ static void *proxy_recv(void *arg)
 /* Thread that handles all received messages from user proxies */
 static void *userproxy_recv(void *arg)
 {
-	ckpool_t *ckp = (ckpool_t *)arg;
+	pool_t *ckp = (pool_t *)arg;
 	gdata_t *gdata = ckp->gdata;
 	struct epoll_event event;
 	int epfd;
@@ -2515,7 +2515,7 @@ static void prepare_proxy(proxy_instance_t *proxi)
 		create_pthread(&proxi->pth_precv, proxy_recv, proxi);
 }
 
-static proxy_instance_t *wait_best_proxy(ckpool_t *ckp, gdata_t *gdata)
+static proxy_instance_t *wait_best_proxy(pool_t *ckp, gdata_t *gdata)
 {
 	proxy_instance_t *ret = NULL, *proxi, *tmp;
 	int retries = 0;
@@ -2619,9 +2619,9 @@ out:
 	send_api_response(res, sockd);
 }
 
-static proxy_instance_t *__add_proxy(ckpool_t *ckp, gdata_t *gdata, const int num);
+static proxy_instance_t *__add_proxy(pool_t *ckp, gdata_t *gdata, const int num);
 
-static proxy_instance_t *__add_userproxy(ckpool_t *ckp, gdata_t *gdata, const int id,
+static proxy_instance_t *__add_userproxy(pool_t *ckp, gdata_t *gdata, const int id,
 					 const int userid, char *url, char *auth, char *pass)
 {
 	proxy_instance_t *proxy;
@@ -2641,7 +2641,7 @@ static proxy_instance_t *__add_userproxy(ckpool_t *ckp, gdata_t *gdata, const in
 	return proxy;
 }
 
-static void add_userproxy(ckpool_t *ckp, gdata_t *gdata, const int userid,
+static void add_userproxy(pool_t *ckp, gdata_t *gdata, const int userid,
 			  const char *url, const char *auth, const char *pass)
 {
 	proxy_instance_t *proxy;
@@ -2659,7 +2659,7 @@ static void add_userproxy(ckpool_t *ckp, gdata_t *gdata, const int userid,
 	prepare_proxy(proxy);
 }
 
-static void parse_addproxy(ckpool_t *ckp, gdata_t *gdata, const int sockd, const char *buf)
+static void parse_addproxy(pool_t *ckp, gdata_t *gdata, const int sockd, const char *buf)
 {
 	char *url = NULL, *auth = NULL, *pass = NULL;
 	json_t *val = NULL, *res = NULL;
@@ -2739,7 +2739,7 @@ out:
 	send_api_response(res, sockd);
 }
 
-static void delete_proxy(ckpool_t *ckp, gdata_t *gdata, proxy_instance_t *proxy)
+static void delete_proxy(pool_t *ckp, gdata_t *gdata, proxy_instance_t *proxy)
 {
 	proxy_instance_t *subproxy;
 
@@ -2771,7 +2771,7 @@ static void delete_proxy(ckpool_t *ckp, gdata_t *gdata, proxy_instance_t *proxy)
 	store_proxy(gdata, proxy);
 }
 
-static void parse_delproxy(ckpool_t *ckp, gdata_t *gdata, const int sockd, const char *buf)
+static void parse_delproxy(pool_t *ckp, gdata_t *gdata, const int sockd, const char *buf)
 {
 	json_t *val = NULL, *res = NULL;
 	proxy_instance_t *proxy;
@@ -2981,7 +2981,7 @@ out:
 	send_api_response(res, sockd);
 }
 
-static void parse_globaluser(ckpool_t *ckp, gdata_t *gdata, const char *buf)
+static void parse_globaluser(pool_t *ckp, gdata_t *gdata, const char *buf)
 {
 	char *url, *username, *pass = strdupa(buf);
 	int userid = -1, proxyid = -1;
@@ -3027,7 +3027,7 @@ static void proxy_loop(proc_instance_t *pi)
 {
 	proxy_instance_t *proxi = NULL, *cproxy;
 	server_instance_t *si = NULL, *old_si;
-	ckpool_t *ckp = pi->ckp;
+	pool_t *ckp = pi->ckp;
 	gdata_t *gdata = ckp->gdata;
 	unix_msg_t *umsg = NULL;
 	connsock_t *cs = NULL;
@@ -3127,7 +3127,7 @@ out:
  * reconnect if a higher priority one is available. */
 static void *server_watchdog(void *arg)
 {
-	ckpool_t *ckp = (ckpool_t *)arg;
+	pool_t *ckp = (pool_t *)arg;
 	gdata_t *gdata = ckp->gdata;
 
 	rename_proc("swatchdog");
@@ -3156,7 +3156,7 @@ static void *server_watchdog(void *arg)
 	return NULL;
 }
 
-static void setup_servers(ckpool_t *ckp)
+static void setup_servers(pool_t *ckp)
 {
 	pthread_t pth_watchdog;
 	int i;
@@ -3182,7 +3182,7 @@ static void setup_servers(ckpool_t *ckp)
 	create_pthread(&pth_watchdog, server_watchdog, ckp);
 }
 
-static void server_mode(ckpool_t *ckp, proc_instance_t *pi)
+static void server_mode(pool_t *ckp, proc_instance_t *pi)
 {
 	int i;
 
@@ -3199,7 +3199,7 @@ static void server_mode(ckpool_t *ckp, proc_instance_t *pi)
 	dealloc(ckp->servers);
 }
 
-static proxy_instance_t *__add_proxy(ckpool_t *ckp, gdata_t *gdata, const int id)
+static proxy_instance_t *__add_proxy(pool_t *ckp, gdata_t *gdata, const int id)
 {
 	proxy_instance_t *proxy;
 	unsigned int i;
@@ -3241,7 +3241,7 @@ static proxy_instance_t *__add_proxy(ckpool_t *ckp, gdata_t *gdata, const int id
 	return proxy;
 }
 
-static void proxy_mode(ckpool_t *ckp, proc_instance_t *pi)
+static void proxy_mode(pool_t *ckp, proc_instance_t *pi)
 {
 	gdata_t *gdata = ckp->gdata;
 	proxy_instance_t *proxy;
@@ -3275,7 +3275,7 @@ static void proxy_mode(ckpool_t *ckp, proc_instance_t *pi)
 void *generator(void *arg)
 {
 	proc_instance_t *pi = (proc_instance_t *)arg;
-	ckpool_t *ckp = pi->ckp;
+	pool_t *ckp = pi->ckp;
 	gdata_t *gdata;
 
 	rename_proc(pi->processname);

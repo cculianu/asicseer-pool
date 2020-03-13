@@ -10,7 +10,7 @@
  * any later version.  See COPYING for more details.
  */
 
-#include "ckdb.h"
+#include "asicseer-db.h"
 
 /* This code's lock implementation is equivalent to table level locking
  * Consider adding row level locking (a per kitem usage count) if needed
@@ -30,7 +30,7 @@
  * The threads that can be managed have a command option to set them when
  *  starting ckdb and can also be changed via the cmd_threads socket command
  *
- * The main() 'ckdb' thread starts:
+ * The main() 'asicseer-db' thread starts:
  *	iomsgs() for filelog '_fiomsgs' and console '_ciomsgs'
  *	listener() '_p00qproc'
  *		which manages it's thread count in pqproc()
@@ -51,7 +51,7 @@
  *	listener_all() for cmd '_c00listen' and btc '_b00listen'
  *		each of which manage their thead counts
  *	process_socket() '_procsock'
- *	sockrun() for ckpool '_psockrun' web '_wsockrun' and cmd '_csockrun'
+ *	sockrun() for asicseer-pool '_psockrun' web '_wsockrun' and cmd '_csockrun'
  *
  * reload() starts:
  *	process_reload() '_p00rload'
@@ -61,22 +61,22 @@
 /* Startup
  * -------
  * During startup we load the DB and track where it is up to with
- *  dbstatus, we then reload "ckpool's ckdb logfiles" (CCLs) based
+ *  dbstatus, we then reload "asicseer-pool's asicseer-db logfiles" (CCLs) based
  *  on dbstatus
- * Once the DB is loaded, we can immediately start receiving ckpool
- *  messages since ckpool already has logged all messages to the CLLs
- *  and ckpool only verifies authorise responses
+ * Once the DB is loaded, we can immediately start receiving asicseer-pool
+ *  messages since asicseer-pool already has logged all messages to the CLLs
+ *  and asicseer-pool only verifies authorise responses
  *  Thus we can queue all messages:
  *	workinfo, shares, shareerror, ageworkinfo, poolstats, userstats
  *	and blocks
- *  with an ok.queued reply to ckpool, to be processed after the reload
+ *  with an ok.queued reply to asicseer-pool, to be processed after the reload
  *  completes and just process authorise messages immediately while the
  *  reload runs
- * However, we start the ckpool message queue after loading
+ * However, we start the asicseer-pool message queue after loading
  *  the optioncontrol, idcontrol, users, workers and useratts DB tables,
  *  before loading the much larger DB tables, so that ckdb is effectively
  *  ready for messages almost immediately
- * The first ckpool message allows us to know where ckpool is up to
+ * The first asicseer-pool message allows us to know where asicseer-pool is up to
  *  in the CCLs - see reload_from() for how this is handled
  * The users table, required for the authorise messages, is always updated
  *  in the disk DB immediately
@@ -84,7 +84,7 @@
 
 /* Reload data needed
  * ------------------
- * After the DB load completes, load "ckpool's ckdb logfile" (CCL), and
+ * After the DB load completes, load "asicseer-pool's asicseer-db logfile" (CCL), and
  * all later CCLs, that contains the oldest date of all of the following:
  *  RAM shares: oldest DB sharesummary firstshare where complete='n'
  *	All shares before this have been summarised to the DB with
@@ -127,10 +127,10 @@
  *
  * The code deals with the issue of 'now' when reloading by:
  *  createdate is considered 'now' for all data during a reload and is
- *  a mandatory field always checked for in ckpool data
+ *  a mandatory field always checked for in asicseer-pool data
  * Implementing this is simple by assuming 'now' is always createdate
  *  i.e. during reload but also during normal running to avoid timing
- *  issues with ckpool data
+ *  issues with asicseer-pool data
  * Other data supplies the current time to the functions that require
  *  'now' since that data is not part of a reload
  *
@@ -152,7 +152,7 @@
  */
 
 // sockets
-static ckpool_t ckp, ckpweb, ckpcmd;
+static pool_t ckp, ckpweb, ckpcmd;
 static int accesspool, accessweb, accesscmd;
 static const char *ispool = "pool";
 static const char *isweb = "web";
@@ -247,7 +247,7 @@ const char *hashpatt = "^[A-Fa-f0-9]*$";
 /* BCH Legacy addresses start with '1' (one) or '3' (three),
  *  exclude: capital 'I' (eye), capital 'O' (oh),
  *  lowercase 'l' (elle) and '0' (zero)
- *  and with a simple test must be ADDR_MIN_LEN to ADDR_MAX_LEN (ckdb.h)
+ *  and with a simple test must be ADDR_MIN_LEN to ADDR_MAX_LEN (asicseer-db.h)
  * Additionally we support CashAddr by matching on that character set as well, with the optional prefix.
  * bitcoind is used to fully validate them when required */
 const char *addrpatt =
@@ -357,7 +357,7 @@ static double ccl_unordered_most;
 int64_t confirm_first_workinfoid;
 int64_t confirm_last_workinfoid;
 /* Stop the reload 11min after the 'last' workinfoid+1 appears
- * ckpool uses 10min - but add 1min to be sure */
+ * asicseer-pool uses 10min - but add 1min to be sure */
 #define WORKINFO_AGE 660
 
 static tv_t reload_timestamp;
@@ -411,7 +411,7 @@ static bool ioqueue_flush = false;
 static int reload_access = ACCESS_POOL;
 
 /* These are included in cmd_homepage
- *  to help identify when ckpool locks up (or dies) */
+ *  to help identify when asicseer-pool locks up (or dies) */
 tv_t last_heartbeat;
 tv_t last_workinfo;
 tv_t last_share;
@@ -845,7 +845,7 @@ EVENT_LIMITS e_limits[] = {
  { EVENTID_BTCUSED,	"BTCUSED",	true,	60,	1,	2*60,	2,	60,	1,	2*60,	2,	24*60*60 },
  // It's only possible to create an account once, so user_lo/hi can never trigger
  { EVENTID_AUTOACC,	"AUTOACC",	true,	60,	1,	2*60,	2,	60,	1,	2*60,	2,	24*60*60 },
- // Invalid user on auth, CKPool will throttle these
+ // Invalid user on auth, asicseer-pool will throttle these
  { EVENTID_INVAUTH,	"INVAUTH",	true,	60,	1,	2*60,	2,	60,	1,	2*60,	2,	24*60*60 },
  // Invalid user on chkpass
  { EVENTID_INVUSER,	"INVUSER",	true,	60,	1,	2*60,	2,	60,	1,	2*60,	2,	24*60*60 },
@@ -1891,7 +1891,7 @@ static bool reload()
 
 /* Open the file in path, check if there is a pid in there that still exists
  * and if not, write the pid into that file. */
-static bool write_pid(ckpool_t *ckp, const char *path, pid_t pid)
+static bool write_pid(pool_t *ckp, const char *path, pid_t pid)
 {
 	struct stat statbuf;
 	FILE *fp;
@@ -1910,8 +1910,8 @@ static bool write_pid(ckpool_t *ckp, const char *path, pid_t pid)
 		fclose(fp);
 		if (ret == 1 && !(kill(oldpid, 0))) {
 			if (!ckp->killold) {
-				LOGEMERG("Process %s pid %d still exists, start"
-					 " ckpool with -k if you wish to kill it",
+				LOGEMERG("Process %s pid %d still exists, start "
+					 POOL_PROGNAME " with -k if you wish to kill it",
 					 path, oldpid);
 				return false;
 			}
@@ -1966,7 +1966,7 @@ static void rm_namepid(proc_instance_t *pi)
 
 }
 
-static void clean_up(ckpool_t *ckp)
+static void clean_up(pool_t *ckp)
 {
 	rm_namepid(&ckp->main);
 	dealloc(ckp->socket_dir);
@@ -2532,7 +2532,7 @@ static void esm_report()
  *  seqset twice if a new seqset arrives between the unlock/lock for writing
  *  the console message - since a new seqset would shuffle the sets down and
  *  if the list was full, move the last one back to the top of the setset_store
- *  list, but this would normally only be when ckpool restarts and also wont
+ *  list, but this would normally only be when asicseer-pool restarts and also wont
  *  cause a problem since only the last set can be moved and the code checks
  *  if it is the end and also duplicates the set before releasing the lock */
 void sequence_report(bool lock)
@@ -3384,11 +3384,11 @@ static bool update_seq(enum seq_num seq, uint64_t n_seqcmd,
 		 * The (very unlikely) side effect would be that it could miss
 		 *  spotting lost sequence numbers: between the maxseq of a set
 		 *  in the reload, and the base of the same set in the queue
-		 * The fix is simply to stop ckdb immediately if ckpool is
+		 * The fix is simply to stop asicseer-db immediately if asicseer-pool is
 		 *  constantly failing (SEQ_MAX times during the reload) and
-		 *  restart ckdb when ckpool isn't aborting, or if ckpool is
-		 *  in a problematic state, start ckdb while ckpool isn't
-		 *  running, then start ckpool when ckdb completes it's full
+		 *  restart asicseer-db when asicseer-pool isn't aborting, or if asicseer-pool is
+		 *  in a problematic state, start asicseer-db while asicseer-pool isn't
+		 *  running, then start asicseer-pool when asicseer-db completes it's full
 		 *  startup */
 		K_ITEM *ss_item;
 		SEQSET *ss = NULL;
@@ -3424,7 +3424,7 @@ static bool update_seq(enum seq_num seq, uint64_t n_seqcmd,
 	 *  of order, each new set is added depending upon the value of seqstt
 	 *  so the current pool is first, to minimise searching seqset_store
 	 * The order of the rest isn't as important
-	 * N.B. a new set is only created once per ckpool start */
+	 * N.B. a new set is only created once per asicseer-pool start */
 	if (firstseq) {
 		k_add_head(seqset_store, seqset_item);
 		set = 0;
@@ -3477,11 +3477,11 @@ gotseqset:
 			 *  until it catches up to the corrupt seq number
 			 *  Currently the only fix to get rid of the console
 			 *   messages is to fix/remove the corrupt high
-			 *   msgline from the reload data and restart ckdb
-			 *   You would have to stop ckdb first if it is in the
+			 *   msgline from the reload data and restart asicseer-db
+			 *   You would have to stop asicseer-db first if it is in the
 			 *    current hour reload file
 			 *  Note of course if it came from the queue it will
-			 *   be in the reload data when you restart ckdb */
+			 *   be in the reload data when you restart asicseer-db */
 			if ((seqentryflags & SE_RELOAD) ||
 			    (seqdata->maxseq == seqdata->reloadmax))
 				okhi = true;
@@ -3722,7 +3722,7 @@ setitemdata:
 		 * Technically SE_SOCKET is unexpected, except that at the end
 		 *  of the reload sync there may still be pool messages that
 		 *  haven't got into the queue yet - it wouldn't be expected
-		 *  for there to be many since it would be ckdb emptying the
+		 *  for there to be many since it would be asicseer-db emptying the
 		 *  queue faster than it is filling due to the reload delay -
 		 *  but either way they don't need to be reported */
 		if (((seqentry_copy.flags | seqentryflags) & SE_RELOAD) &&
@@ -4016,8 +4016,8 @@ static void setup_seq(K_ITEM *seqall, MSGLINE *msgline)
 		msgline->n_seqstt = atol(transfer_data(seqstt));
 
 	/* Ignore SEQSTTIGN sequence information
-	 * This allows us to manually generate ckpool data and send it
-	 *  to ckdb using ckpmsg - if SEQSTT == SEQSTTIGN
+	 * This allows us to manually generate asicseer-pool data and send it
+	 *  to asicseer-db using asicseer-pmsg - if SEQSTT == SEQSTTIGN
 	 * SEQALL must exist but the value is ignored
 	 * SEQPID and SEQcmd don't need to exist and are ignored */
 	if (msgline->n_seqstt == SEQSTTIGN) {
@@ -4148,7 +4148,7 @@ static enum cmd_values breakdown(K_ITEM **ml_item, char *buf, tv_t *now,
 		goto nogood;
 	}
 
-	/* If you want to manually replay a log file with ckpmsg,
+	/* If you want to manually replay a log file with asicseer-pmsg,
 	 *  you can ignore the access failed items by skipping items
 	 *  that start with a capital, since all (currently) are lower case
 	 *  however, command checks are case insensitive, so replaying
@@ -4480,8 +4480,8 @@ static enum cmd_values breakdown(K_ITEM **ml_item, char *buf, tv_t *now,
 			 *  but socket data must contain SEQALL ...
 			 *  even in manually generated data */
 			if (startup_complete) {
-				LOGEMERG("%s(): *** ckpool needs upgrading? - "
-					 "missing "SEQALL" from '%s' ckpool "
+				LOGEMERG("%s(): *** "POOL_PROGNAME" needs upgrading? - "
+					 "missing "SEQALL" from '%s' "POOL_PROGNAME" "
 					 "data in '%s'",
 					 __func__, cmdptr,
 					 st = safe_text_nonull(buf));
@@ -4789,7 +4789,7 @@ static void *breaker(void *arg)
 			}
 			ck_wunlock(&fpm_lock);
 			if (matched) {
-				LOGERR("%s() reload ckpool queue match at line %"PRIu64,
+				LOGERR("%s() reload "POOL_PROGNAME" queue match at line %"PRIu64,
 					__func__, bq->count);
 			}
 		}
@@ -5209,7 +5209,7 @@ static void *summariser(__maybe_unused void *arg)
 	/* Don't do any summarisation until the reload queue completes coz:
 	 * 1) It locks/accesses a lot of data - workinfo/markersummary that
 	 *    can slow down the reload
-	 * 2) If you stop and restart ckdb this wont affect the restart point
+	 * 2) If you stop and restart asicseer-db this wont affect the restart point
 	 *    Thus it's OK to do it later
 	 * 3) It does I/O to bitcoind which is slow ...
 	 * 4) It triggers the payout generation which also accesses a lot of
@@ -5348,8 +5348,8 @@ static void make_a_shift_mark()
 		DATA_WORKINFO_NULL(workinfo, wi_item);
 		if (!wi_item) {
 			K_RUNLOCK(workinfo_free);
-			LOGWARNING("%s() ckdb workinfo:'%s' marks:'%s' ..."
-				   " start ckpool!", __func__,
+			LOGWARNING("%s() "DB_PROGNAME" workinfo:'%s' marks:'%s' ..."
+				   " start "POOL_PROGNAME"!", __func__,
 				   "none", m_item ? "expired" : "none");
 			return;
 		}
@@ -5359,8 +5359,8 @@ static void make_a_shift_mark()
 		}
 		if (!wi_item) {
 			K_RUNLOCK(workinfo_free);
-			LOGWARNING("%s() ckdb workinfo:'%s' marks:'%s' ..."
-				   " start ckpool!", __func__,
+			LOGWARNING("%s() "DB_PROGNAME" workinfo:'%s' marks:'%s' ..."
+				   " start "POOL_PROGNAME"!", __func__,
 				   "expired", m_item ? "expired" : "none");
 			return;
 		}
@@ -5803,7 +5803,7 @@ static void *marker(__maybe_unused void *arg)
 	 *  always have to go back to the same reload point as before due to
 	 *  no new workmarkers being completed/processed
 	 * However, don't start during the first N reload files so that a
-	 *  normal ckdb restart reload won't slow down */
+	 *  normal asicseer-db restart reload won't slow down */
 	while (!everyone_die && !reloaded_N_files && !reload_queue_complete)
 		cksleep_ms(42);
 
@@ -6017,7 +6017,7 @@ static void *replier(void *arg)
 				cksleep_ms(1000);
 			else {
 				// Abort on 10 consecutive fails or 100 total
-				quithere(1, "%c aborting ckdb: epoll_wait "
+				quithere(1, "%c aborting "DB_PROGNAME": epoll_wait "
 					 "(%d/%d) failed (%d:%s)",
 					 typ, fails, fails_tot,
 					 e, strerror(e));
@@ -6531,7 +6531,7 @@ static void *process_socket(__maybe_unused void *arg)
 			case CMD_TERMINATE:
 				LOGWARNING("Listener received"
 					   " terminate message,"
-					   " terminating ckdb");
+					   " terminating "DB_PROGNAME);
 				snprintf(reply, sizeof(reply),
 					 "%s.%ld.ok.exiting",
 					 msgline->id,
@@ -6880,7 +6880,7 @@ skippy:
 
 static void *sockrun(void *arg)
 {
-	ckpool_t *this = (ckpool_t *)arg;
+	pool_t *this = (pool_t *)arg;
 	unixsock_t *us = &(this->main.us);
 	char *end, *buf = NULL;
 	K_ITEM *bq_item = NULL;
@@ -6893,7 +6893,7 @@ static void *sockrun(void *arg)
 
 	thissock = SOCKNUM(name);
 	if (thissock == MAXSOCK) {
-		quithere(1, "thread started with invalid ckpool_t %p %p",
+		quithere(1, "thread started with invalid pool_t %p %p",
 			 this, name);
 	}
 
@@ -7631,8 +7631,8 @@ static bool reload_from(tv_t *start, const tv_t *finish)
 		setnow(&file_begin);
 
 		/* Don't abort when matched since breakdown() will remove
-		 *  the matching message sequence numbers queued from ckpool
-		 * Also since ckpool messages are not in order, we could be
+		 *  the matching message sequence numbers queued from asicseer-pool
+		 * Also since asicseer-pool messages are not in order, we could be
 		 *  aborting early and not get the few slightly later out of
 		 *  order messages in the log file */
 		while (!everyone_die &&
@@ -7732,10 +7732,10 @@ static bool reload_from(tv_t *start, const tv_t *finish)
 			while (42) {
 				reload_timestamp.tv_sec += ROLL_S;
 				/* WARNING: if the system clock is wrong, any CCLs
-				 * missing or not created due to a ckpool outage of
+				 * missing or not created due to a asicseer-pool outage of
 				 * an hour or more can stop the reload early and
 				 * cause DB problems! Though, the clock being wrong
-				 * can screw up ckpool and ckdb anyway ... */
+				 * can screw up asicseer-pool and ckdb anyway ... */
 				if (!tv_newer(&reload_timestamp, &now)) {
 					finished = true;
 					break;
@@ -7792,7 +7792,7 @@ static bool reload_from(tv_t *start, const tv_t *finish)
 
 	ck_wlock(&fpm_lock);
 	if (first_pool_message) {
-		LOGEMERG("%s() reload didn't find the first ckpool queue '%.32s...",
+		LOGEMERG("%s() reload didn't find the first "POOL_PROGNAME" queue '%.32s...",
 			 __func__, st = safe_text(first_pool_message));
 		FREENULL(st);
 		FREENULL(first_pool_message);
@@ -8198,7 +8198,7 @@ static void *listener(__maybe_unused void *arg)
 			   ooo_status(ooo_buf, sizeof(ooo_buf)));
 		sequence_report(true);
 
-		LOGWARNING("%s(): ckdb ready, pool queue %d (%d/%d/%d/%d/%d)",
+		LOGWARNING("%s(): "DB_PROGNAME" ready, pool queue %d (%d/%d/%d/%d/%d)",
 			   __func__, bq+bqp+bqd+wq0count+wqcount,
 			   bq, bqp, bqd, wq0count, wqcount);
 
@@ -9201,8 +9201,8 @@ static struct option long_options[] = {
 	{ "generate",		no_argument,		0,	'g' },
 	{ "help",		no_argument,		0,	'h' },
 	{ "pool-instance",	required_argument,	0,	'i' },
-	// only use 'I' for reloading lots of known valid data via CKDB,
-	// DON'T use when connected to ckpool
+	// only use 'I' for reloading lots of known valid data via asicseer-db,
+	// DON'T use when connected to asicseer-pool
 	{ "ignore-seq",		required_argument,	0,	'I' },
 	{ "killold",		no_argument,		0,	'k' },
 	// Generate old keysummary records
@@ -9221,7 +9221,7 @@ static struct option long_options[] = {
 	{ "btc-pass",		required_argument,	0,	'P' },
 	{ "reload-queue-limit",	required_argument,	0,	'q' },
 	{ "queue-threads",	required_argument,	0,	'Q' },
-	{ "ckpool-logdir",	required_argument,	0,	'r' },
+	{ "pool-logdir",	required_argument,	0,	'r' },
 	{ "logdir",		required_argument,	0,	'R' },
 	{ "sockdir",		required_argument,	0,	's' },
 	{ "btc-server",		required_argument,	0,	'S' },
@@ -9263,7 +9263,7 @@ int main(int argc, char **argv)
 
 	setnow(&ckdb_start);
 
-	printf("CKDB Master V%s (C) Kano (see source code)\n", CKDB_VERSION);
+	printf("ASICseer-DB Master V%s (C) Kano & ASICseer (see source code)\n", CKDB_VERSION);
 
 	feenableexcept(FE_DIVBYZERO | FE_INVALID | FE_OVERFLOW);
 
@@ -9285,7 +9285,7 @@ int main(int argc, char **argv)
 			case 'a':
 				len = strlen(optarg);
 				if (len > MAX_ALERT_CMD)
-					quit(1, "ckdb_alert_cmd (%d) too large,"
+					quit(1, "db_alert_cmd (%d) too large,"
 						" limit %d",
 						(int)len, MAX_ALERT_CMD);
 				ckdb_alert_cmd = strdup(optarg);
@@ -9595,7 +9595,7 @@ int main(int argc, char **argv)
 	if (!db_user)
 		db_user = "postgres";
 	if (!ckp.name)
-		ckp.name = "ckdb";
+		ckp.name = DB_PROGNAME;
 	snprintf(buf, 15, "%s%s", ckp.name, dbcode);
 	FIRST_LOCK_INIT(buf);
 	prctl(PR_SET_NAME, buf, 0, 0, 0);
@@ -9640,7 +9640,7 @@ int main(int argc, char **argv)
 		quit(1, "Failed to open log file %s", buf);
 	ckp.logfd = fileno(ckp.logfp);
 
-	// -db is ckpool messages
+	// -db is asicseer-pool messages
 	snprintf(logname_db, sizeof(logname_db), "%s%s-db%s-",
 				ckp.logdir, ckp.name, dbcode);
 	// -io is everything else

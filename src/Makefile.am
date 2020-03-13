@@ -18,28 +18,28 @@ endif
 %.A: %.asm
 	yasm -f x64 -f elf64 -X gnu -g dwarf2 -D LINUX -o $@ $<
 
-noinst_LIBRARIES = libckpool.a
-libckpool_a_SOURCES = libckpool.c libckpool.h sha2.c sha2.h cashaddr.c cashaddr.h
-libckpool_a_LIBADD = $(native_objs)
+noinst_LIBRARIES = libasicseerpool.a
+libasicseerpool_a_SOURCES = libasicseerpool.c libasicseerpool.h sha2.c sha2.h cashaddr.c cashaddr.h
+libasicseerpool_a_LIBADD = $(native_objs)
 
-bin_PROGRAMS = ckpool ckpmsg notifier summariser
-ckpool_SOURCES = ckpool.c ckpool.h generator.c generator.h bitcoin.c bitcoin.h \
+bin_PROGRAMS = asicseer-pool asicseer-pmsg notifier summariser
+asicseer_pool_SOURCES = asicseer-pool.c asicseer-pool.h generator.c generator.h bitcoin.c bitcoin.h \
 		 stratifier.c stratifier.h connector.c connector.h uthash.h \
 		 utlist.h
-ckpool_LDADD = libckpool.a @JANSSON_LIBS@ @LIBS@
+asicseer_pool_LDADD = libasicseerpool.a @JANSSON_LIBS@ @LIBS@
 
-ckpmsg_SOURCES = ckpmsg.c
-ckpmsg_LDADD = libckpool.a @JANSSON_LIBS@
+asicseer_pmsg_SOURCES = asicseer-pmsg.c
+asicseer_pmsg_LDADD = libasicseerpool.a @JANSSON_LIBS@
 
 notifier_SOURCES = notifier.c
-notifier_LDADD = libckpool.a @JANSSON_LIBS@
+notifier_LDADD = libasicseerpool.a @JANSSON_LIBS@
 
 summariser_SOURCES = summariser.c
-summariser_LDADD = libckpool.a @JANSSON_LIBS@
+summariser_LDADD = libasicseerpool.a @JANSSON_LIBS@
 
-if WANT_CKDB
-bin_PROGRAMS += ckdb
-ckdb_SOURCES = ckdb.c ckdb_cmd.c ckdb_data.c ckdb_dbio.c ckdb_btc.c \
-		ckdb_crypt.c ckdb.h klist.c ktree.c klist.h ktree.h
-ckdb_LDADD = libckpool.a @JANSSON_LIBS@ @LIBS@
+if WANT_ASICSEER_DB
+bin_PROGRAMS += asicseer-db
+asicseer_db_SOURCES = asicseer-db.c ckdb_cmd.c ckdb_data.c ckdb_dbio.c ckdb_btc.c \
+		ckdb_crypt.c asicseer-db.h klist.c ktree.c klist.h ktree.h
+asicseer_db_LDADD = libasicseerpool.a @JANSSON_LIBS@ @LIBS@
 endif

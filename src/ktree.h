@@ -13,7 +13,7 @@
 #define ___KTREE_H
 
 #include "klist.h"
-#include "libckpool.h"
+#include "libasicseerpool.h"
 
 #define quithere(status, fmt, ...) \
 	quitfrom(status, __FILE__, __func__, __LINE__, fmt, ##__VA_ARGS__)

@@ -36,7 +36,7 @@
 #include <poll.h>
 #include <arpa/inet.h>
 
-#include "libckpool.h"
+#include "libasicseerpool.h"
 #include "donation.h"
 #include "sha2.h"
 #include "utlist.h"

@@ -18,8 +18,8 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "ckpool.h"
-#include "libckpool.h"
+#include "asicseer-pool.h"
+#include "libasicseerpool.h"
 #include "uthash.h"
 #include "utlist.h"
 #include "stratifier.h"
@@ -116,7 +116,7 @@ struct redirect {
 
 /* Private data for the connector */
 struct connector_data {
-	ckpool_t *ckp;
+	pool_t *ckp;
 	cklock_t lock;
 	proc_instance_t *pi;
 
@@ -175,7 +175,7 @@ struct connector_data {
 
 typedef struct connector_data cdata_t;
 
-void connector_upstream_msg(ckpool_t *ckp, char *msg)
+void connector_upstream_msg(pool_t *ckp, char *msg)
 {
 	cdata_t *cdata = ckp->cdata;
 
@@ -250,7 +250,7 @@ static void recycle_client(cdata_t *cdata, client_instance_t *client)
 }
 
 /* Allows the stratifier to get a unique local virtualid for subclients */
-int64_t connector_newclientid(ckpool_t *ckp)
+int64_t connector_newclientid(pool_t *ckp)
 {
 	int64_t ret;
 
@@ -268,7 +268,7 @@ int64_t connector_newclientid(ckpool_t *ckp)
 static int accept_client(cdata_t *cdata, const int epfd, const uint64_t server)
 {
 	int fd, port, no_clients, sockd;
-	ckpool_t *ckp = cdata->ckp;
+	pool_t *ckp = cdata->ckp;
 	client_instance_t *client;
 	struct epoll_event event;
 	socklen_t address_len;
@@ -375,7 +375,7 @@ out:
 	return ret;
 }
 
-static void stratifier_drop_id(ckpool_t *ckp, const int64_t id)
+static void stratifier_drop_id(pool_t *ckp, const int64_t id)
 {
 	char buf[256];
 
@@ -412,7 +412,7 @@ static int drop_client(cdata_t *cdata, client_instance_t *client)
 }
 
 /* For sending the drop command to the upstream pool in passthrough mode */
-static void generator_drop_client(ckpool_t *ckp, const client_instance_t *client)
+static void generator_drop_client(pool_t *ckp, const client_instance_t *client)
 {
 	json_t *val;
 
@@ -422,7 +422,7 @@ static void generator_drop_client(ckpool_t *ckp, const client_instance_t *client
 	generator_add_send(ckp, val);
 }
 
-static void stratifier_drop_client(ckpool_t *ckp, const client_instance_t *client)
+static void stratifier_drop_client(pool_t *ckp, const client_instance_t *client)
 {
 	stratifier_drop_id(ckp, client->id);
 }
@@ -431,7 +431,7 @@ static void stratifier_drop_client(ckpool_t *ckp, const client_instance_t *clien
  * regularly but keep the instances in a linked list until their ref count
  * drops to zero when we can remove them lazily. Client must hold a reference
  * count. */
-static int invalidate_client(ckpool_t *ckp, cdata_t *cdata, client_instance_t *client)
+static int invalidate_client(pool_t *ckp, cdata_t *cdata, client_instance_t *client)
 {
 	client_instance_t *tmp;
 	int ret;
@@ -473,7 +473,7 @@ static void drop_all_clients(cdata_t *cdata)
 	ck_wunlock(&cdata->lock);
 }
 
-static void send_client(ckpool_t *ckp, cdata_t *cdata, int64_t id, char *buf);
+static void send_client(pool_t *ckp, cdata_t *cdata, int64_t id, char *buf);
 
 /* Look for shares being submitted via a redirector and add them to a linked
  * list for looking up the responses. */
@@ -511,7 +511,7 @@ static void parse_redirector_share(cdata_t *cdata, client_instance_t *client, co
 
 /* Client is holding a reference count from being on the epoll list. Returns
  * true if we will still be receiving messages from this client. */
-static bool parse_client_msg(ckpool_t *ckp, cdata_t *cdata, client_instance_t *client)
+static bool parse_client_msg(pool_t *ckp, cdata_t *cdata, client_instance_t *client)
 {
 	int buflen, ret;
 	json_t *val;
@@ -609,7 +609,7 @@ static client_instance_t *ref_client_by_id(cdata_t *cdata, int64_t id)
 	return client;
 }
 
-static void redirect_client(ckpool_t *ckp, client_instance_t *client);
+static void redirect_client(pool_t *ckp, client_instance_t *client);
 
 static bool redirect_matches(cdata_t *cdata, client_instance_t *client)
 {
@@ -622,7 +622,7 @@ static bool redirect_matches(cdata_t *cdata, client_instance_t *client)
 	return redirect;
 }
 
-static void client_event_processor(ckpool_t *ckp, struct epoll_event *event)
+static void client_event_processor(pool_t *ckp, struct epoll_event *event)
 {
 	const uint32_t events = event->events;
 	const uint64_t id = event->data.u64;
@@ -686,7 +686,7 @@ static void *receiver(void *arg)
 {
 	cdata_t *cdata = (cdata_t *)arg;
 	struct epoll_event *event = ckzalloc(sizeof(struct epoll_event));
-	ckpool_t *ckp = cdata->ckp;
+	pool_t *ckp = cdata->ckp;
 	uint64_t serverfds, i;
 	int ret, epfd;
 
@@ -749,7 +749,7 @@ out:
 
 /* Send a sender_send message and return true if we've finished sending it or
  * are unable to send any more. */
-static bool send_sender_send(ckpool_t *ckp, cdata_t *cdata, sender_send_t *sender_send)
+static bool send_sender_send(pool_t *ckp, cdata_t *cdata, sender_send_t *sender_send)
 {
 	client_instance_t *client = sender_send->client;
 	time_t now_t;
@@ -813,7 +813,7 @@ static void *sender(void *arg)
 {
 	cdata_t *cdata = (cdata_t *)arg;
 	sender_send_t *sends = NULL;
-	ckpool_t *ckp = cdata->ckp;
+	pool_t *ckp = cdata->ckp;
 
 	rename_proc("csender");
 
@@ -855,7 +855,7 @@ static void *sender(void *arg)
 	return NULL;
 }
 
-static int add_redirect(ckpool_t *ckp, cdata_t *cdata, client_instance_t *client)
+static int add_redirect(pool_t *ckp, cdata_t *cdata, client_instance_t *client)
 {
 	redirect_t *redirect;
 	bool found;
@@ -879,7 +879,7 @@ static int add_redirect(ckpool_t *ckp, cdata_t *cdata, client_instance_t *client
 	return redirect->redirect_no;
 }
 
-static void redirect_client(ckpool_t *ckp, client_instance_t *client)
+static void redirect_client(pool_t *ckp, client_instance_t *client)
 {
 	sender_send_t *sender_send;
 	cdata_t *cdata = ckp->cdata;
@@ -973,7 +973,7 @@ out:
 
 /* Send a client by id a heap allocated buffer, allowing this function to
  * free the ram. */
-static void send_client(ckpool_t *ckp, cdata_t *cdata, const int64_t id, char *buf)
+static void send_client(pool_t *ckp, cdata_t *cdata, const int64_t id, char *buf)
 {
 	sender_send_t *sender_send;
 	client_instance_t *client;
@@ -1054,7 +1054,7 @@ static void send_client(ckpool_t *ckp, cdata_t *cdata, const int64_t id, char *b
 		redirect_client(ckp, client);
 }
 
-static void send_client_json(ckpool_t *ckp, cdata_t *cdata, int64_t client_id, json_t *json_msg)
+static void send_client_json(pool_t *ckp, cdata_t *cdata, int64_t client_id, json_t *json_msg)
 {
 	client_instance_t *client;
 	char *msg;
@@ -1093,7 +1093,7 @@ static bool client_exists(cdata_t *cdata, int64_t id)
 	return !!client;
 }
 
-static void passthrough_client(ckpool_t *ckp, cdata_t *cdata, client_instance_t *client)
+static void passthrough_client(pool_t *ckp, cdata_t *cdata, client_instance_t *client)
 {
 	json_t *val;
 
@@ -1107,7 +1107,7 @@ static void passthrough_client(ckpool_t *ckp, cdata_t *cdata, client_instance_t 
 		client->sendbufsize = set_sendbufsize(ckp, client->fd, 1048576);
 }
 
-static void remote_server(ckpool_t *ckp, cdata_t *cdata, client_instance_t *client)
+static void remote_server(pool_t *ckp, cdata_t *cdata, client_instance_t *client)
 {
 	json_t *val;
 
@@ -1123,7 +1123,7 @@ static void remote_server(ckpool_t *ckp, cdata_t *cdata, client_instance_t *clie
 		client->sendbufsize = set_sendbufsize(ckp, client->fd, 2097152);
 }
 
-static bool connect_upstream(ckpool_t *ckp, connsock_t *cs)
+static bool connect_upstream(pool_t *ckp, connsock_t *cs)
 {
 	json_t *req, *val = NULL, *res_val, *err_val;
 	bool res, ret = false;
@@ -1181,7 +1181,7 @@ out:
 	return ret;
 }
 
-static void usend_process(ckpool_t *ckp, char *buf)
+static void usend_process(pool_t *ckp, char *buf)
 {
 	cdata_t *cdata = ckp->cdata;
 	connsock_t *cs = &cdata->upstream_cs;
@@ -1219,7 +1219,7 @@ static void ping_upstream(cdata_t *cdata)
 
 static void *urecv_process(void *arg)
 {
-	ckpool_t *ckp = (ckpool_t *)arg;
+	pool_t *ckp = (pool_t *)arg;
 	cdata_t *cdata = ckp->cdata;
 	connsock_t *cs = &cdata->upstream_cs;
 	bool alive = true;
@@ -1285,7 +1285,7 @@ nomsg:
 	return NULL;
 }
 
-static bool setup_upstream(ckpool_t *ckp, cdata_t *cdata)
+static bool setup_upstream(pool_t *ckp, cdata_t *cdata)
 {
 	connsock_t *cs = &cdata->upstream_cs;
 	bool ret = false;
@@ -1314,7 +1314,7 @@ out:
 	return ret;
 }
 
-static void client_message_processor(ckpool_t *ckp, json_t *json_msg)
+static void client_message_processor(pool_t *ckp, json_t *json_msg)
 {
 	cdata_t *cdata = ckp->cdata;
 	client_instance_t *client;
@@ -1342,7 +1342,7 @@ static void client_message_processor(ckpool_t *ckp, json_t *json_msg)
 	send_client_json(ckp, cdata, client_id, json_msg);
 }
 
-void connector_add_message(ckpool_t *ckp, json_t *val)
+void connector_add_message(pool_t *ckp, json_t *val)
 {
 	cdata_t *cdata = ckp->cdata;
 
@@ -1350,7 +1350,7 @@ void connector_add_message(ckpool_t *ckp, json_t *val)
 }
 
 /* Send the passthrough the terminate node.method */
-static void drop_passthrough_client(ckpool_t *ckp, cdata_t *cdata, const int64_t id)
+static void drop_passthrough_client(pool_t *ckp, cdata_t *cdata, const int64_t id)
 {
 	int64_t client_id;
 	char *msg;
@@ -1420,7 +1420,7 @@ char *connector_stats(void *data, const int runtime)
 	return buf;
 }
 
-void connector_send_fd(ckpool_t *ckp, const int fdno, const int sockd)
+void connector_send_fd(pool_t *ckp, const int fdno, const int sockd)
 {
 	cdata_t *cdata = ckp->cdata;
 
@@ -1433,7 +1433,7 @@ void connector_send_fd(ckpool_t *ckp, const int fdno, const int sockd)
 static void connector_loop(proc_instance_t *pi, cdata_t *cdata)
 {
 	unix_msg_t *umsg = NULL;
-	ckpool_t *ckp = pi->ckp;
+	pool_t *ckp = pi->ckp;
 	time_t last_stats;
 	int64_t client_id;
 	int ret = 0;
@@ -1569,7 +1569,7 @@ void *connector(void *arg)
 	cdata_t *cdata = ckzalloc(sizeof(cdata_t));
 	char newurl[INET6_ADDRSTRLEN], newport[8];
 	int threads, sockd, i, tries = 0, ret;
-	ckpool_t *ckp = pi->ckp;
+	pool_t *ckp = pi->ckp;
 	const int on = 1;
 
 	rename_proc(pi->processname);

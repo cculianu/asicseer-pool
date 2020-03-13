@@ -11,7 +11,7 @@
 
 #include <openssl/x509.h>
 #include <openssl/hmac.h>
-#include "ckdb.h"
+#include "asicseer-db.h"
 
 #if (SHA256SIZBIN != SHA256_DIGEST_LENGTH)
 #error "SHA256SIZBIN must = OpenSSL SHA256_DIGEST_LENGTH"

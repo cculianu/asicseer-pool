@@ -28,16 +28,16 @@
 #include <unistd.h>
 
 #include "cashaddr.h"
-#include "ckpool.h"
-#include "libckpool.h"
+#include "asicseer-pool.h"
+#include "libasicseerpool.h"
 #include "generator.h"
 #include "stratifier.h"
 #include "connector.h"
 #include "donation.h"
 
-ckpool_t *global_ckp;
+pool_t *global_ckp;
 
-static bool open_logfile(ckpool_t *ckp)
+static bool open_logfile(pool_t *ckp)
 {
 	if (ckp->logfd > 0) {
 		flock(ckp->logfd, LOCK_EX);
@@ -58,7 +58,7 @@ static bool open_logfile(ckpool_t *ckp)
 
 /* Use ckmsgqs for logging to console and files to prevent logmsg from blocking
  * on any delays. */
-static void console_log(ckpool_t __maybe_unused *ckp, char *msg)
+static void console_log(pool_t __maybe_unused *ckp, char *msg)
 {
 	/* Add clear line only if stderr is going to console */
 	if (isatty(fileno(stderr)))
@@ -69,7 +69,7 @@ static void console_log(ckpool_t __maybe_unused *ckp, char *msg)
 	free(msg);
 }
 
-static void proclog(ckpool_t *ckp, char *msg)
+static void proclog(pool_t *ckp, char *msg)
 {
 	time_t log_t = time(NULL);
 
@@ -152,7 +152,7 @@ out:
 static void *ckmsg_queue(void *arg)
 {
 	ckmsgq_t *ckmsgq = (ckmsgq_t *)arg;
-	ckpool_t *ckp = ckmsgq->ckp;
+	pool_t *ckp = ckmsgq->ckp;
 
 	pthread_detach(pthread_self());
 	rename_proc(ckmsgq->name);
@@ -182,7 +182,7 @@ static void *ckmsg_queue(void *arg)
 	return NULL;
 }
 
-ckmsgq_t *create_ckmsgq(ckpool_t *ckp, const char *name, const void *func)
+ckmsgq_t *create_ckmsgq(pool_t *ckp, const char *name, const void *func)
 {
 	ckmsgq_t *ckmsgq = ckzalloc(sizeof(ckmsgq_t));
 
@@ -198,7 +198,7 @@ ckmsgq_t *create_ckmsgq(ckpool_t *ckp, const char *name, const void *func)
 	return ckmsgq;
 }
 
-ckmsgq_t *create_ckmsgqs(ckpool_t *ckp, const char *name, const void *func, const int count)
+ckmsgq_t *create_ckmsgqs(pool_t *ckp, const char *name, const void *func, const int count)
 {
 	ckmsgq_t *ckmsgq = ckzalloc(sizeof(ckmsgq_t) * count);
 	mutex_t *lock;
@@ -367,7 +367,7 @@ static int pid_wait(const pid_t pid, const int ms)
 	return ret;
 }
 
-static void api_message(ckpool_t *ckp, char **buf, int *sockd)
+static void api_message(pool_t *ckp, char **buf, int *sockd)
 {
 	apimsg_t *apimsg = ckalloc(sizeof(apimsg_t));
 
@@ -383,7 +383,7 @@ static void *listener(void *arg)
 {
 	proc_instance_t *pi = (proc_instance_t *)arg;
 	unixsock_t *us = &pi->us;
-	ckpool_t *ckp = pi->ckp;
+	pool_t *ckp = pi->ckp;
 	char *buf = NULL, *msg;
 	int sockd;
 
@@ -404,7 +404,7 @@ retry:
 		/* Any JSON messages received are for the RPC API to handle */
 		api_message(ckp, &buf, &sockd);
 	} else if (cmdmatch(buf, "shutdown")) {
-		LOGWARNING("Listener received shutdown message, terminating ckpool");
+		LOGWARNING("Listener received shutdown message, terminating " POOL_PROGNAME);
 		send_unix_msg(sockd, "exiting");
 		goto out;
 	} else if (cmdmatch(buf, "ping")) {
@@ -483,7 +483,7 @@ void empty_buffer(connsock_t *cs)
 	cs->buflen = cs->bufofs = 0;
 }
 
-int set_sendbufsize(ckpool_t *ckp, const int fd, const int len)
+int set_sendbufsize(pool_t *ckp, const int fd, const int len)
 {
 	socklen_t optlen;
 	int opt;
@@ -511,7 +511,7 @@ int set_sendbufsize(ckpool_t *ckp, const int fd, const int len)
 	return opt;
 }
 
-int set_recvbufsize(ckpool_t *ckp, const int fd, const int len)
+int set_recvbufsize(pool_t *ckp, const int fd, const int len)
 {
 	socklen_t optlen;
 	int opt;
@@ -562,7 +562,7 @@ static void clear_bufline(connsock_t *cs)
 	}
 }
 
-static void add_buflen(ckpool_t *ckp, connsock_t *cs, const char *readbuf, const int len)
+static void add_buflen(pool_t *ckp, connsock_t *cs, const char *readbuf, const int len)
 {
 	int backoff = 1;
 	int buflen;
@@ -593,7 +593,7 @@ static void add_buflen(ckpool_t *ckp, connsock_t *cs, const char *readbuf, const
 
 /* Receive as much data is currently available without blocking into a connsock
  * buffer. Returns total length of data read. */
-static int recv_available(ckpool_t *ckp, connsock_t *cs)
+static int recv_available(pool_t *ckp, connsock_t *cs)
 {
 	char readbuf[PAGESIZE];
 	int len = 0, ret;
@@ -618,7 +618,7 @@ int read_socket_line(connsock_t *cs, float *timeout)
 {
 	char *eom = NULL;
 	tv_t start, now;
-	ckpool_t *ckp;
+	pool_t *ckp;
 	int ret = -1;
 	bool quiet;
 	float diff;
@@ -694,7 +694,7 @@ out:
 }
 
 /* We used to send messages between each proc_instance via unix sockets when
- * ckpool was a multi-process model but that is no longer required so we can
+ * asicseer-pool was a multi-process model but that is no longer required so we can
  * place the messages directly on the other proc_instance's queue until we
  * deprecate this mechanism. */
 void _queue_proc(proc_instance_t *pi, const char *msg, const char *file, const char *func, const int line)
@@ -748,7 +748,7 @@ out:
 }
 
 /* As send_recv_proc but only to ckdb */
-char *_send_recv_ckdb(const ckpool_t *ckp, const char *msg, const char *file, const char *func, const int line)
+char *_send_recv_ckdb(const pool_t *ckp, const char *msg, const char *file, const char *func, const int line)
 {
 	const char *path = ckp->ckdb_sockname;
 	char *buf = NULL;
@@ -779,7 +779,7 @@ out:
 }
 
 /* Send a json msg to ckdb and return the response */
-char *_ckdb_msg_call(const ckpool_t *ckp, const char *msg,  const char *file, const char *func,
+char *_ckdb_msg_call(const pool_t *ckp, const char *msg,  const char *file, const char *func,
 		     const int line)
 {
 	char *buf = NULL;
@@ -945,10 +945,10 @@ void json_rpc_msg(connsock_t *cs, const char *rpc_req)
 	json_decref(val);
 }
 
-static void terminate_oldpid(const ckpool_t *ckp, proc_instance_t *pi, const pid_t oldpid)
+static void terminate_oldpid(const pool_t *ckp, proc_instance_t *pi, const pid_t oldpid)
 {
 	if (!ckp->killold) {
-		quit(1, "Process %s pid %d still exists, start ckpool with -H to get a handover or -k if you wish to kill it",
+		quit(1, "Process %s pid %d still exists, start "POOL_PROGNAME" with -H to get a handover or -k if you wish to kill it",
 				pi->processname, oldpid);
 	}
 	LOGNOTICE("Terminating old process %s pid %d", pi->processname, oldpid);
@@ -1037,7 +1037,7 @@ out:
 
 /* Open the file in path, check if there is a pid in there that still exists
  * and if not, write the pid into that file. */
-static bool write_pid(ckpool_t *ckp, const char *path, proc_instance_t *pi, const pid_t pid, const pid_t oldpid)
+static bool write_pid(pool_t *ckp, const char *path, proc_instance_t *pi, const pid_t pid, const pid_t oldpid)
 {
 	FILE *fp;
 
@@ -1063,7 +1063,7 @@ static void name_process_sockname(unixsock_t *us, const proc_instance_t *pi)
 	realloc_strcat(&us->path, pi->sockname);
 }
 
-static void open_process_sock(ckpool_t *ckp, const proc_instance_t *pi, unixsock_t *us)
+static void open_process_sock(pool_t *ckp, const proc_instance_t *pi, unixsock_t *us)
 {
 	LOGDEBUG("Opening %s", us->path);
 	us->sockd = open_unix_server(us->path);
@@ -1076,7 +1076,7 @@ static void open_process_sock(ckpool_t *ckp, const proc_instance_t *pi, unixsock
 static void create_process_unixsock(proc_instance_t *pi)
 {
 	unixsock_t *us = &pi->us;
-	ckpool_t *ckp = pi->ckp;
+	pool_t *ckp = pi->ckp;
 
 	name_process_sockname(us, pi);
 	open_process_sock(ckp, pi, us);
@@ -1100,13 +1100,13 @@ static void rm_namepid(const proc_instance_t *pi)
 	unlink(s);
 }
 
-static void launch_logger(ckpool_t *ckp)
+static void launch_logger(pool_t *ckp)
 {
 	ckp->logger = create_ckmsgq(ckp, "logger", &proclog);
 	ckp->console_logger = create_ckmsgq(ckp, "conlog", &console_log);
 }
 
-static void clean_up(ckpool_t *ckp)
+static void clean_up(pool_t *ckp)
 {
 	rm_namepid(&ckp->main);
 	dealloc(ckp->socket_dir);
@@ -1122,7 +1122,7 @@ static void cancel_pthread(pthread_t *pth)
 
 static void sighandler(const int sig)
 {
-	ckpool_t *ckp = global_ckp;
+	pool_t *ckp = global_ckp;
 
 	signal(sig, SIG_IGN);
 	signal(SIGTERM, SIG_IGN);
@@ -1280,7 +1280,7 @@ bool json_getdel_int64(int64_t *store, json_t *val, const char *res)
 	return ret;
 }
 
-static void parse_btcds(ckpool_t *ckp, const json_t *arr_val, const int arr_size)
+static void parse_btcds(pool_t *ckp, const json_t *arr_val, const int arr_size)
 {
 	json_t *val;
 	int i;
@@ -1306,7 +1306,7 @@ static void assert_json_get_ok(bool b, const char *obj, const char *key)
 	}
 }
 
-static void parse_proxies(ckpool_t *ckp, const json_t *arr_val, const int arr_size)
+static void parse_proxies(pool_t *ckp, const json_t *arr_val, const int arr_size)
 {
 	json_t *val;
 	int i;
@@ -1332,7 +1332,7 @@ static void parse_proxies(ckpool_t *ckp, const json_t *arr_val, const int arr_si
 	}
 }
 
-static bool parse_serverurls(ckpool_t *ckp, const json_t *arr_val)
+static bool parse_serverurls(pool_t *ckp, const json_t *arr_val)
 {
 	bool ret = false;
 	int arr_size, i;
@@ -1363,7 +1363,7 @@ out:
 	return ret;
 }
 
-static void parse_nodeservers(ckpool_t *ckp, const json_t *arr_val)
+static void parse_nodeservers(pool_t *ckp, const json_t *arr_val)
 {
 	int arr_size, i, j, total_urls;
 
@@ -1392,7 +1392,7 @@ static void parse_nodeservers(ckpool_t *ckp, const json_t *arr_val)
 	ckp->serverurls = total_urls;
 }
 
-static void parse_trusted(ckpool_t *ckp, const json_t *arr_val)
+static void parse_trusted(pool_t *ckp, const json_t *arr_val)
 {
 	int arr_size, i, j, total_urls;
 
@@ -1422,7 +1422,7 @@ static void parse_trusted(ckpool_t *ckp, const json_t *arr_val)
 }
 
 
-static bool parse_redirecturls(ckpool_t *ckp, const json_t *arr_val)
+static bool parse_redirecturls(pool_t *ckp, const json_t *arr_val)
 {
 	bool ret = false;
 	int arr_size, i;
@@ -1458,7 +1458,7 @@ out:
 	return ret;
 }
 
-static void parse_mindiff_overrides(ckpool_t *ckp, json_t *obj, const size_t n_keys)
+static void parse_mindiff_overrides(pool_t *ckp, json_t *obj, const size_t n_keys)
 {
 	if (!n_keys || !obj || !ckp) return; // paranoia
 	mindiff_override_t *arr = ckzalloc(sizeof(mindiff_override_t) * n_keys);
@@ -1506,7 +1506,7 @@ static void parse_mindiff_overrides(ckpool_t *ckp, json_t *obj, const size_t n_k
 		dealloc(arr); // none parsed, just free memory for the pre-allocated array.
 }
 
-static void parse_config(ckpool_t *ckp)
+static void parse_config(pool_t *ckp)
 {
 	json_t *json_conf, *arr_val;
 	json_error_t err_val;
@@ -1598,7 +1598,7 @@ static void parse_config(ckpool_t *ckp)
 	json_decref(json_conf);
 }
 
-static void manage_old_instance(ckpool_t *ckp, proc_instance_t *pi)
+static void manage_old_instance(pool_t *ckp, proc_instance_t *pi)
 {
 	struct stat statbuf;
 	char path[256];
@@ -1626,7 +1626,7 @@ static void manage_old_instance(ckpool_t *ckp, proc_instance_t *pi)
 	}
 }
 
-static void prepare_child(ckpool_t *ckp, proc_instance_t *pi, void *process, char *name)
+static void prepare_child(pool_t *ckp, proc_instance_t *pi, void *process, char *name)
 {
 	pi->ckp = ckp;
 	pi->processname = name;
@@ -1636,12 +1636,12 @@ static void prepare_child(ckpool_t *ckp, proc_instance_t *pi, void *process, cha
 	create_unix_receiver(pi);
 }
 
-#ifdef USE_CKDB
+#ifdef USE_ASICSEER_DB
 static struct option long_options[] = {
 	{"standalone",	no_argument,		0,	'A'},
 	{"config",	required_argument,	0,	'c'},
 	{"daemonise",	no_argument,		0,	'D'},
-	{"ckdb-name",	required_argument,	0,	'd'},
+	{"db-name",	required_argument,	0,	'd'},
 	{"group",	required_argument,	0,	'g'},
 	{"handover",	no_argument,		0,	'H'},
 	{"help",	no_argument,		0,	'h'},
@@ -1654,7 +1654,7 @@ static struct option long_options[] = {
 	{"proxy",	no_argument,		0,	'p'},
 	{"quiet",	no_argument,		0,	'q'},
 	{"redirector",	no_argument,		0,	'R'},
-	{"ckdb-sockdir",required_argument,	0,	'S'},
+	{"asicseer-db-sockdir", required_argument,	0,	'S'},
 	{"sockdir",	required_argument,	0,	's'},
 	{"trusted",	no_argument,		0,	't'},
 	{"userproxy",	no_argument,		0,	'u'},
@@ -1706,7 +1706,7 @@ int main(int argc, char **argv)
 	struct sigaction handler;
 	int c, ret, i = 0, j;
 	char buf[512] = {};
-	ckpool_t ckp;
+	pool_t ckp;
 
 	/* Make significant floating point errors fatal to avoid subtle bugs being missed */
 	feenableexcept(FE_DIVBYZERO | FE_INVALID);
@@ -1820,15 +1820,15 @@ int main(int argc, char **argv)
 
 	if (!ckp.name) {
 		if (ckp.node)
-			ckp.name = "cknode";
+			ckp.name = NODE_PROGNAME;
 		else if (ckp.redirector)
-			ckp.name = "ckredirector";
+			ckp.name = REDIRECTOR_PROGNAME;
 		else if (ckp.passthrough)
-			ckp.name = "ckpassthrough";
+			ckp.name = PASSTHROUGH_PROGNAME;
 		else if (ckp.proxy)
-			ckp.name = "ckproxy";
+			ckp.name = PROXY_PROGNAME;
 		else
-			ckp.name = "ckpool";
+			ckp.name = POOL_PROGNAME;
 	}
 	snprintf(buf, 15, "%s", ckp.name);
 	prctl(PR_SET_NAME, buf, 0, 0, 0);
@@ -2041,7 +2041,7 @@ int main(int argc, char **argv)
 		ckp.maxclients = ret * 9 / 10;
 	}
 
-	// ckp.ckpapi = create_ckmsgq(&ckp, "api", &ckpool_api);
+	// ckp.ckpapi = create_ckmsgq(&ckp, "api", &asicseer_pool_api);
 	create_pthread(&ckp.pth_listener, listener, &ckp.main);
 
 	handler.sa_handler = &sighandler;

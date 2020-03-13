@@ -5,7 +5,7 @@
  * LICENSE: MIT
  */
 #include "cashaddr.h"
-#include "libckpool.h"
+#include "libasicseerpool.h"
 
 #include <stdlib.h>
 #include <string.h>

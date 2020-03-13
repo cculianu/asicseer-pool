@@ -25,7 +25,7 @@ extern uint8_t *cashaddr_decode_hash160(const char *addr,
 #define CASHADDR_HEURISTIC_LEN 35
 
 // NB: if these ever change, please make sure they are <16 bytes or if not, modify
-// the buffer in struct ckpool_instance "cashaddr_prefix" to accomodate the larger length
+// the buffer in struct pool_instance "cashaddr_prefix" to accomodate the larger length
 #define CASHADDR_PREFIX_MAIN "bitcoincash"
 #define CASHADDR_PREFIX_TEST "bchtest"
 #define CASHADDR_PREFIX_REGTEST "bchreg"

@@ -9,7 +9,7 @@
  * any later version.  See COPYING for more details.
  */
 
-#include "ckdb.h"
+#include "asicseer-db.h"
 
 void _pause_read_lock(WHERE_FFL_ARGS)
 {
@@ -4173,7 +4173,7 @@ bool shares_add(PGconn *conn, char *workinfoid, char *username,
 	/* Won't change outside lock since we don't delete users
 	 *  or change their *userid */
 	if (!u_item) {
-		/* This should never happen unless there's a bug in ckpool
+		/* This should never happen unless there's a bug in asicseer-pool
 		    or the authentication information got to ckdb after
 		    the shares or the users table is missing data ...
 			which shouldn't ever happen
@@ -5130,7 +5130,7 @@ bool sharesummaries_to_markersummaries(PGconn *conn, WORKMARKERS *workmarkers,
 
 	INIT_SHARESUMMARY(&ss_look);
 	ss_look.data = (void *)(&looksharesummary);
-	/* Since shares come in from ckpool at a high rate,
+	/* Since shares come in from asicseer-pool at a high rate,
 	 *  we don't want to lock sharesummary for long
 	 * Those incoming shares will not be touching the sharesummaries
 	 *  we are processing here */
@@ -5229,7 +5229,7 @@ dokey:
 
 		INIT_SHARESUMMARY(&ss_look);
 		ss_look.data = (void *)(&looksharesummary);
-		/* Since shares come in from ckpool at a high rate,
+		/* Since shares come in from asicseer-pool at a high rate,
 		 *  we don't want to lock sharesummary for long
 		 * Those incoming shares will not be touching the sharesummaries
 		 *  we are processing here */
@@ -5264,7 +5264,7 @@ dokey:
 
 	INIT_KEYSHARESUMMARY(&kss_look);
 	kss_look.data = (void *)(&lookkeysharesummary);
-	/* Since shares come in from ckpool at a high rate,
+	/* Since shares come in from asicseer-pool at a high rate,
 	 *  we don't want to lock keysharesummary for long
 	 * Those incoming shares will not be touching the keysharesummaries
 	 *  we are processing here */
@@ -6024,7 +6024,7 @@ bool _sharesummary_update(SHARES *s_row, SHAREERRORS *e_row, tv_t *cd,
 	}
 
 	if (!new) {
-		// don't LOG '=' in case shares come from ckpool with the same timestamp
+		// don't LOG '=' in case shares come from asicseer-pool with the same timestamp
 		if (tdf < 0.0) {
 			char *tmp1 = NULL, *tmp2 = NULL;
 			int level = LOG_DEBUG;
@@ -6045,7 +6045,7 @@ bool _sharesummary_update(SHARES *s_row, SHAREERRORS *e_row, tv_t *cd,
 			free(tmp1);
 		}
 
-		// don't LOG '=' in case shares come from ckpool with the same timestamp
+		// don't LOG '=' in case shares come from asicseer-pool with the same timestamp
 		if (tdl < 0.0) {
 			char *tmp1 = NULL, *tmp2 = NULL;
 			int level = LOG_DEBUG;

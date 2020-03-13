@@ -9,8 +9,8 @@
  * any later version.  See COPYING for more details.
  */
 
-#ifndef CKPOOL_H
-#define CKPOOL_H
+#ifndef ASICSEER_POOL_H
+#define ASICSEER_POOL_H
 
 #include "config.h"
 
@@ -20,13 +20,13 @@
 #include <inttypes.h>
 
 #include "donation.h"
-#include "libckpool.h"
+#include "libasicseerpool.h"
 #include "uthash.h"
 
 #define RPC_TIMEOUT 60
 
-struct ckpool_instance;
-typedef struct ckpool_instance ckpool_t;
+struct pool_instance;
+typedef struct pool_instance pool_t;
 
 struct ckmsg {
 	struct ckmsg *next;
@@ -46,13 +46,13 @@ struct unix_msg {
 };
 
 struct ckmsgq {
-	ckpool_t *ckp;
+	pool_t *ckp;
 	char name[16];
 	pthread_t pth;
 	mutex_t *lock;
 	pthread_cond_t *cond;
 	ckmsg_t *msgs;
-	void (*func)(ckpool_t *, void *);
+	void (*func)(pool_t *, void *);
 	int64_t messages;
 	bool active;
 };
@@ -62,7 +62,7 @@ typedef struct ckmsgq ckmsgq_t;
 typedef struct proc_instance proc_instance_t;
 
 struct proc_instance {
-	ckpool_t *ckp;
+	pool_t *ckp;
 	unixsock_t us;
 	char *processname;
 	char *sockname;
@@ -89,7 +89,7 @@ struct connsock {
 	int rcvbufsiz;
 	int sendbufsiz;
 
-	ckpool_t *ckp;
+	pool_t *ckp;
 	/* Semaphore used to serialise request/responses */
 	sem_t sem;
 
@@ -141,7 +141,7 @@ typedef struct mindiff_override {
 	int64_t mindiff;
 } mindiff_override_t;
 
-struct ckpool_instance {
+struct pool_instance {
 	/* Start time */
 	time_t starttime;
 	/* Start pid */
@@ -229,7 +229,7 @@ struct ckpool_instance {
 	/* Are we running in userproxy mode */
 	bool userproxy;
 
-	/* Should we daemonise the ckpool process */
+	/* Should we daemonise the asicseer-pool process */
 	bool daemon;
 
 	/* Should we disable the throbber */
@@ -359,7 +359,7 @@ static const char __maybe_unused *stratum_msgs[] = {
 	""
 };
 
-#ifdef USE_CKDB
+#ifdef USE_ASICSEER_DB
 #define CKP_STANDALONE(CKP) ((CKP)->standalone == true)
 #else
 #define CKP_STANDALONE(CKP) ((CKP) == (CKP)) /* Always true, silences unused warn */
@@ -369,28 +369,28 @@ static const char __maybe_unused *stratum_msgs[] = {
 
 void get_timestamp(char *stamp);
 
-ckmsgq_t *create_ckmsgq(ckpool_t *ckp, const char *name, const void *func);
-ckmsgq_t *create_ckmsgqs(ckpool_t *ckp, const char *name, const void *func, const int count);
+ckmsgq_t *create_ckmsgq(pool_t *ckp, const char *name, const void *func);
+ckmsgq_t *create_ckmsgqs(pool_t *ckp, const char *name, const void *func, const int count);
 bool _ckmsgq_add(ckmsgq_t *ckmsgq, void *data, const char *file, const char *func, const int line);
 #define ckmsgq_add(ckmsgq, data) _ckmsgq_add(ckmsgq, data, __FILE__, __func__, __LINE__)
 bool ckmsgq_empty(ckmsgq_t *ckmsgq);
 unix_msg_t *get_unix_msg(proc_instance_t *pi);
 
-ckpool_t *global_ckp;
+pool_t *global_ckp;
 
-bool ping_main(ckpool_t *ckp);
+bool ping_main(pool_t *ckp);
 void empty_buffer(connsock_t *cs);
-int set_sendbufsize(ckpool_t *ckp, const int fd, const int len);
-int set_recvbufsize(ckpool_t *ckp, const int fd, const int len);
+int set_sendbufsize(pool_t *ckp, const int fd, const int len);
+int set_recvbufsize(pool_t *ckp, const int fd, const int len);
 int read_socket_line(connsock_t *cs, float *timeout);
 void _queue_proc(proc_instance_t *pi, const char *msg, const char *file, const char *func, const int line);
 #define send_proc(pi, msg) _queue_proc(&(pi), msg, __FILE__, __func__, __LINE__)
 char *_send_recv_proc(const proc_instance_t *pi, const char *msg, int writetimeout, int readtimedout,
 		      const char *file, const char *func, const int line);
 #define send_recv_proc(pi, msg) _send_recv_proc(&(pi), msg, UNIX_WRITE_TIMEOUT, UNIX_READ_TIMEOUT, __FILE__, __func__, __LINE__)
-char *_send_recv_ckdb(const ckpool_t *ckp, const char *msg, const char *file, const char *func, const int line);
+char *_send_recv_ckdb(const pool_t *ckp, const char *msg, const char *file, const char *func, const int line);
 #define send_recv_ckdb(ckp, msg) _send_recv_ckdb(ckp, msg, __FILE__, __func__, __LINE__)
-char *_ckdb_msg_call(const ckpool_t *ckp, const char *msg,  const char *file, const char *func,
+char *_ckdb_msg_call(const pool_t *ckp, const char *msg,  const char *file, const char *func,
 		     const int line);
 #define ckdb_msg_call(ckp, msg) _ckdb_msg_call(ckp, msg, __FILE__, __func__, __LINE__)
 
@@ -418,7 +418,7 @@ struct apimsg {
 	int sockd;
 };
 
-static inline void ckpool_api(ckpool_t __maybe_unused *ckp, apimsg_t __maybe_unused *apimsg) {};
+static inline void asicseer_pool_api(pool_t __maybe_unused *ckp, apimsg_t __maybe_unused *apimsg) {};
 static inline json_t *json_encode_errormsg(json_error_t __maybe_unused *err_val) { return NULL; };
 static inline json_t *json_errormsg(const char __maybe_unused *fmt, ...) { return NULL; };
 static inline void send_api_response(json_t __maybe_unused *val, const int __maybe_unused sockd) {};
@@ -430,4 +430,4 @@ static inline int64_t subclient(const int64_t client_id)
 	return (client_id >> 32);
 }
 
-#endif /* CKPOOL_H */
+#endif /* ASICSEER_POOL_H */

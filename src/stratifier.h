@@ -15,8 +15,8 @@
 /* Max depth of the merkle tree. Increase this if blocks ever have more than 4 billion tx's. */
 #define GENWORK_MAX_MERKLE_DEPTH 32
 
-/* This used to be "ckpool" in the original. This is the hard-coded prefix
-   for the coinbase tx. Coinbase message ends up being "/PREFIX $bchsig SUFFIX/" */
+/* This is the hard-coded prefix for the coinbase tx.
+   Coinbase message ends up being "/PREFIX $bchsig SUFFIX/" */
 #define HARDCODED_COINBASE_PREFIX_STR "pool.ASICseer.com"
 #define HARDCODED_COINBASE_SUFFIX_STR "BCHN"
 #define MAX_USER_COINBASE_LEN 16 /* The max length of user bchsig portion */
@@ -87,7 +87,7 @@ struct genwork {
 
 	char *logdir;
 
-	ckpool_t *ckp;
+	pool_t *ckp;
 	bool proxy; /* This workbase is proxied work */
 
 	bool incomplete; /* This is a remote workinfo without all the txn data */
@@ -97,14 +97,14 @@ struct genwork {
 	json_t *json; /* getblocktemplate json */
 };
 
-void parse_remote_txns(ckpool_t *ckp, const json_t *val);
+void parse_remote_txns(pool_t *ckp, const json_t *val);
 #define parse_upstream_txns(ckp, val) parse_remote_txns(ckp, val)
-void parse_upstream_auth(ckpool_t *ckp, json_t *val);
-void parse_upstream_workinfo(ckpool_t *ckp, json_t *val);
-void parse_upstream_block(ckpool_t *ckp, json_t *val);
-void parse_upstream_reqtxns(ckpool_t *ckp, json_t *val);
-char *stratifier_stats(ckpool_t *ckp, void *data);
-void _stratifier_add_recv(ckpool_t *ckp, json_t *val, const char *file, const char *func, const int line);
+void parse_upstream_auth(pool_t *ckp, json_t *val);
+void parse_upstream_workinfo(pool_t *ckp, json_t *val);
+void parse_upstream_block(pool_t *ckp, json_t *val);
+void parse_upstream_reqtxns(pool_t *ckp, json_t *val);
+char *stratifier_stats(pool_t *ckp, void *data);
+void _stratifier_add_recv(pool_t *ckp, json_t *val, const char *file, const char *func, const int line);
 #define stratifier_add_recv(ckp, val) _stratifier_add_recv(ckp, val, __FILE__, __func__, __LINE__)
 
 // Strips leading & trailing whitespace and strips any '/' characters from bchsig message.

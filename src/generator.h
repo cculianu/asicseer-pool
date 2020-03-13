@@ -18,17 +18,17 @@
 #define GETBEST_NOTIFY 0
 #define GETBEST_SUCCESS 1
 
-void generator_add_send(ckpool_t *ckp, json_t *val);
-struct genwork *generator_getbase(ckpool_t *ckp);
-int generator_getbest(ckpool_t *ckp, char *hash);
-bool generator_checkaddr(ckpool_t *ckp, const char *addr, bool *script);
-char *generator_get_txn(ckpool_t *ckp, const char *hash);
-bool generator_submitblock(ckpool_t *ckp, const char *buf);
-void generator_preciousblock(ckpool_t *ckp, const char *hash);
-bool generator_get_blockhash(ckpool_t *ckp, int height, char *hash);
+void generator_add_send(pool_t *ckp, json_t *val);
+struct genwork *generator_getbase(pool_t *ckp);
+int generator_getbest(pool_t *ckp, char *hash);
+bool generator_checkaddr(pool_t *ckp, const char *addr, bool *script);
+char *generator_get_txn(pool_t *ckp, const char *hash);
+bool generator_submitblock(pool_t *ckp, const char *buf);
+void generator_preciousblock(pool_t *ckp, const char *hash);
+bool generator_get_blockhash(pool_t *ckp, int height, char *hash);
 void *generator(void *arg);
 /* A wrapper around bitcoin.c get_chain:
  * Request getblockchaininfo from bitcoind for "chain", writing the value into "chain"
  * which should be at least 16 bytes long. */
-bool generator_get_chain(ckpool_t *ckp, char *chain);
+bool generator_get_chain(pool_t *ckp, char *chain);
 #endif /* GENERATOR_H */

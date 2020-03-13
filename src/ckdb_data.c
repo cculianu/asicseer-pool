@@ -9,7 +9,7 @@
  * any later version.  See COPYING for more details.
  */
 
-#include "ckdb.h"
+#include "asicseer-db.h"
 #include <math.h>
 
 // Data free functions (added here as needed)
@@ -3285,7 +3285,7 @@ static void key_auto_age_older(int64_t workinfoid, INTRANSIENT *in_poolinstance,
 		 * This way we find each oldest 'batch' of keysharesummaries that have
 		 *  been missed and can report the range of data that was aged,
 		 *  which would normally just be an approx 10min set of workinfoids
-		 *  from the last time ckpool stopped
+		 *  from the last time asicseer-pool stopped
 		 * Each next group of unaged keysharesummaries following this, will be
 		 *  picked up by each next aging */
 		wid_count = 0;
@@ -3449,7 +3449,7 @@ void auto_age_older(int64_t workinfoid, INTRANSIENT *in_poolinstance, tv_t *cd)
 		 * This way we find each oldest 'batch' of sharesummaries that have
 		 *  been missed and can report the range of data that was aged,
 		 *  which would normally just be an approx 10min set of workinfoids
-		 *  from the last time ckpool stopped
+		 *  from the last time asicseer-pool stopped
 		 * workinfo_age also processes the matching keysharesummaries
 		 * Each next group of unaged sharesummaries following this, will be
 		 *  picked up by each next aging */

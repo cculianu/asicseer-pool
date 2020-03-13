@@ -10,8 +10,8 @@
  * any later version.  See COPYING for more details.
  */
 
-#ifndef CKDB_H
-#define CKDB_H
+#ifndef ASICSEER_DB_H
+#define ASICSEER_DB_H
 
 #ifdef __GNUC__
 #if __GNUC__ >= 6
@@ -49,8 +49,8 @@
 #include <gsl/gsl_math.h>
 #include <gsl/gsl_cdf.h>
 
-#include "ckpool.h"
-#include "libckpool.h"
+#include "asicseer-pool.h"
+#include "libasicseerpool.h"
 
 #include "klist.h"
 #include "ktree.h"
@@ -343,7 +343,7 @@ extern int64_t confirm_first_workinfoid;
 extern int64_t confirm_last_workinfoid;
 
 /* Stop the reload 11min after the 'last' workinfoid+1 appears
- * ckpool uses 10min - but add 1min to be sure */
+ * asicseer-pool uses 10min - but add 1min to be sure */
 #define WORKINFO_AGE 660
 
 /* Allow defining the workinfoid range used in the db load of
@@ -376,7 +376,7 @@ extern bool reload_queue_complete;
 extern bool everyone_die;
 
 /* These are included in cmd_homepage
- *  to help identify when ckpool locks up (or dies) */
+ *  to help identify when asicseer-pool locks up (or dies) */
 extern tv_t last_heartbeat;
 extern tv_t last_workinfo;
 extern tv_t last_share;
@@ -470,7 +470,7 @@ extern __thread bool connect_dis;
  *   check the connection count with query.1.request=pg
  * Shift generation is unchanged, Payout generation is permanently disabled
  * To restart CKDB you must terminate it then rerun it, then CKDB will
- *  reload/redo all ckpool data it didn't store in the database
+ *  reload/redo all asicseer-pool data it didn't store in the database
  * The aim is to look the same as a normal running CKDB except doing no
  *  DB I/O - that will be deferred until CKDB is later restarted
  * You can't pause CKDB until the dbload has completed, but you can
@@ -1716,7 +1716,7 @@ extern tv_t missing_secuser_max;
  *
  * The sequence fields are checked for validity when the message arrives
  * Sequence order checking of reload lines are done immediately
- * Checking of ckpool lines isn't done until after the reload completes
+ * Checking of asicseer-pool lines isn't done until after the reload completes
  *  This solves the problem of the overlap from reload to queue
  *   If we stop the reload when we first match the queue, there's the issue
  *    that data order in the reload file may not match the data order in the
@@ -1736,7 +1736,7 @@ extern tv_t missing_secuser_max;
  *    Once the queue exceeds the reload maxseq, the lost records are no longer
  *     needed and are discarded */
 
-// ckpool sequence numbers
+// asicseer-pool sequence numbers
 #define SEQALL "seqall"
 #define SEQSTT "seqstart"
 #define SEQPID "seqpid"
@@ -1749,7 +1749,7 @@ extern tv_t missing_secuser_max;
 #define SEQSTTIGN 42
 
 enum seq_num {
-	SEQ_NONE = -1, // Invalid to have ckpool seq numbers
+	SEQ_NONE = -1, // Invalid to have asicseer-pool seq numbers
 	SEQ_ALL,
 	SEQ_BLOCK,
 	SEQ_SHARES,
@@ -2857,7 +2857,7 @@ extern K_STORE *userstats_eos_store;
 
 #define NO_INSTANCE_DATA -1
 
-/* 1.5 x how often we expect to get user's stats from ckpool
+/* 1.5 x how often we expect to get user's stats from asicseer-pool
  * This is used when grouping the sub-worker stats into a single user
  * We add each worker's latest stats to the total - except we ignore
  * any worker with newest stats being older than USERSTATS_PER_S */
