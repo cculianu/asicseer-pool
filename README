@@ -177,6 +177,7 @@ asicseer-pool supports the following options:
 -S DB-SOCKDIR | --db-sockdir DB-SOCKDIR
 -s SOCKDIR | --sockdir SOCKDIR
 -u | --userproxy
+-v | --version
 
 
 -A Standalone mode tells asicseer-pool not to try to communicate with
@@ -254,6 +255,8 @@ above, but in addition it will accept username/passwords from the stratum
 connects and try to open additional connections with those credentials to the
 upstream pool specified in the configuration file and then reconnect miners to
 mine with their chosen username/password to the upstream pool.
+
+-v Prints the program version and exits immediately.
 
 
 asicseer-db takes the following options:
