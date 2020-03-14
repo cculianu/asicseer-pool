@@ -17,7 +17,7 @@
 
 /* This is the hard-coded prefix for the coinbase tx.
    Coinbase message ends up being "/PREFIX $bchsig SUFFIX/" */
-#define HARDCODED_COINBASE_PREFIX_STR "pool.ASICseer.com"
+#define HARDCODED_COINBASE_PREFIX_STR "ASICseer.net"
 #define HARDCODED_COINBASE_SUFFIX_STR "BCHN"
 #define MAX_USER_COINBASE_LEN 16 /* The max length of user bchsig portion */
 
