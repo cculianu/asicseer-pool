@@ -61,6 +61,11 @@ void __attribute__((weak)) logmsg(int __maybe_unused loglevel, const char *fmt, 
 	free(buf);
 }
 
+const char *package_version(void)
+{
+	return PACKAGE_VERSION;
+}
+
 void rename_proc(const char *name)
 {
 	char buf[16];

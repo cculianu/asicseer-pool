@@ -1658,6 +1658,7 @@ static struct option long_options[] = {
 	{"sockdir",	required_argument,	0,	's'},
 	{"trusted",	no_argument,		0,	't'},
 	{"userproxy",	no_argument,		0,	'u'},
+	{"version",	no_argument,		0,	'v'},
 	{0, 0, 0, 0}
 };
 #else
@@ -1679,6 +1680,7 @@ static struct option long_options[] = {
 	{"sockdir",	required_argument,	0,	's'},
 	{"trusted",	no_argument,		0,	't'},
 	{"userproxy",	no_argument,		0,	'u'},
+	{"version",	no_argument,		0,	'v'},
 	{0, 0, 0, 0}
 };
 #endif
@@ -1699,6 +1701,11 @@ static bool send_recv_path(const char *path, const char *msg)
 		LOGWARNING("Received no response to %s request", msg);
 	Close(sockd);
 	return ret;
+}
+
+static const char *banner_string(void)
+{
+	return PACKAGE_STRING " - Copyright (c) 2014-2017 Con Kolivas, (c) 2020 ASICseer & Calin Culianu";
 }
 
 int main(int argc, char **argv)
@@ -1722,7 +1729,7 @@ int main(int argc, char **argv)
 		ckp.initial_args[ckp.args] = strdup(argv[ckp.args]);
 	ckp.initial_args[ckp.args] = NULL;
 
-	while ((c = getopt_long(argc, argv, "Ac:Dd:g:HhkLl:Nn:PpqRS:s:tu", long_options, &i)) != -1) {
+	while ((c = getopt_long(argc, argv, "Ac:Dd:g:HhkLl:Nn:PpqRS:s:tuv", long_options, &i)) != -1) {
 		switch (c) {
 			case 'A':
 				ckp.standalone = true;
@@ -1815,6 +1822,10 @@ int main(int argc, char **argv)
 					quit(1, "Cannot set both userproxy and another proxy type or redirector");
 				ckp.userproxy = ckp.proxy = true;
 				break;
+			case 'v':
+				printf("%s\n", banner_string());
+				exit(0);
+				break; // not reached
 		}
 	}
 
@@ -1972,6 +1983,8 @@ int main(int argc, char **argv)
 	if (!open_logfile(&ckp))
 		quit(1, "Failed to make open log file %s", buf);
 	launch_logger(&ckp);
+
+	LOGNOTICE("%s", banner_string()); // print banner to log so users know what version was running
 
 	ckp.main.ckp = &ckp;
 	ckp.main.processname = strdup("main");

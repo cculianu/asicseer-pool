@@ -434,6 +434,7 @@ static inline void _json_steal_object(json_t *val, const char *key, json_t **obj
 }
 #define json_steal_object(val, key, object) _json_steal_object(val, key, &(object), __FILE__, __func__, __LINE__)
 
+const char *package_version(void); // returns the libasicseerpool compiled-in PACKAGE_VERSION string
 void rename_proc(const char *name);
 void create_pthread(pthread_t *thread, void *(*start_routine)(void *), void *arg);
 void join_pthread(pthread_t thread);
