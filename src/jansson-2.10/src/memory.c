@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020 Calin Culianu <calin.culianu@gmail.com>
- * Copyright (c) 2020 ASICseer https://asicseer.com
+ * Copyright (c) 2020 ASICshack LLC https://asicshack.com
  * Copyright (c) 2009-2016 Petri Lehtinen <petri@digip.org>
  * Copyright (c) 2011-2012 Basile Starynkevitch <basile@starynkevitch.net>
  * Copyright (c) 2015,2017 Con Kolivas <kernel@kolivas.org>

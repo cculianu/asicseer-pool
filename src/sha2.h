@@ -4,7 +4,7 @@
  * Issue date:  04/30/2005
  *
  * Copyright (c) 2020 Calin Culianu <calin.culianu@gmail.com>
- * Copyright (c) 2020 ASICseer https://asicseer.com
+ * Copyright (c) 2020 ASICshack LLC https://asicshack.com
  * Copyright (C) 2013-2014, Con Kolivas <kernel@kolivas.org>
  * Copyright (C) 2005, 2007 Olivier Gay <olivier.gay@a3.epfl.ch>
  * All rights reserved.

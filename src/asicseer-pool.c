@@ -1705,7 +1705,7 @@ static bool send_recv_path(const char *path, const char *msg)
 
 static const char *banner_string(void)
 {
-	return PACKAGE_STRING " - Copyright (c) 2014-2017 Con Kolivas, (c) 2020 ASICseer & Calin Culianu";
+	return PACKAGE_STRING " - " PACKAGE_BUGREPORT;
 }
 
 int main(int argc, char **argv)

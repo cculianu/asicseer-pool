@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020 Calin Culianu <calin.culianu@gmail.com>
- * Copyright (c) 2020 ASICseer https://asicseer.com
+ * Copyright (c) 2020 ASICshack LLC https://asicshack.com
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free
