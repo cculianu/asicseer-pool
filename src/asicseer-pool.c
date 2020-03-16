@@ -46,7 +46,7 @@ static bool open_logfile(pool_t *ckp)
 	}
 	ckp->logfp = fopen(ckp->logfilename, "ae");
 	if (unlikely(!ckp->logfp)) {
-		LOGEMERG("Failed to make open log file %s", ckp->logfilename);
+		LOGEMERG("Failed to open log file %s", ckp->logfilename);
 		return false;
 	}
 	/* Make logging line buffered */
@@ -108,7 +108,7 @@ void get_timestamp(char *stamp)
 /* Log everything to the logfile, but display warnings on the console as well */
 void logmsg(int loglevel, const char *fmt, ...)
 {
-	int logfd = global_ckp->logfd;
+	const int logfd = global_ckp->logfd;
 	char *log, *buf = NULL;
 	char stamp[128];
 	va_list ap;
@@ -135,6 +135,7 @@ void logmsg(int loglevel, const char *fmt, ...)
 		ASPRINTF(&log, "%s %s\n", stamp, buf);
 
 	if (unlikely(!global_ckp->console_logger)) {
+		// logger not up yet -- output to stderr immediately and return.
 		fprintf(stderr, "%s", log);
 		goto out_free;
 	}
@@ -1104,6 +1105,22 @@ static void launch_logger(pool_t *ckp)
 {
 	ckp->logger = create_ckmsgq(ckp, "logger", &proclog);
 	ckp->console_logger = create_ckmsgq(ckp, "conlog", &console_log);
+	// spin waiting for a time for loggers to be alive before proceeding.
+	for (int backoff = 1; !ckp->logger->active && !ckp->console_logger->active; backoff <<= 1) {
+		if (backoff >= 16384)
+			quit(1, "Timed out waiting for logger threads to start, exiting!");
+		cksleep_ms(backoff);
+	}
+	if (ckp->daemon) {
+		// daemon mode -- we have no need for stdout/stderr/stdin anymore since we have
+		// successfully launched the loggers.  Replace these fd's to be safe.
+		int fd = open("/dev/null",O_RDWR, 0);
+		if (fd != -1) {
+			dup2(fd, STDIN_FILENO);
+			dup2(fd, STDOUT_FILENO);
+			dup2(fd, STDERR_FILENO);
+		}
+	}
 }
 
 static void clean_up(pool_t *ckp)
@@ -1543,7 +1560,6 @@ static void parse_config(pool_t *ckp)
 		if (ckp->pool_fee < 0.0) ckp->pool_fee = 0.0;
 		else if (ckp->pool_fee > 100.0) ckp->pool_fee = 100.0;
 	}
-	LOGNOTICE("Using pool fee: %1.3f%%", ckp->pool_fee);
 	json_get_int(&ckp->blockpoll, json_conf, "blockpoll");
 	json_get_int(&ckp->nonce1length, json_conf, "nonce1length");
 	json_get_int(&ckp->nonce2length, json_conf, "nonce2length");
@@ -1828,6 +1844,22 @@ int main(int argc, char **argv)
 				break; // not reached
 		}
 	}
+	if (ckp.daemon) {
+		// Daemonize immediately. We must do this before any threads are started because
+		// fork() stops all other threads besides the calling thread.  Code previous to v1.0.2
+		// had a bug here in that it daemonized too late, so we moved this call up to the top
+		// immediately after parsing args when no threads are started.
+		const pid_t pid = fork();
+
+		if (pid > 0)
+			// parent
+			quit(0, "Daemonizing...");
+		else if (unlikely(pid < 0))
+			// fork error
+			quit(1, "fork() system call failed, cannot daemonize");
+		// child
+		setsid();
+	}
 
 	if (!ckp.name) {
 		if (ckp.node)
@@ -1982,9 +2014,13 @@ int main(int argc, char **argv)
 	ASPRINTF(&ckp.logfilename, "%s%s.log", ckp.logdir, ckp.name);
 	if (!open_logfile(&ckp))
 		quit(1, "Failed to make open log file %s", buf);
-	launch_logger(&ckp);
+	launch_logger(&ckp); // note that at this point, if ckp.daemon is true, stdout, stderr, and stdin are all closed here.
 
 	LOGNOTICE("%s", banner_string()); // print banner to log so users know what version was running
+
+	LOGNOTICE("Using pool fee: %1.3f%%", ckp.pool_fee);
+	if (ckp.bchsig && *ckp.bchsig)
+		LOGNOTICE("Using coinbase signature: %s", ckp.bchsig);
 
 	ckp.main.ckp = &ckp;
 	ckp.main.processname = strdup("main");
@@ -2023,20 +2059,6 @@ int main(int argc, char **argv)
 			send_recv_path(path, "reject");
 			send_recv_path(path, "reconnect");
 			send_recv_path(path, "shutdown");
-		}
-	}
-
-	if (ckp.daemon) {
-		int fd;
-
-		if (fork())
-			exit(0);
-		setsid();
-		fd = open("/dev/null",O_RDWR, 0);
-		if (fd != -1) {
-			dup2(fd, STDIN_FILENO);
-			dup2(fd, STDOUT_FILENO);
-			dup2(fd, STDERR_FILENO);
 		}
 	}
 

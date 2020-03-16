@@ -54,7 +54,7 @@ struct ckmsgq {
 	ckmsg_t *msgs;
 	void (*func)(pool_t *, void *);
 	int64_t messages;
-	bool active;
+	volatile bool active;
 };
 
 typedef struct ckmsgq ckmsgq_t;

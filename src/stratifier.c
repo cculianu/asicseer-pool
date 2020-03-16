@@ -9468,8 +9468,6 @@ void normalize_bchsig(char *s)
 	while (j > 0 && isspace(buf[j-1])) // strip trailing whitespace
 		--j;
 	buf[j] = 0; // truncate string in case loop above decremented j
-	if (strcmp(buf, s))
-		LOGWARNING("Signature '%s' normalized to -> '%s'", s, buf);
 	strncpy(s, buf, MAX_USER_COINBASE_LEN + 1); // this is guaranteed to be terminated with NUL here.
 }
 
