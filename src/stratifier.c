@@ -161,7 +161,7 @@ typedef struct smsg smsg_t;
 
 struct user_instance {
 	UT_hash_handle hh;
-	char username[128];
+	char username[MAX_USERNAME+1];
 	int id;
 	char *secondaryuserid;
 	bool bchaddress;
@@ -206,6 +206,9 @@ struct user_instance {
 	time_t failed_authtime; /* Last time this username failed to authorise */
 	int auth_backoff; /* How long to reject any auth attempts since last failure */
 	bool throttled; /* Have we begun rejecting auth attempts */
+
+	double fee_discount; /* A value between 0.0 and 1.0, the amount to discount the fee for this user.
+	                        Default is 0.0 (no discount). 1.0 = no fee for this user. */
 };
 
 /* Combined data from workers with the same workername */
@@ -641,16 +644,22 @@ static uint64_t *_add_txnbin(workbase_t *wb, uint64_t *gentxns, uint64_t amount,
 	return u64;
 }
 /* Add generation transactions to the coinbase for each user, return any spare
- * change. */
-static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
-                                   uint64_t *gentxns, const bool auto_payout_dust)
+ * change. Note that the return value may be negative if users had fee discounts,
+ * in which case there is "negative" change and the pool output must deduct this amount
+ * from its own output (that is, add the negative to the pool output value).  This negative
+ * output will never result in the pf64 (fee) value becoming smaller than the dust limit,
+ * however -- so the pool may safely just add whatever the negative return value is
+ * (or add the positive return value which will always be >=546 sats).*/
+static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64, uint64_t pf64,
+                                   uint64_t *gentxns)
 {
-	json_t *payout = json_object(), *payout_entries = json_object(), *postponed_entries;
-	double derp, total_herp = 0, dreward;
-	generation_t *gen, paygens[PAYOUT_REWARDS + 1];
-	user_instance_t *user;
+	json_t * const payout = json_object(),
+	       * const payout_entries = json_object(),
+	       * postponed_entries = NULL;
+	generation_t paygens[PAYOUT_REWARDS + 1];
 	int64_t total = g64;
-	int payouts = 0;
+	int64_t total_fee_discounts = 0;
+	const int64_t s_pf64 = (int64_t)pf64; // signed version of pf64
 	uint64_t *u64 = NULL;
 	struct payee_info {
 		uint64_t reward;
@@ -663,13 +672,11 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 	mutex_lock(&sdata->stats_lock);
 	memcpy(paygens, sdata->stats.paygens, sizeof(paygens));
 	postponed_entries = json_copy(sdata->stats.postponed);
-	total_herp = sdata->stats.payout_herp;
+	const double total_herp = sdata->stats.payout_herp;
 	mutex_unlock(&sdata->stats_lock);
 
 	json_set_int(payout, "height", wb->height);
-	dreward = wb->coinbasevalue;
-	dreward /= SATOSHIS;
-	json_set_double(payout, "reward", dreward);
+	json_set_double(payout, "reward", wb->coinbasevalue / (double)SATOSHIS);
 	/* Will be overwritten, just looks nicer in this position */
 	json_set_double(payout, "fee", 0.);
 	json_set_double(payout, "net_fee", 0.);
@@ -678,61 +685,87 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 	json_set_double(payout, "herp", total_herp);
 	json_object_set_new_nocheck(payout, "postponed", postponed_entries);
 
-	for (payouts = 0; payouts < PAYOUT_REWARDS; payouts++) {
-		uint64_t reward;
-
-		gen = &paygens[payouts];
-		user = gen->user;
+	if (unlikely(total_herp <= 0.)) { // paranoia -- should always be false
+		LOGWARNING("total_herp is %0.9f!", total_herp);
+		goto skip;
+	}
+	for (int payouts = 0; payouts < PAYOUT_REWARDS; ++payouts) {
+		generation_t * const gen = &paygens[payouts];
+		user_instance_t * const user = gen->user;
 		if (!user)
 			break;
 
 		/* Calculate reward in satoshis. Derp isn't calculated in
-		 * calc_user_paygens since it is workbase dependent so we may
-		 * have added users that are still below the dust threshold. */
-		derp = floor(g64 * gen->herp / total_herp);
-		reward = derp;
-		if (reward < PAYOUT_DUST) {
+		* calc_user_paygens since it is workbase dependent so we may
+		* have added users that are still below the dust threshold. */
+		const double factor = gen->herp / total_herp;
+		const uint64_t reward = (uint64_t)floor(g64 * factor);
+		int64_t credit = 0; // fee credit - nonzero if there's a fee_discount below
+		if (user->fee_discount > 0. && user->fee_discount <= 1.0 && s_pf64 - total_fee_discounts > DUST_LIMIT_SATS) {
+			// apply fee discount
+			credit = floor(s_pf64 * factor * user->fee_discount);
+			if (credit > 0 && s_pf64 - total_fee_discounts - credit >= DUST_LIMIT_SATS) {
+				total_fee_discounts += credit;
+			} else {
+				LOGINFO("User %s, suppressing fee credit of %"PRId64" because it would cause pool fee to dip below %d sats dust limit",
+				        user->username, credit, (int)DUST_LIMIT_SATS);
+				credit = 0;
+			}
+		}
+		const uint64_t total_reward = reward + credit;
+		if (total_reward < PAYOUT_DUST) {
+			total_fee_discounts -= credit; // undo the fee credit, if any
 			json_set_double(postponed_entries, user->username, gen->herp);
 			continue;
 		}
-		dreward = reward;
-		dreward /= SATOSHIS;
-		json_set_double(payout_entries, user->username, dreward);
-		total -= reward;
-		LOGINFO("User %s reward %"PRId64, user->username, reward);
+		json_set_double(payout_entries, user->username, total_reward / (double)SATOSHIS);
+		if (credit)
+			LOGINFO("User %s reward %"PRIu64" + %"PRId64 " fee discount credit (%0.2f%% fee discount)",
+			        user->username, reward, credit, user->fee_discount * 100.0);
+		else
+			LOGINFO("User %s reward %"PRIu64, user->username, total_reward);
+
 		/* Add the user's coinbase reward, using the cached cscript */
-		u64 = _add_txnbin(wb, gentxns, reward, user->txnbin, user->txnlen);
-		if (auto_payout_dust && reward > max_payee.reward) {
+		u64 = _add_txnbin(wb, gentxns, total_reward, user->txnbin, user->txnlen);
+
+		if (!pf64 && total_reward > max_payee.reward) {
 			// remember this as the largest payee in case we need to give them leftover dust
-			max_payee.reward = reward;
+			max_payee.reward = total_reward;
 			max_payee.cb_u64 = u64;
 			max_payee.user = user;
 		}
+		// deduct this total reward from the payee total -- note total may end up negative here if
+		// users had fee discounts -- in which case we deal with that situation in the calling code
+		// which must deduct the negative sum from the pool fee payout.
+		total -= (int64_t)total_reward;
 	}
-	if (auto_payout_dust && total > 0 && total < DUST_LIMIT_SATS && max_payee.user) {
-		// payout remaining dust to the user with the most hash
+	if (!pf64 && total > 0 && total < DUST_LIMIT_SATS && max_payee.user) {
+		// payout remaining dust to the user with the most hash, because there is no pool fee (and so no pool payout output)
 		const char * const username = max_payee.user->username;
 		LOGDEBUG("Added %"PRId64" sats in dust to most-hash-payee: %s", total, username);
 		const uint64_t newreward = max_payee.reward + total;
 		*(max_payee.cb_u64) = htole64(newreward); // update coinbase binary
 		total = 0;
-		const double dreward = ((double)newreward) / (double)SATOSHIS;
-		json_set_double(payout_entries, username, dreward); // update json
+		json_set_double(payout_entries, username, newreward / (double)SATOSHIS); // update json
 	}
-
+skip:
 	wb->payout = payout;
 
-	if (total < 0)
-		LOGWARNING("Negative change in add_user_generation of %"PRId64, total);
-	else if (total > 0)
+	const int64_t mod_total = total + total_fee_discounts;
+
+	if (mod_total < 0)
+		LOGWARNING("Negative change in add_user_generation of %"PRId64". FIXME!", mod_total);
+	if (total > 0)
 		LOGINFO("%"PRId64" sats in change left over from payouts", total);
+	else if (total < 0)
+		LOGINFO("%"PRId64" sats need to be deducted from pool fee", total);
 
 	return total;
 }
 
 static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 {
-	uint64_t *p64 = NULL, g64 = 0, f64 = 0, pf64 = 0, df64 = 0, c64 = 0, *gentxns = NULL;
+	uint64_t *p64 = NULL, g64 = 0, f64 = 0, pf64 = 0, df64 = 0, *gentxns = NULL;
 	sdata_t *sdata = ckp->sdata;
 	int len, ofs = 0, cbspace;
 	char header[228];
@@ -822,7 +855,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 	f64 = round(g64 * (ckp->pool_fee/100.0)); // pool fee gross (including dev donation)
 	pf64 = f64; // pool fee net (minus dev donation), starts off as f64 initially but may be decreased below
 	df64 = 0; // total dev donations (10% of f64 * num_devs), 0 initially, may be increased below
-	c64 = 0; // leftover change/dust, 0 initially, may increase below
+	int64_t c64 = 0; // leftover change/dust, 0 initially, may increase below, or go below 0 if pool fee was credited back to pool discount users (see add_user_generation)
 
 	if (CKP_STANDALONE(ckp)) {
 		// payout to miners directly in SPLNS mode (also pay out hard-coded dev donations)
@@ -841,7 +874,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 			// add pool net fee
 			p64 = _add_txnbin(wb, gentxns, pf64, sdata->txnbin, sdata->txnlen);
 			const double fee = pf64 / (double)SATOSHIS;
-			LOGDEBUG("%f pool fee to pool address: %s", fee, ckp->bchaddress);
+			LOGDEBUG("%1.8f pool fee to pool address: %s", fee, ckp->bchaddress);
 			// now add donations for each dev
 			int64_t leftover = df64;
 			if (df64 && don_each) {
@@ -872,33 +905,46 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 			f64 = pf64 = 0;
 		}
 
-		c64 += add_user_generation(sdata, wb, g64 - f64, gentxns, true); // add miner payouts, minus total fee
+		assert(!pf64 || p64); // if there is a pool fee (pf64), then there must have been a pool payout generated above.
 
-		/* Add any change left over from user gen to pool */
+		c64 = add_user_generation(sdata, wb, g64 - f64, pf64, gentxns); // add miner payouts, minus total fee
+
+		/* Add any change left over from user gen to pool -- note c64 may be negative here if pool fee discounts occurred */
 		if ( c64 && (p64 || c64 >= DUST_LIMIT_SATS) && sdata->txnlen) {
-			if (!p64) {
+			bool ok = false;
+			pf64 = (uint64_t)(((int64_t)pf64) + c64); // add or deduct modifiction returned from add_user_generation
+			if (!p64 && pf64 >= DUST_LIMIT_SATS) {
 				// pay extra change > dust limit back to pool, new output at end
-				p64 = _add_txnbin(wb, gentxns, pf64 + c64, sdata->txnbin, sdata->txnlen);
-			} else {
+				p64 = _add_txnbin(wb, gentxns, pf64, sdata->txnbin, sdata->txnlen);
+				ok = true;
+			} else if (p64 && pf64 >= DUST_LIMIT_SATS) {
 				// pay dust back to pool, re-use pool fee output (output 0)
-				*p64 = htole64( le64toh(*p64) + c64 );
+				*p64 = htole64( pf64 );
+				ok = true;
 			}
-			LOGINFO("%"PRId64" sats in change to pool address: %s, total pool payout: %"PRId64" sats", c64, ckp->bchaddress, le64toh(*p64));
-			pf64 += c64; // tally total for correctness below in json
+			if (ok) {
+				LOGINFO("%"PRId64" sats adjustment to pool address: %s, total pool payout now: %1.8f",
+				        c64, ckp->bchaddress, (p64 ? le64toh(*p64) : 0) / (double)SATOSHIS);
+			} else {
+				LOGEMERG("Unexpected state! p64 is %s, c64 is %"PRId64 ", pf64 is %"PRIu64", f64 is %"PRIu64"! FIXME in %s line %d.",
+				         p64 ? "not null" : "NULL", c64, pf64, f64, __FILE__, __LINE__);
+			}
 			c64 = 0;
-		} else if (c64 || (!p64 && f64)) {
+		}
+		if (c64) {
 			// FIXME -- this branch should never be reached because add_user_generation should
 			// have paid dust to largest payee. If we get here it means we couldn't have paid
 			// ourselves (missing pool bchaddress?)
-			if (c64)
-				LOGWARNING("%"PRId64" sats in change left over after generating coinbase outs! FIXME!", c64);
-			if (!p64 && f64)
-				LOGWARNING("%"PRId64" sats in pool fee left over after generating coinbase outs! FIXME!", f64);
+			LOGWARNING("%"PRId64" sats in change left over after generating coinbase outs! FIXME!", c64);
 		}
-		if (p64 && wb->payout) {
+		if (!p64 && pf64)
+			LOGWARNING("%"PRId64" sats in pool fee left over after generating coinbase outs! FIXME!", pf64);
+		if (p64 && pf64 < DUST_LIMIT_SATS)
+			LOGWARNING("%"PRId64" sats in pool fee is below dust limit (%d)! FIXME!", pf64, (int)DUST_LIMIT_SATS);
+		if (wb->payout) {
 			// tabulate this as "pool fee" in json
 			json_set_double(wb->payout, "fee", f64 / (double)SATOSHIS);
-			json_set_double(wb->payout, "net_fee", le64toh(*p64) / (double)SATOSHIS);
+			json_set_double(wb->payout, "net_fee", pf64 / (double)SATOSHIS);
 			json_set_double(wb->payout, "dev_donation", df64 / (double)SATOSHIS);
 		}
 	} else {
@@ -1649,7 +1695,7 @@ static user_instance_t *get_user(sdata_t *sdata, const char *username);
 static void confirm_block(sdata_t *sdata, json_t *blocksolve_val)
 {
 	json_t *payouts, *postponed, *val;
-	double rolling_herp, dreward;
+	double rolling_herp = 0., dreward = 0.;
 	user_instance_t *user;
 	const char *username;
 
@@ -1666,11 +1712,10 @@ static void confirm_block(sdata_t *sdata, json_t *blocksolve_val)
 		user->accumulated = user->postponed = 0;
 	}
 
-	json_get_double(&rolling_herp, blocksolve_val, "herp");
-	json_get_double(&dreward, blocksolve_val, "reward");
-	if (unlikely(rolling_herp <= 0 || dreward <= 0)) {
-		LOGERR("Invalid rolling herp %f dreward %f in confirm_block", rolling_herp,
-			dreward);
+	const bool res1 = json_get_double(&rolling_herp, blocksolve_val, "herp");
+	const bool res2 = json_get_double(&dreward, blocksolve_val, "reward");
+	if (unlikely(rolling_herp <= 0 || dreward <= 0 || !res1 || !res2)) {
+		LOGERR("Invalid rolling herp %f dreward %f in confirm_block", rolling_herp, dreward);
 		return;
 	}
 	dreward *= SATOSHIS;
@@ -5522,6 +5567,9 @@ static void read_userstats(pool_t *ckp, sdata_t *sdata, int tvsec_diff)
 		if (!strcmp(username, "/") || !strcmp(username, ".") || !strcmp(username, ".."))
 			continue;
 
+		if (unlikely(strlen(username) > MAX_USERNAME))
+			username[MAX_USERNAME] = 0;
+
 		new_user = false;
 		user = get_create_user(sdata, username, &new_user);
 		if (unlikely(!new_user)) {
@@ -5645,8 +5693,10 @@ static user_instance_t *__create_user(sdata_t *sdata, const char *username)
 	user_instance_t *user = ckzalloc(sizeof(user_instance_t));
 
 	user->auth_backoff = DEFAULT_AUTH_BACKOFF;
-	strcpy(user->username, username);
+	strncpy(user->username, username, MAX_USERNAME);
+	user->username[MAX_USERNAME] = 0; // ensure NUL
 	user->id = ++sdata->user_instance_id;
+	user->fee_discount = username_get_fee_discount(sdata->ckp, username); // set fee_discount now -- this never changes once set
 	HASH_ADD_STR(sdata->user_instances, username, user);
 	return user;
 }
@@ -5690,7 +5740,7 @@ static user_instance_t *get_create_user(sdata_t *sdata, const char *username, bo
 		user->herp = user->lns = 0.1;
 	}
 
-	/* Is this a btc address based username? */
+	/* Is this a bch address based username? */
 	if (!ckp->proxy && (*new_user || !user->bchaddress)) {
 		user->bchaddress = generator_checkaddr(ckp, username, &user->script);
 		if (user->bchaddress) {
@@ -5778,8 +5828,8 @@ static user_instance_t *generate_user(pool_t *ckp, stratum_instance_t *client,
 	if (!username || !strlen(username))
 		username = base_username;
 	len = strlen(username);
-	if (unlikely(len > 127))
-		username[127] = '\0';
+	if (unlikely(len > MAX_USERNAME))
+		username[MAX_USERNAME] = 0;
 
 	user = get_create_user(sdata, username, &new_user);
 	worker = get_create_worker(sdata, user, workername, &new_worker);

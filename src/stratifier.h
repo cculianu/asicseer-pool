@@ -21,6 +21,8 @@
 #define HARDCODED_COINBASE_SUFFIX_STR "BCHN"
 #define MAX_USER_COINBASE_LEN 16 /* The max length of user bchsig portion */
 
+#define MAX_USERNAME 127 /* The max length of a username. Used in internal struct user_instance_t */
+
 /* Generic structure for both workbase in stratifier and gbtbase in generator */
 struct genwork {
 	/* Hash table data */

@@ -141,6 +141,16 @@ typedef struct mindiff_override {
 	int64_t mindiff;
 } mindiff_override_t;
 
+// Comes from config as "fee_discounts", which is a dict.
+// e.g.: "fee_discounts" : { "username" : 0.25, "anotherusername" : 0.0 }
+typedef struct user_fee_discount {
+	UT_hash_handle hh;
+	// The username specified in config
+	const char *username;
+	// A value between [0.0, 1.0] where 0.0 = no discount, 1.0 = full discount
+	double discount;
+} user_fee_discount_t;
+
 struct pool_instance {
 	/* Start time */
 	time_t starttime;
@@ -256,6 +266,8 @@ struct pool_instance {
 
 	const mindiff_override_t *mindiff_overrides; // Taken from top-level "mindiff_overrides" : { ... } in config.
 	size_t n_mindiff_overrides; // The number of mindiff_override in the above array. Will be 0 if array is NULL.
+
+	user_fee_discount_t *user_fee_discounts; // Hash table, comes from config "fee_discounts". NULL if table is empty.
 
 	/* Which chain are we on: "main", "test", or "regtest". Defaults to "main" but may be read
 	   from bitcoind and updated if !proxy instance.
@@ -429,5 +441,9 @@ static inline int64_t subclient(const int64_t client_id)
 {
 	return (client_id >> 32);
 }
+
+// Returns a value from 0.0 (no discount) to 1.0 (full discount) for a particular
+// username.  This is set in the config file as a dict named "fee_discounts".
+extern double username_get_fee_discount(pool_t *ckp, const char *username);
 
 #endif /* ASICSEER_POOL_H */

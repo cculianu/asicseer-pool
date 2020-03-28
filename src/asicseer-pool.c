@@ -1523,6 +1523,47 @@ static void parse_mindiff_overrides(pool_t *ckp, json_t *obj, const size_t n_key
 		dealloc(arr); // none parsed, just free memory for the pre-allocated array.
 }
 
+static void parse_fee_discounts(pool_t *ckp, json_t *obj, const size_t n_keys)
+{
+	if (!n_keys || !obj || !ckp) return; // paranoia
+	for (void *it = json_object_iter(obj); it; it = json_object_iter_next(obj, it)) {
+		const char * const username = json_object_iter_key(it);
+		const json_t * const jval = json_object_iter_value(it);
+		double discount = -1.;
+		if (json_is_real(jval))
+			discount = json_real_value(jval);
+		if (discount < 0.0 || discount > 1.0 || !username || !*username) {
+			quit(1, "fee_discounts: Bad entry \"%s\". Fix your config file!", username ? : "");
+		}
+		user_fee_discount_t *ufd = NULL;
+		HASH_FIND_STR(ckp->user_fee_discounts, username, ufd);
+		if (ufd) {
+			quit(1, "fee_discounts: Dupe entry \"%s\". Fix your config file!", username);
+		}
+
+		ufd = ckzalloc(sizeof(user_fee_discount_t));
+		ufd->username = strdup(username);
+		ufd->discount = discount;
+		HASH_ADD_STR(ckp->user_fee_discounts, username, ufd);
+		LOGDEBUG("fee_discounts: Parsed discount \"%s\" -> %0.3f", username, discount);
+	}
+}
+
+// Returns a value from 0.0 (no discount) to 1.0 (full discount) for a particular
+// username.  This is set in the config file as a dict named "fee_discounts".
+// Called by stratifier.c when creating a user_instance_t.
+double username_get_fee_discount(pool_t *ckp, const char *username)
+{
+	double discount = 0.;
+	user_fee_discount_t *ufd = NULL;
+	HASH_FIND_STR(ckp->user_fee_discounts, username, ufd);
+	if (ufd) {
+		discount = ufd->discount;
+		LOGDEBUG("fee_discounts: User \"%s\" has discount: %0.3f", username, discount);
+	}
+	return discount;
+}
+
 static void parse_config(pool_t *ckp)
 {
 	json_t *json_conf, *arr_val;
@@ -1598,7 +1639,18 @@ static void parse_config(pool_t *ckp)
 			}
 		}
 	}
-
+	{
+		// parse fee_discounts
+		json_t * obj = json_object_get(json_conf, "fee_discounts");
+		if (obj) {
+			size_t n_keys = 0;
+			if (!json_is_object(obj)) {
+				LOGWARNING("\"fee_discounts\" invalid, expected object, e.g. { ... } ");
+			} else if ((n_keys = json_object_size(obj))) {
+				parse_fee_discounts(ckp, obj, n_keys);
+			}
+		}
+	}
 	json_get_string(&ckp->logdir, json_conf, "logdir");
 	json_get_int(&ckp->maxclients, json_conf, "maxclients");
 	arr_val = json_object_get(json_conf, "proxy");
