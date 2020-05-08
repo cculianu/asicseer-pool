@@ -822,7 +822,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 		// ensure that what follows is <253 bytes total for the buffer otherwise bad things
 		// may happen because we assume 1 byte for length of this thing.
 		// TODO: use ser_number and/or see if this matters. -Calin
-		int spaceLeft = 253 - len;
+		int spaceLeft = 252 - len;
 		char cbprefix[] = "#/" HARDCODED_COINBASE_PREFIX_STR " ";
 		static const char cbsuffix[] = HARDCODED_COINBASE_SUFFIX_STR "/";
 		static const size_t cbsuffix_len = sizeof(cbsuffix)-1;
