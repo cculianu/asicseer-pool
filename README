@@ -1,4 +1,5 @@
 ASICseer Pool
+Maintained by: Calin Culianu <calin.culianu@gmail.com>
 
 Ultra low overhead massively scalable multi-process, multi-threaded modular
 Bitcoin Cash mining pool, proxy, passthrough, library and database interface in

@@ -818,30 +818,54 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 
 	wb->coinb2bin = ckzalloc(512 + cbspace);
 	{
-		static const char cbprefix[] = "#/" HARDCODED_COINBASE_PREFIX_STR " ";
+		// ensure that what follows is <253 bytes total for the buffer otherwise bad things
+		// may happen because we assume 1 byte for length of this thing.
+		// TODO: use ser_number and/or see if this matters. -Calin
+		int spaceLeft = 253 - len;
+		char cbprefix[] = "#/" HARDCODED_COINBASE_PREFIX_STR " ";
 		static const char cbsuffix[] = HARDCODED_COINBASE_SUFFIX_STR "/";
-		static const size_t cbprefix_len = sizeof(cbprefix)-1, cbsuffix_len = sizeof(cbsuffix)-1;
-		memcpy(wb->coinb2bin, cbprefix, cbprefix_len);
-		wb->coinb2len = cbprefix_len;
-		if (ckp->bchsig) {
+		static const size_t cbsuffix_len = sizeof(cbsuffix)-1;
+		size_t cbprefix_len = sizeof(cbprefix)-1;
+		if (!*HARDCODED_COINBASE_PREFIX_STR) {
+			// prefix string is empty, cut off the hard-coded trailing space
+			cbprefix[--cbprefix_len] = 0;
+		}
+		int n = MIN(cbprefix_len, spaceLeft);
+		if (n > 0) {
+			memcpy(wb->coinb2bin, cbprefix, n);
+			wb->coinb2len = n;
+			spaceLeft -= n;
+		}
+		if (ckp->bchsig && spaceLeft > 0) {
 			const int siglen = strlen(ckp->bchsig);
+			const int len2write = MIN(siglen, spaceLeft);
 
-			LOGDEBUG("Len %d sig %s", siglen, ckp->bchsig);
-			if (siglen) {
-				memcpy(wb->coinb2bin + wb->coinb2len, ckp->bchsig, siglen);
-				wb->coinb2len += siglen;
-				wb->coinb2bin[wb->coinb2len++] = ' '; // add a space for suffix
+			LOGDEBUG("Len %d sig %s", len2write, ckp->bchsig);
+			if (len2write > 0) {
+				memcpy(wb->coinb2bin + wb->coinb2len, ckp->bchsig, len2write);
+				wb->coinb2len += len2write;
+				spaceLeft -= len2write;
+				if (*HARDCODED_COINBASE_SUFFIX_STR && spaceLeft > 0) {
+					wb->coinb2bin[wb->coinb2len++] = ' '; // add a space for non-empty suffix
+					--spaceLeft;
+				}
 			}
 		}
-		memcpy(wb->coinb2bin + wb->coinb2len, cbsuffix, cbsuffix_len);
-		wb->coinb2len += cbsuffix_len;
-		// mark length at beginning of text just before first '/', just to be sure
+		n = MIN(cbsuffix_len, spaceLeft);
+		if (n > 0) {
+			memcpy(wb->coinb2bin + wb->coinb2len, cbsuffix, n);
+			wb->coinb2len += cbsuffix_len;
+			spaceLeft -= n;
+		}
+		// mark length at beginning of text just before first '/', just to be sure.
+		// TODO: ser_number here?
 		wb->coinb2bin[0] = (uchar)(wb->coinb2len-1);
+		LOGDEBUG("Final coinbase: %.*s", wb->coinb2len-1, wb->coinb2bin+1);
 	}
 	len += wb->coinb2len;
 
-
-	wb->coinb1bin[41] = len - 1; /* Set the length now */
+	// TODO: ser_number here?
+	wb->coinb1bin[41] = len - 1; /* Set the length now  */
 	__bin2hex(wb->coinb1, wb->coinb1bin, wb->coinb1len);
 	LOGDEBUG("Coinb1: %s", wb->coinb1);
 	/* Coinbase 1 complete */
@@ -9508,7 +9532,7 @@ void normalize_bchsig(char *s)
 	memset(buf, 0, MAX_USER_COINBASE_LEN + 1);
 	if (!s || !*s)
 		return;
-	for (i = 0; isspace(s[i]) || s[i] == '/'; ++i)
+	for (i = 0; s[i] && (isspace(s[i]) || s[i] == '/'); ++i)
 		; /* ffwd past leading whitespace and '/' */
 	for (j = 0; j < MAX_USER_COINBASE_LEN && s[i]; ++i) {
 		if (s[i] == '/')
@@ -9518,7 +9542,7 @@ void normalize_bchsig(char *s)
 	while (j > 0 && isspace(buf[j-1])) // strip trailing whitespace
 		--j;
 	buf[j] = 0; // truncate string in case loop above decremented j
-	strncpy(s, buf, MAX_USER_COINBASE_LEN + 1); // this is guaranteed to be terminated with NUL here.
+	strncpy(s, buf, j + 1); // this is guaranteed to be terminated with NUL here.
 }
 
 static bool get_chain_and_prefix(pool_t *ckp)
