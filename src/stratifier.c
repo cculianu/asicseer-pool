@@ -817,6 +817,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 	len += wb->enonce2varlen;
 
 	wb->coinb2bin = ckzalloc(512 + cbspace);
+	wb->coinb2len = 0;
 	{
 		// ensure that what follows is <253 bytes total for the buffer otherwise bad things
 		// may happen because we assume 1 byte for length of this thing.
@@ -833,14 +834,14 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 		int n = MIN(cbprefix_len, spaceLeft);
 		if (n > 0) {
 			memcpy(wb->coinb2bin, cbprefix, n);
-			wb->coinb2len = n;
+			wb->coinb2len += n;
 			spaceLeft -= n;
 		}
 		if (ckp->bchsig && spaceLeft > 0) {
 			const int siglen = strlen(ckp->bchsig);
 			const int len2write = MIN(siglen, spaceLeft);
 
-			LOGDEBUG("Len %d sig %s", len2write, ckp->bchsig);
+			LOGDEBUG("Len %d sig: %s", len2write, ckp->bchsig);
 			if (len2write > 0) {
 				memcpy(wb->coinb2bin + wb->coinb2len, ckp->bchsig, len2write);
 				wb->coinb2len += len2write;
@@ -854,13 +855,13 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 		n = MIN(cbsuffix_len, spaceLeft);
 		if (n > 0) {
 			memcpy(wb->coinb2bin + wb->coinb2len, cbsuffix, n);
-			wb->coinb2len += cbsuffix_len;
+			wb->coinb2len += n;
 			spaceLeft -= n;
 		}
 		// mark length at beginning of text just before first '/', just to be sure.
 		// TODO: ser_number here?
 		wb->coinb2bin[0] = (uchar)(wb->coinb2len-1);
-		LOGDEBUG("Final coinbase: %.*s", wb->coinb2len-1, wb->coinb2bin+1);
+		LOGDEBUG("CB text: %.*s", wb->coinb2len-1, wb->coinb2bin+1);
 	}
 	len += wb->coinb2len;
 
