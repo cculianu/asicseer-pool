@@ -2262,7 +2262,7 @@ static void *proxy_recv(void *arg)
 		bool message = false, hup = false;
 		share_msg_t *share, *tmpshare;
 		notify_instance_t *ni, *tmp;
-		float timeout;
+		float timeout = 0;
 		time_t now;
 		int ret;
 
