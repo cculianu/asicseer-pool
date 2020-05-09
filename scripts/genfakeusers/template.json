@@ -1,0 +1,34 @@
+{
+ "hashrate1m": "0",
+ "hashrate5m": "0",
+ "hashrate1hr": "53.4G",
+ "hashrate1d": "47.8G",
+ "hashrate7d": "266G",
+ "lastshare": 1588969959,
+ "workers": 0,
+ "shares": 150000,
+ "bestshare": 71889.0,
+ "lns": 598.0750379589948,
+ "luck": 0.97,
+ "accumulated": 0.0,
+ "postponed": 0,
+ "herp": 581.465699216263,
+ "derp": 0.353124,
+ "worker": [
+  {
+   "workername": "qzs7eqaz2mcxj7sqd06lp0segflhp83sdc4j3reyht.glxjhx57",
+   "hashrate1m": "0",
+   "hashrate5m": "0",
+   "hashrate1hr": "53.4G",
+   "hashrate1d": "47.8G",
+   "hashrate7d": "266G",
+   "lastshare": 1588969959,
+   "shares": 150000,
+   "bestshare": 71889.0,
+   "lns": 598.0750379589948,
+   "luck": 0.97,
+   "herp": 581.465699216263
+  }
+ ]
+}
+
