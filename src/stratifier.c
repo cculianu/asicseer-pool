@@ -851,7 +851,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 			// Add user sig text. Note: we limit its size to what's left over after accounting for the
 			// prefix and suffix strings.
 			const bool hasSuffix = *HARDCODED_COINBASE_SUFFIX_STR;
-			const int sigSpace = spaceLeft - (int)cbsuffix_len - (hasSuffix ? 1 : 0);
+			const int sigSpace = spaceLeft - cbsuffix_len - (hasSuffix ? 1 : 0);
 			if (ckp->bchsig && sigSpace > 0) {
 				const int siglen = strlen(ckp->bchsig);
 				n = MIN(siglen, sigSpace);
