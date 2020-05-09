@@ -45,6 +45,7 @@ static uchar scriptsig_header_bin[41];
 #define MAX_COINBASE_SCRIPTSIG_LEN 100 /* BCH consensus rule -- scriptsig cannot exceed 100 bytes */
 #define TX_RESERVE_SIZE (41 + 1 + MAX_COINBASE_SCRIPTSIG_LEN + 4 + 1 + 2 + 4)
 #define MAX_CB_SPACE (MAX_COINBASE_TX_LEN - TX_RESERVE_SIZE)
+#define MAX_CB_FLAGS_LEN 4 /* The maximum number of coinbauseaux["flags"] bytes we write to our scriptsig */
 static const double nonces = 4294967296;
 
 #define HERP_N		5 /* 5 * network diff SPLNS */
@@ -798,8 +799,10 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 	len = ser_number(wb->coinb1bin + ofs, wb->height);
 	ofs += len;
 
-	/* Followed by flag */
+	/* Followed by flags (comes from gbt["coinbaseaux"]["flags"]) -- usually empty (0 bytes) */
 	len = strlen(wb->flags) / 2;
+	if (len > MAX_CB_FLAGS_LEN)
+		len = MAX_CB_FLAGS_LEN;
 	wb->coinb1bin[ofs++] = len;
 	hex2bin(wb->coinb1bin + ofs, wb->flags, len);
 	ofs += len;
@@ -829,12 +832,12 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 	{
 		// ensure that what follows is <=100 bytes total for the scriptsig otherwise
 		// block will be rejected as per BCH consensus rules.
-		int spaceLeft = MAX_COINBASE_SCRIPTSIG_LEN - len + 1;
+		int spaceLeft = MAX_COINBASE_SCRIPTSIG_LEN - len + 1; // <-- +1 here is because 'len' accounts for the scriptsig length byte, which is not counted towards the 100-byte total
 		char cbprefix[] = "#/" HARDCODED_COINBASE_PREFIX_STR " ";
 		static const char cbsuffix[] = HARDCODED_COINBASE_SUFFIX_STR "/";
-		static const size_t cbsuffix_len = sizeof(cbsuffix)-1;
-		size_t cbprefix_len = sizeof(cbprefix)-1;
-		if (!*HARDCODED_COINBASE_PREFIX_STR) {
+		static const int cbsuffix_len = sizeof(cbsuffix)-1;
+		int cbprefix_len = sizeof(cbprefix)-1;
+		if (!*HARDCODED_COINBASE_PREFIX_STR && cbprefix_len) {
 			// prefix string is empty, cut off the hard-coded trailing space
 			cbprefix[--cbprefix_len] = 0;
 		}
@@ -844,18 +847,24 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 			wb->coinb2len += n;
 			spaceLeft -= n;
 		}
-		if (ckp->bchsig && spaceLeft > 0) {
-			const int siglen = strlen(ckp->bchsig);
-			n = MIN(siglen, spaceLeft);
+		{
+			// Add user sig text. Note: we limit its size to what's left over after accounting for the
+			// prefix and suffix strings.
+			const bool hasSuffix = *HARDCODED_COINBASE_SUFFIX_STR;
+			const int sigSpace = spaceLeft - (int)cbsuffix_len - (hasSuffix ? 1 : 0);
+			if (ckp->bchsig && sigSpace > 0) {
+				const int siglen = strlen(ckp->bchsig);
+				n = MIN(siglen, sigSpace);
 
-			LOGDEBUG("Len %d sig: %s", n, ckp->bchsig);
-			if (n > 0) {
-				memcpy(wb->coinb2bin + wb->coinb2len, ckp->bchsig, n);
-				wb->coinb2len += n;
-				spaceLeft -= n;
-				if (*HARDCODED_COINBASE_SUFFIX_STR && spaceLeft > 0) {
-					wb->coinb2bin[wb->coinb2len++] = ' '; // add a space for non-empty suffix
-					--spaceLeft;
+				LOGDEBUG("Len %d sig: \"%s\"", n, ckp->bchsig);
+				if (n > 0) {
+					memcpy(wb->coinb2bin + wb->coinb2len, ckp->bchsig, n);
+					wb->coinb2len += n;
+					spaceLeft -= n;
+					if (hasSuffix && spaceLeft > 0) {
+						wb->coinb2bin[wb->coinb2len++] = ' '; // add a space for non-empty suffix
+						--spaceLeft;
+					}
 				}
 			}
 		}
@@ -867,11 +876,18 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 		}
 		// mark length at beginning of text just before first '/', just to be sure.
 		wb->coinb2bin[0] = (uchar)(wb->coinb2len-1);
-		LOGDEBUG("CB text: %.*s", wb->coinb2len-1, wb->coinb2bin+1);
+		LOGDEBUG("CB text: \"%.*s\"", wb->coinb2len-1, wb->coinb2bin+1);
 	}
 	len += wb->coinb2len;
 
 	wb->coinb1bin[41] = (uchar)(len - 1); /* Set the length now - always 1 byte (length is always <=100) */
+	if (unlikely(wb->coinb1bin[41] > MAX_COINBASE_SCRIPTSIG_LEN)) {
+		// Paranoia: This should never happen. But if it does, we need to quit ASAP since mining will break.
+		// User may need to adjust config and/or contact devs.
+		quit(1, "INTERNAL ERROR: Max coinbase scriptsig length is %d, but we generated a scriptsig of "
+		     "%d bytes.  File: %s, line: %d", (int)MAX_COINBASE_SCRIPTSIG_LEN, (int)(wb->coinb1bin[41]),
+		     __FILE__, (int)__LINE__);
+	}
 	__bin2hex(wb->coinb1, wb->coinb1bin, wb->coinb1len);
 	LOGDEBUG("Coinb1: %s", wb->coinb1);
 	/* Coinbase 1 complete */
@@ -2628,7 +2644,7 @@ static void submit_node_block(pool_t *ckp, sdata_t *sdata, json_t *val)
 
 	/* Get parameters if upstream pool supports them with new format */
 	json_get_string(&coinbasehex, val, "coinbasehex");
-	json_get_int(&cblen, val, "cblen");
+	json_get_int(&cblen, val, "cblen"); // TODO: enforce 1MB coinbase tx length here?
 	json_get_string(&swaphex, val, "swaphex");
 	if (coinbasehex && cblen && swaphex) {
 		uchar hash1[32];
@@ -2649,6 +2665,8 @@ static void submit_node_block(pool_t *ckp, sdata_t *sdata, json_t *val)
 		share_diff(coinbase, enonce1bin, wb, nonce2, ntime32, version_mask, nonce, hash, swap, &cblen);
 	}
 
+	// TODO: Enforce 32MB block size limit here?
+
 	/* Now we have enough to assemble a block */
 	gbt_block = process_block(wb, coinbase, cblen, swap, hash, flip32, blockhash);
 	ret = local_block_submit(ckp, gbt_block, flip32, wb->height);
@@ -2660,7 +2678,7 @@ static void submit_node_block(pool_t *ckp, sdata_t *sdata, json_t *val)
 			 "workinfoid", wb->id,
 			 "enonce1", enonce1,
 			 "nonce2", nonce2,
-		         "version_mask", version_mask,
+			 "version_mask", version_mask,
 			 "nonce", nonce,
 			 "reward", wb->coinbasevalue,
 			 "diff", diff,
