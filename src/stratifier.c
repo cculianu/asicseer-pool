@@ -41,6 +41,10 @@
 static const char *workpadding = "000000800000000000000000000000000000000000000000000000000000000000000000000000000000000080020000";
 static const char *scriptsig_header = "01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff";
 static uchar scriptsig_header_bin[41];
+#define MAX_COINBASE_TX_LEN 1000000 /* =1MB Maximum size of a coinbase tx in bytes, total. BCH consensus rule. */
+#define MAX_COINBASE_SCRIPTSIG_LEN 100 /* BCH consensus rule -- scriptsig cannot exceed 100 bytes */
+#define TX_RESERVE_SIZE (41 + 1 + MAX_COINBASE_SCRIPTSIG_LEN + 4 + 2 + 4)
+#define MAX_CB_SPACE (MAX_COINBASE_TX_LEN - TX_RESERVE_SIZE)
 static const double nonces = 4294967296;
 
 #define HERP_N		5 /* 5 * network diff SPLNS */
@@ -48,9 +52,13 @@ static const double nonces = 4294967296;
 #define DERP_DUST	5460 /* Minimum DERP to get onto payout list */
 #define PAYOUT_DUST	DUST_LIMIT_SATS /* Minimum payout not dust -- currently 546 sats */
 #define DERP_SPACE	1000 /* Minimum derp to warrant leaving coinbase space */
-#define PAYOUT_USERS	100 /* Number of top users that get reward each block */
-#define PAYOUT_REWARDS	150 /* Max number of users rewarded each block */
+#define PAYOUT_USERS	4000 /* Number of top users that get reward each block */
+#define PAYOUT_REWARDS	5000 /* Max number of users rewarded each block */
 #define SATOSHIS	100000000 /* Satoshi to a BTC */
+
+#if PAYOUT_REWARDS * CBGENLEN > MAX_CB_SPACE
+#error Please set PAYOUT_REWARDS to fit inside a coinbase tx (MAX_CB_SPACE)!
+#endif
 
 typedef struct json_entry json_entry_t;
 typedef struct generation generation_t;
@@ -819,10 +827,9 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 	wb->coinb2bin = ckzalloc(512 + cbspace);
 	wb->coinb2len = 0;
 	{
-		// ensure that what follows is <253 bytes total for the buffer otherwise bad things
-		// may happen because we assume 1 byte for length of this thing.
-		// TODO: use ser_number and/or see if this matters. -Calin
-		int spaceLeft = 252 - len;
+		// ensure that what follows is <=100 bytes total for the scriptsig otherwise
+		// block will be rejected as per BCH consensus rules.
+		int spaceLeft = MAX_COINBASE_SCRIPTSIG_LEN - len + 1;
 		char cbprefix[] = "#/" HARDCODED_COINBASE_PREFIX_STR " ";
 		static const char cbsuffix[] = HARDCODED_COINBASE_SUFFIX_STR "/";
 		static const size_t cbsuffix_len = sizeof(cbsuffix)-1;
@@ -833,19 +840,19 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 		}
 		int n = MIN(cbprefix_len, spaceLeft);
 		if (n > 0) {
-			memcpy(wb->coinb2bin, cbprefix, n);
+			memcpy(wb->coinb2bin + wb->coinb2len, cbprefix, n);
 			wb->coinb2len += n;
 			spaceLeft -= n;
 		}
 		if (ckp->bchsig && spaceLeft > 0) {
 			const int siglen = strlen(ckp->bchsig);
-			const int len2write = MIN(siglen, spaceLeft);
+			n = MIN(siglen, spaceLeft);
 
-			LOGDEBUG("Len %d sig: %s", len2write, ckp->bchsig);
-			if (len2write > 0) {
-				memcpy(wb->coinb2bin + wb->coinb2len, ckp->bchsig, len2write);
-				wb->coinb2len += len2write;
-				spaceLeft -= len2write;
+			LOGDEBUG("Len %d sig: %s", n, ckp->bchsig);
+			if (n > 0) {
+				memcpy(wb->coinb2bin + wb->coinb2len, ckp->bchsig, n);
+				wb->coinb2len += n;
+				spaceLeft -= n;
 				if (*HARDCODED_COINBASE_SUFFIX_STR && spaceLeft > 0) {
 					wb->coinb2bin[wb->coinb2len++] = ' '; // add a space for non-empty suffix
 					--spaceLeft;
@@ -859,19 +866,17 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 			spaceLeft -= n;
 		}
 		// mark length at beginning of text just before first '/', just to be sure.
-		// TODO: ser_number here?
 		wb->coinb2bin[0] = (uchar)(wb->coinb2len-1);
 		LOGDEBUG("CB text: %.*s", wb->coinb2len-1, wb->coinb2bin+1);
 	}
 	len += wb->coinb2len;
 
-	// TODO: ser_number here?
-	wb->coinb1bin[41] = len - 1; /* Set the length now  */
+	wb->coinb1bin[41] = (uchar)(len - 1); /* Set the length now - always 1 byte (length is always <=100) */
 	__bin2hex(wb->coinb1, wb->coinb1bin, wb->coinb1len);
 	LOGDEBUG("Coinb1: %s", wb->coinb1);
 	/* Coinbase 1 complete */
 
-	memcpy(wb->coinb2bin + wb->coinb2len, "\xff\xff\xff\xff", 4);
+	memcpy(wb->coinb2bin + wb->coinb2len, "\xff\xff\xff\xff", 4); // sequence
 	wb->coinb2len += 4;
 
 	gentxns = (uint64_t *)&wb->coinb2bin[wb->coinb2len++];
@@ -5559,6 +5564,14 @@ static user_instance_t *get_create_user(sdata_t *sdata, const char *username, bo
 static worker_instance_t *get_create_worker(sdata_t *sdata, user_instance_t *user,
 					    const char *workername, bool *new_worker);
 
+static int __clamp_cbspace(int cbspace)
+{
+	if (cbspace > MAX_CB_SPACE) {
+		cbspace = (MAX_CB_SPACE / CBGENLEN) * CBGENLEN;
+	}
+	return MAX(cbspace, 0);
+}
+
 /* Load the statistics of and create all known users at startup */
 static void read_userstats(pool_t *ckp, sdata_t *sdata, int tvsec_diff)
 {
@@ -5705,7 +5718,7 @@ static void read_userstats(pool_t *ckp, sdata_t *sdata, int tvsec_diff)
 	if (!sdata->stats.rolling_lns)
 		sdata->stats.rolling_lns = 0.1;
 	/* Start out with more than enough space */
-	sdata->stats.cbspace = users * CBGENLEN;
+	sdata->stats.cbspace = __clamp_cbspace(users * CBGENLEN);
 
 	if (likely(users))
 		LOGWARNING("Loaded %d users and %d workers", users, workers);
@@ -9155,8 +9168,8 @@ static void *statsupdate(void *arg)
 
 		calc_user_paygens(sdata);
 
-		LOGINFO("Leaving %d bytes free in coinbase for user txn generation",
-			cbspace);
+		cbspace = __clamp_cbspace(cbspace);
+		LOGINFO("Leaving %d bytes free in coinbase for user txn generation", cbspace);
 
 		mutex_lock(&sdata->stats_lock);
 		stats->cbspace = cbspace;
