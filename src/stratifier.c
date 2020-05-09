@@ -53,8 +53,8 @@ static const double nonces = 4294967296;
 #define DERP_DUST	5460 /* Minimum DERP to get onto payout list */
 #define PAYOUT_DUST	DUST_LIMIT_SATS /* Minimum payout not dust -- currently 546 sats */
 #define DERP_SPACE	1000 /* Minimum derp to warrant leaving coinbase space */
-#define PAYOUT_USERS	4000 /* Number of top users that get reward each block */
-#define PAYOUT_REWARDS	5000 /* Max number of users rewarded each block */
+#define PAYOUT_USERS	100 /* Number of top users that get reward each block */
+#define PAYOUT_REWARDS	150 /* Max number of users rewarded each block */
 #define SATOSHIS	100000000 /* Satoshi to a BTC */
 
 #if PAYOUT_REWARDS * CBGENLEN > MAX_CB_SPACE
