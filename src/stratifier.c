@@ -43,7 +43,7 @@ static const char *scriptsig_header = "01000000010000000000000000000000000000000
 static uchar scriptsig_header_bin[41];
 #define MAX_COINBASE_TX_LEN 1000000 /* =1MB Maximum size of a coinbase tx in bytes, total. BCH consensus rule. */
 #define MAX_COINBASE_SCRIPTSIG_LEN 100 /* BCH consensus rule -- scriptsig cannot exceed 100 bytes */
-#define TX_RESERVE_SIZE (41 + 1 + MAX_COINBASE_SCRIPTSIG_LEN + 4 + 2 + 4)
+#define TX_RESERVE_SIZE (41 + 1 + MAX_COINBASE_SCRIPTSIG_LEN + 4 + 1 + 2 + 4)
 #define MAX_CB_SPACE (MAX_COINBASE_TX_LEN - TX_RESERVE_SIZE)
 static const double nonces = 4294967296;
 
