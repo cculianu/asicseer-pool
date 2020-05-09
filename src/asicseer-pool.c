@@ -1788,6 +1788,7 @@ int main(int argc, char **argv)
 	json_set_alloc_funcs(json_ckalloc, free);
 
 	global_ckp = &ckp;
+	global_loglevel_ptr = &ckp.loglevel; // set the pointer to suppress verbose logs efficiently
 	memset(&ckp, 0, sizeof(ckp));
 	ckp.starttime = time(NULL);
 	ckp.startpid = getpid();

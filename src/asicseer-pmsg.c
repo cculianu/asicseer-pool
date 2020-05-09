@@ -192,6 +192,8 @@ int main(int argc, char **argv)
 	int c, count, i = 0, j;
 	char stamp[128];
 
+	global_loglevel_ptr = &msg_loglevel;
+
 	tcgetattr(STDIN_FILENO, &oldctrl);
 
 	while ((c = getopt_long(argc, argv, "chl:N:n:ps:t:T:", long_options, &i)) != -1) {

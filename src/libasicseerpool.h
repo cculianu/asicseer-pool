@@ -203,17 +203,27 @@ static inline void flip_80(void *dest_p, const void *src_p)
 		quitfrom(1, __FILE__, __func__, __LINE__, "Failed to asprintf"); \
 } while (0)
 
+/// This pointer starts out NULL. Set it to point to your global_ckp->loglevel
+/// int order to use global loglevel suppression at the macro level,
+/// in order to avoid evaluating macro arguments if the global loglevel is below
+/// the message level.
+extern const int *global_loglevel_ptr;
+#define SHOULD_EVALUATE_LOGMSG(lvl) (!global_loglevel_ptr || lvl <= *global_loglevel_ptr)
+
 void logmsg(int loglevel, const char *fmt, ...);
 
 #define DEFLOGBUFSIZ 1000
 
 #define LOGMSGBUF(__lvl, __buf) do { \
-		logmsg(__lvl, "%s", __buf); \
+		if (SHOULD_EVALUATE_LOGMSG(__lvl)) \
+			logmsg(__lvl, "%s", __buf); \
 	} while(0)
 #define LOGMSGSIZ(__siz, __lvl, __fmt, ...) do { \
-		char tmp42[__siz]; \
-		snprintf(tmp42, sizeof(tmp42), __fmt, ##__VA_ARGS__); \
-		logmsg(__lvl, "%s", tmp42); \
+		if (SHOULD_EVALUATE_LOGMSG(__lvl)) { \
+			char tmp42[__siz]; \
+			snprintf(tmp42, sizeof(tmp42), __fmt, ##__VA_ARGS__); \
+			logmsg(__lvl, "%s", tmp42); \
+		} \
 	} while(0)
 
 #define LOGMSG(_lvl, _fmt, ...) \
@@ -595,6 +605,7 @@ void ms_to_ts(ts_t *spec, int64_t ms);
 void ms_to_tv(tv_t *val, int64_t ms);
 void tv_time(tv_t *tv);
 void ts_realtime(ts_t *ts);
+int64_t time_micros(void);
 
 void cksleep_prepare_r(ts_t *ts);
 void nanosleep_abstime(ts_t *ts_end);

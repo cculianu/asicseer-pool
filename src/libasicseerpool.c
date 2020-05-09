@@ -46,6 +46,8 @@
 #define UNIX_PATH_MAX 108
 #endif
 
+const int *global_loglevel_ptr = NULL; /// used by macros if set
+
 /* We use a weak function as a simple printf within the library that can be
  * overridden by however the outside executable wishes to do its logging. */
 void __attribute__((weak)) logmsg(int __maybe_unused loglevel, const char *fmt, ...)
@@ -1957,6 +1959,14 @@ void ts_realtime(ts_t *ts)
 {
 	clock_gettime(CLOCK_REALTIME, ts);
 }
+
+int64_t time_micros(void)
+{
+	ts_t ts;
+	ts_realtime(&ts);
+	return ts.tv_sec * 1000000L + ts.tv_nsec / 1000L;
+}
+
 
 void cksleep_prepare_r(ts_t *ts)
 {

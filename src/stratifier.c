@@ -56,7 +56,7 @@ static const double nonces = 4294967296;
 #define PAYOUT_USERS	100 /* Number of top users that get reward each block */
 #define PAYOUT_REWARDS	150 /* Max number of users rewarded each block */
 #define SATOSHIS	100000000 /* Satoshi to a BTC */
-
+#define CB_LEAN_SCRIPTSIG 1 /* if true, only put minimal data into cb script sig */
 #if PAYOUT_REWARDS * CBGENLEN > MAX_CB_SPACE
 #error Please set PAYOUT_REWARDS to fit inside a coinbase tx (MAX_CB_SPACE)!
 #endif
@@ -772,13 +772,14 @@ skip:
 	return total;
 }
 
+/// This is called in a serialized context (form a ckmsgq)
 static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 {
+	const int64_t t0 = time_micros();
 	uint64_t *p64 = NULL, g64 = 0, f64 = 0, pf64 = 0, df64 = 0, *gentxns = NULL;
 	sdata_t *sdata = ckp->sdata;
 	int len, ofs = 0, cbspace;
 	char header[228];
-	ts_t now;
 
 	mutex_lock(&sdata->stats_lock);
 	cbspace = sdata->stats.cbspace;
@@ -795,10 +796,11 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 
 	ofs++; // Script length is filled in at the end @wb->coinb1bin[41];
 
-	/* Put block height at start of template */
+	/* Put block height at start of template (consensus rule) */
 	len = ser_number(wb->coinb1bin + ofs, wb->height);
 	ofs += len;
 
+#if !CB_LEAN_SCRIPTSIG
 	/* Followed by flags (comes from gbt["coinbaseaux"]["flags"]) -- usually empty (0 bytes) */
 	len = strlen(wb->flags) / 2;
 	if (len > MAX_CB_FLAGS_LEN)
@@ -808,6 +810,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 	ofs += len;
 
 	/* Followed by timestamp */
+	ts_t now;
 	ts_realtime(&now);
 	len = ser_number(wb->coinb1bin + ofs, now.tv_sec);
 	ofs += len;
@@ -815,9 +818,18 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 	/* Followed by our unique randomiser based on the nsec timestamp */
 	len = ser_number(wb->coinb1bin + ofs, now.tv_nsec);
 	ofs += len;
+#else
+	// LEAN mode: just write the current time in micros directly
+	len = sizeof(t0);
+	memcpy(wb->coinb1bin + ofs, &t0, len);
+	ofs += len;
+#endif
 
+	// Make room for the nonce data (usually 12 bytes). this will come from the client
+	// when they submit their shares.
 	wb->enonce1varlen = ckp->nonce1length;
 	wb->enonce2varlen = ckp->nonce2length;
+	// save nonce length to scriptsig
 	wb->coinb1bin[ofs++] = wb->enonce1varlen + wb->enonce2varlen;
 
 	wb->coinb1len = ofs;
@@ -833,7 +845,12 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 		// ensure that what follows is <=100 bytes total for the scriptsig otherwise
 		// block will be rejected as per BCH consensus rules.
 		int spaceLeft = MAX_COINBASE_SCRIPTSIG_LEN - len + 1; // <-- +1 here is because 'len' accounts for the scriptsig length byte, which is not counted towards the 100-byte total
-		char cbprefix[] = "#/" HARDCODED_COINBASE_PREFIX_STR " ";
+		char cbprefix[] =
+#if !CB_LEAN_SCRIPTSIG
+			"#/" HARDCODED_COINBASE_PREFIX_STR " ";
+#else
+			"/" HARDCODED_COINBASE_PREFIX_STR " "; // no leading length byte in LEAN mode
+#endif
 		static const char cbsuffix[] = HARDCODED_COINBASE_SUFFIX_STR "/";
 		static const int cbsuffix_len = sizeof(cbsuffix)-1;
 		int cbprefix_len = sizeof(cbprefix)-1;
@@ -874,9 +891,13 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 			wb->coinb2len += n;
 			spaceLeft -= n;
 		}
+#if !CB_LEAN_SCRIPTSIG
 		// mark length at beginning of text just before first '/', just to be sure.
 		wb->coinb2bin[0] = (uchar)(wb->coinb2len-1);
 		LOGDEBUG("CB text: \"%.*s\"", wb->coinb2len-1, wb->coinb2bin+1);
+#else
+		LOGDEBUG("CB text: \"%.*s\"", wb->coinb2len, wb->coinb2bin);
+#endif
 	}
 	len += wb->coinb2len;
 
@@ -1011,6 +1032,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 		 workpadding);
 	LOGDEBUG("Header: %s", header);
 	hex2bin(wb->headerbin, header, 112);
+	LOGDEBUG("%s: took %0.6f secs", __FUNCTION__, (time_micros()-t0)/1e6);
 }
 
 static void stratum_broadcast_update(sdata_t *sdata, const workbase_t *wb, bool clean);

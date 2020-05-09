@@ -19,7 +19,9 @@
    Coinbase message ends up being "/PREFIX $bchsig SUFFIX/" */
 #define HARDCODED_COINBASE_PREFIX_STR ""
 #define HARDCODED_COINBASE_SUFFIX_STR "BCHN"
-#define MAX_USER_COINBASE_LEN 64 /* The max length of user bchsig portion */
+/* The max length of user bchsig portion.  This may get truncated down below this value if the scriptsig
+   gets too long. */
+#define MAX_USER_COINBASE_LEN 90
 
 #define MAX_USERNAME 127 /* The max length of a username. Used in internal struct user_instance_t */
 

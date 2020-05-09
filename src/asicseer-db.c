@@ -9271,6 +9271,7 @@ int main(int argc, char **argv)
 	signal(SIGCHLD, SIG_IGN);
 
 	global_ckp = &ckp;
+	global_loglevel_ptr = &ckp.loglevel;
 	memset(&ckp, 0, sizeof(ckp));
 	memset(&ckpweb, 0, sizeof(ckp));
 	memset(&ckpcmd, 0, sizeof(ckp));
