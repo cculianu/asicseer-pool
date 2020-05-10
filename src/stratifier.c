@@ -9517,7 +9517,12 @@ static void read_poolstats(pool_t *ckp, int *tvsec_diff)
 	}
 	tv_time(&now);
 	last.tv_sec = 0;
-	json_get_int64(&last.tv_sec, val, "lastupdate");
+	if (sizeof(time_t) == 8) // would be nice to do this at compile-time?
+		json_get_int64((int64_t *)&last.tv_sec, val, "lastupdate");
+	else if (sizeof(time_t) == 4)
+		json_get_int((int *)&last.tv_sec, val, "lastupdate");
+	else
+		quit(1, "Expected time_t to be 4 or 8 bytes, not %d. Unknown platform.", (int)sizeof(time_t));
 	json_decref(val);
 	LOGINFO("Successfully read pool pstats: %s", pstats);
 
