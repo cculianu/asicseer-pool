@@ -1,18 +1,20 @@
 ASICseer Pool
-Maintained by: Calin Culianu <calin.culianu@gmail.com>
+Calin Culianu <calin.culianu@gmail.com>
 
 Ultra low overhead massively scalable multi-process, multi-threaded modular
 Bitcoin Cash mining pool, proxy, passthrough, library and database interface in
-C for Linux.  Features SPLNS-style payout scheme.
+C for Linux. Features SPLNS-style payout scheme.
 
 asicseer-pool is code provided free of charge under the GPLv3 license but its
 development is mostly paid for by commissioned funding.
 
-Please consider contributing if you are running it on a pool or contributing to the
-authors listed in AUTHORS if you use this code to aid funding further development.
+Please consider contributing if you are running it on a pool or contributing to
+the authors listed in AUTHORS if you use this code to aid funding further
+development.
 
-Updated and maintained by Calin Culianu <calin.culianu@gmail.com>
-bitcoincash:qplw0d304x9fshz420lkvys2jxup38m9symky6k028
+Updated and maintained by:
+    Calin Culianu <calin.culianu@gmail.com>
+    bitcoincash:qplw0d304x9fshz420lkvys2jxup38m9symky6k028
 
 ===
 
@@ -287,91 +289,130 @@ CONFIGURATION
 At least one bitcoind is mandatory in asicseer-pool mode with the minimum
 requirements of server, rpcuser and rpcpassword set.
 
-asicseer-pool takes a json encoded configuration file in asicseer-pool.conf by
+asicseer-pool takes a JSON encoded configuration file in asicseer-pool.conf by
 default or asicseer-proxy.conf in proxy or passthrough mode unless specified
-with -c. Sample configurations for asicseer-pool and asicseer-proxy are
-included with the source. Entries after the valid json are ignored and the
-space there can be used for comments. The options recognised are as follows:
+with -c. Sample configurations for asicseer-pool and asicseer-proxy are included
+with the source. Entries after the valid json are ignored and the space there
+can be used for comments. The options recognised are as follows:
 
+"bchaddress" :
+    This is the bitcoin cash address for the pool. All pool fees go to this
+    address. It is also used as the fallback address for leftover dust or in
+    case a worker address is invalid. Both legacy and cashaddr formats are
+    supported.
 
-"btcd" : This is an array of bitcoind(s) with the options url, auth  and pass
-which match the configured bitcoind. The optional boolean field notify tells
-asicseer-pool this btcd is using the notifier and does not need to be polled
-for block changes. If no btcd is specified, asicseer-pool will look for one on
-localhost:8332 with the username "user" and password "pass". This maintainers
-of this software recommend BCHN as the bitcoind node implementation to use.
+"bchsig" :
+    This is optional text to put into the coinbase transaction of mined blocks.
 
-"proxy" : This is an array in the same format as btcd above but is used in
-proxy and passthrough mode to set the upstream pool and is mandatory.
+"blockpoll" :
+    This is the frequency in milliseconds for how often to check for new network
+    blocks and is 100 by default. It is intended to be a backup only for when
+    the notifier is not set up and only polls if the "notify" field is not set
+    on a btcd.
 
-"bchaddress" : This is the bitcoin cash address to try to generate blocks to.
-In SPLNS mode it is the fallback address for leftover dust or in case a worker
-address is invalid. Both legacy and cashaddr formats are supported.
+"btcd" :
+    This is an array of bitcoind(s) with the options url, auth and pass which
+    match the configured bitcoind. The optional boolean field notify tells
+    asicseer-pool this btcd is using the notifier and does not need to be polled
+    for block changes. If no btcd is specified, asicseer-pool will look for one
+    on localhost:8332 with the username "user" and password "pass". This
+    maintainers of this software recommend BCHN as the bitcoind node
+    implementation to use, since it has the fasted JSON-RPC implementation.
 
-"bchsig" : This is optional text to put into the coinbase transaction of mined
-blocks.
+"fee_discounts":
+    Offer discounts to specific users, keyed off their mining address. 1.0 =
+    full fee discount, 0.0 = no fee discount. All users default to 0.0 (no
+    discount) if unspecified.
 
-"pool_fee" : The percentage to pay out to the pool "bchaddress" for each found
-block, as a floating point percentage of the total mining reward. If unspecified,
-1.0 is the default (1%). The pool fee is taken from the total coinbase reward.
-Set this value to 0.0 to disable. Values >= 100.0 will be clamped to 100.0.
-The pool_fee will appear as the first output in the coinbase transaction.
+    Example:
 
-"blockpoll" : This is the frequency in milliseconds for how often to check for
-new network blocks and is 100 by default. It is intended to be a backup only
-for when the notifier is not set up and only polls if the "notify" field is
-not set on a btcd.
+    "fee_discounts" : {
+       "address1" : 0.25,
+       "address2" : 0.33,
+       "address3" : 1.0
+    }
 
-"nodeserver" : This takes the same format as the serverurl array and specifies
-additional IPs/ports to bind to that will accept incoming requests for mining
-node communications. It is recommended to selectively isolate this address
-to minimise unnecessary communications with unauthorised nodes.
+"logdir" :
+    Which directory to store pool and client logs. Default "logs"
 
-"nonce1length" : This is optional allowing the extranonce1 length to be chosen
-from 2 to 8. Default 4
+"maxclients" :
+    Optional upper limit on the number of clients asicseer-pool will accept
+    before rejecting further clients.
 
-"nonce2length" : This is optional allowing the extranonce2 length to be chosen
-from 2 to 8. Default 8
+"maxdiff" :
+    Optional maximum diff that vardiff will clamp to where zero is no maximum.
 
-"update_interval" : This is the frequency that stratum updates are sent out to
-miners and is set to 30 seconds by default to help perpetuate transactions for
-the health of the bitcoin network.
+"mindiff" :
+    Minimum diff that vardiff will allow miners to drop to. Default 1
 
-"version_mask" : This is a mask of which bits in the version number it is valid
-for a client to alter and is expressed as an hex string. Eg "00fff000"
-Default is "1fffe000".
+"mindiff_overrides" :
+    Optional JSON object (dictionary) of useragent, mindiff pairs.
 
-"serverurl" : This is the IP(s) to try to bind asicseer-pool uniquely to,
-otherwise it will attempt to bind to all interfaces in port 3333 by default in
-pool mode and 3334 in proxy mode. Multiple entries can be specified as an array
-by either IP or resolvable domain name but the executable must be able to bind
-to all of them and ports up to 1024 usually require privileged access.
+    Example:
 
-"redirecturl" : This is an array of URLs that asicseer-pool will redirect
-active miners to in redirector mode. They must be valid resolvable URLs+ports.
+    "mindiff_overrides" : {
+        "nicehash" : 500000,
+        "foohash" : 750000
+    }
 
-"mindiff" : Minimum diff that vardiff will allow miners to drop to. Default 1
+    This is a mechanism to support a raised minimum difficulty for clients
+    connecting to the pool based on their "useragent" string (that they normally
+    send via `mining.subscribe` on initial connect). The "useragent" specified
+    here is a prefix match (case insensitive). If a client's useragent matches
+    the specified prefix, then it will have its minimum and starting difficulty
+    set to the override value. Note: The override values specified here cannot
+    be lower than the pool's "mindiff" setting -- they must always be higher
+    (similarly this value must also be below "maxdiff"). This mechanism was
+    initially designed so that NiceHash clients can connect to a pool and get a
+    special-cased raised difficulty (since NiceHash refuses to operate if share
+    difficulty is < 500000, as of the time of this writing).
 
-"startdiff" : Starting diff that new clients are given. Default 42
+"nodeserver" :
+    This takes the same format as the serverurl array and specifies additional
+    IPs/ports to bind to that will accept incoming requests for mining node
+    communications. It is recommended to selectively isolate this address to
+    minimize unnecessary communications with unauthorized nodes.
 
-"maxdiff" : Optional maximum diff that vardiff will clamp to where zero is no
-maximum.
+"nonce1length" :
+    This is optional allowing the extranonce1 length to be chosen from 2 to 8.
+    Default 4
 
-"mindiff_overrides" : Optional JSON object (dictionary) of useragent, mindiff
-pairs, e.g: `"mindiff_overrides" : { "nicehash" : 500000, "foohash" : 750000 }`
-This is a mechanism to support a raised minimum difficulty for clients
-connecting to the pool based on their "useragent" string (that they normally
-send via `mining.subscribe` on initial connect).  The "useragent" specified
-here is a prefix match (case insensitive).  If a client's useragent matches the
-specified prefix, then it will have its minimum and starting difficulty set to
-the override value.  Note: The override values specified here cannot be lower
-than the pool's "mindiff" setting -- they must always be higher (similarly this
-value must also be below "maxdiff").  This mechanism was initially designed so
-that NiceHash clients can connect to a pool and get a special-cased raised
-difficulty  (since NiceHash refuses to operate if share difficulty is < 500000
-as of the time of this writing).
+"nonce2length" :
+    This is optional allowing the extranonce2 length to be chosen from 2 to 8.
+    Default 8
 
-"logdir" : Which directory to store pool and client logs. Default "logs"
+"pool_fee" :
+    The percentage to pay out to the pool "bchaddress" for each found block, as
+    a floating point percentage of the total mining reward. If unspecified, 1.0
+    is the default (1%). The pool fee is taken from the total coinbase reward.
+    Set this value to 0.0 to disable. Values >= 100.0 will be clamped to 100.0.
+    The pool_fee will appear as the first output in the coinbase transaction.
 
-"maxclients" : Optional upper limit on the number of clients asicseer-pool will
-accept before rejecting further clients.
+"proxy" :
+    This is an array in the same format as btcd above but is used in proxy and
+    passthrough mode to set the upstream pool and is mandatory.
+
+"redirecturl" :
+    This is an array of URLs that asicseer-pool will redirect active miners to
+    in redirector mode. They must be valid resolvable URLs+ports.
+
+"serverurl" :
+    This is the IP(s) to try to bind asicseer-pool uniquely to, otherwise it
+    will attempt to bind to all interfaces in port 3333 by default in pool mode
+    and 3334 in proxy mode. Multiple entries can be specified as an array by
+    either IP or resolvable domain name but the executable must be able to bind
+    to all of them and ports up to 1024 usually require privileged access.
+
+"startdiff" :
+    Starting diff that new clients are given. Default 42
+
+"update_interval" :
+    This is the frequency that stratum updates are sent out to miners and is set
+    to 30 seconds by default to help perpetuate transactions for the health of
+    the bitcoin network.
+
+"version_mask" :
+    This is a mask of which bits in the version number it is valid for a client
+    to alter and is expressed as an hex string. Eg "00fff000" Default is
+    "1fffe000".
+

@@ -1381,6 +1381,7 @@ static void add_base(pool_t *ckp, sdata_t *sdata, workbase_t *wb, bool *new_bloc
 
 	ts_realtime(&wb->gentime);
 	wb->network_diff = diff_from_nbits(wb->headerbin + 72);
+	LOGDEBUG("gbt network diff: %1.3lf", wb->network_diff);
 	if (!ckp->proxy) {
 		pool_stats_t *stats = &ckp_sdata->stats;
 		double reward = wb->coinbasevalue;
@@ -6500,7 +6501,8 @@ test_blocksolve(const stratum_instance_t *client, const workbase_t *wb, const uc
 	if (likely(diff < sdata->current_workbase->network_diff * 0.999))
 		return;
 
-	LOGWARNING("Possible %sblock solve diff %lf !", stale ? "stale share " : "", diff);
+	LOGWARNING("Possible %sblock solve diff %lf (network diff: %lf) !", stale ? "stale share " : "", diff,
+	           sdata->current_workbase->network_diff);
 	/* Can't submit a block in proxy mode without the transactions */
 	if (!ckp->node && wb->proxy)
 		return;

@@ -1,4 +1,4 @@
-AC_INIT(asicseer-pool, 1.0.9, https://github.com/cculianu/asicseer-pool)
+AC_INIT(asicseer-pool, 1.0.10, https://github.com/cculianu/asicseer-pool)
 
 AC_CANONICAL_SYSTEM
 AC_CONFIG_MACRO_DIR([m4])
