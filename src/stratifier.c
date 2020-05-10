@@ -1421,7 +1421,7 @@ static void add_base(pool_t *ckp, sdata_t *sdata, workbase_t *wb, bool *new_bloc
 		if (unlikely(ret && errno != EEXIST))
 			LOGERR("Failed to create log directory %s", wb->logdir);
 	}
-	sprintf(wb->idstring, "%016lx", wb->id);
+	sprintf(wb->idstring, "%016"PRIx64, wb->id);
 	if (ckp->logshares)
 		sprintf(wb->logdir, "%s%08x/%s", ckp->logdir, wb->height, wb->idstring);
 
@@ -5435,7 +5435,7 @@ static json_t *parse_subscribe(stratum_instance_t *client, const int64_t client_
 		}
 		if (!ckp->proxy && session_id && !subclient(client_id)) {
 			if ((client->enonce1_64 = disconnected_sessionid_exists(sdata, session_id, client_id))) {
-				sprintf(client->enonce1, "%016lx", client->enonce1_64);
+				sprintf(client->enonce1, "%016"PRIx64, client->enonce1_64);
 				old_match = true;
 
 				ck_rlock(&ckp_sdata->workbase_lock);
@@ -5483,10 +5483,10 @@ static json_t *parse_subscribe(stratum_instance_t *client, const int64_t client_
 			client->reject = 3;
 			return json_string("proxy full");
 		}
-		LOGINFO("Set new subscription %s to new enonce1 %lx string %s", client->identity,
+		LOGINFO("Set new subscription %s to new enonce1 %"PRIx64" string %s", client->identity,
 			client->enonce1_64, client->enonce1);
 	} else {
-		LOGINFO("Set new subscription %s to old matched enonce1 %lx string %s",
+		LOGINFO("Set new subscription %s to old matched enonce1 %"PRIx64" string %s",
 			client->identity, client->enonce1_64, client->enonce1);
 	}
 
@@ -6763,7 +6763,7 @@ static json_t *parse_submit(stratum_instance_t *client, json_t *json_msg,
 		*err_val = JSON_ERR(err);
 		goto out;
 	}
-	sscanf(job_id, "%lx", &id);
+	sscanf(job_id, "%"PRIx64, &id);
 	sscanf(ntime, "%x", &ntime32);
 
 	share = true;
@@ -7404,7 +7404,7 @@ static void parse_subscribe_result(stratum_instance_t *client, json_t *val)
 	len = strlen(client->enonce1) / 2;
 	hex2bin(client->enonce1bin, client->enonce1, len);
 	memcpy(&client->enonce1_64, client->enonce1bin, 8);
-	LOGINFO("Client %s got enonce1 %lx string %s", client->identity, client->enonce1_64, client->enonce1);
+	LOGINFO("Client %s got enonce1 %"PRIx64" string %s", client->identity, client->enonce1_64, client->enonce1);
 }
 
 static void parse_authorise_result(pool_t *ckp, sdata_t *sdata, stratum_instance_t *client,
@@ -8555,9 +8555,9 @@ static void send_transactions(pool_t *ckp, json_params_t *jp)
 		 * transactions :) . Support both forms of encoding the
 		 * request in method name and as a parameter. */
 		if (params && strlen(params) > 0)
-			sscanf(params, "%lx", &job_id);
+			sscanf(params, "%"PRIx64, &job_id);
 		else
-			sscanf(msg, "mining.get_transactions(%lx", &job_id);
+			sscanf(msg, "mining.get_transactions(%"PRIx64, &job_id);
 		txns = transactions_by_jobid(sdata, job_id);
 		if (txns != -1) {
 			json_set_int(val, "result", txns);
@@ -8590,7 +8590,7 @@ static void send_transactions(pool_t *ckp, json_params_t *jp)
 		json_set_string(val, "error", "Invalid params");
 		goto out_send;
 	}
-	sscanf(params, "%lx", &job_id);
+	sscanf(params, "%"PRIx64, &job_id);
 	hashes = txnhashes_by_jobid(sdata, job_id);
 	if (hashes) {
 		json_object_set_new_nocheck(val, "result", hashes);
