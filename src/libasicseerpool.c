@@ -2173,8 +2173,8 @@ double diff_from_target(uchar *target)
 
 	d64 = truediffone;
 	dcut64 = le256todouble(target);
-	if (unlikely(!dcut64))
-		dcut64 = 1;
+	if (unlikely(dcut64 <= 0.0))
+		dcut64 = 1.;
 	return d64 / dcut64;
 }
 
