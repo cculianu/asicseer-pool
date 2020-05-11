@@ -47,18 +47,16 @@ static uchar scriptsig_header_bin[41];
 #define MAX_COINBASE_SCRIPTSIG_LEN 100 /* BCH consensus rule -- scriptsig cannot exceed 100 bytes */
 #define TX_RESERVE_SIZE (41 + 1 + MAX_COINBASE_SCRIPTSIG_LEN + 4 + 1 + 2 + 4)
 #define MAX_CB_SPACE (MAX_COINBASE_TX_LEN - TX_RESERVE_SIZE)
-#define MAX_CB_FLAGS_LEN 4 /* The maximum number of coinbauseaux["flags"] bytes we write to our scriptsig */
 static const double nonces = 4294967296;
 
 #define HERP_N		5 /* 5 * network diff SPLNS */
-#define CBGENLEN	33 /* Maximum extra space required per user in coinbase */
+#define CBGENLEN	34 /* Maximum extra space required per user in coinbase */
 #define DERP_DUST	5460 /* Minimum DERP to get onto payout list */
 #define PAYOUT_DUST	DUST_LIMIT_SATS /* Minimum payout not dust -- currently 546 sats */
 #define DERP_SPACE	1000 /* Minimum derp to warrant leaving coinbase space */
-#define PAYOUT_USERS	100 /* Number of top users that get reward each block */
-#define PAYOUT_REWARDS	150 /* Max number of users rewarded each block */
+#define PAYOUT_USERS	1000 /* Number of top users that get reward each block */
+#define PAYOUT_REWARDS	1500 /* Max number of users rewarded each block */
 #define SATOSHIS	100000000 /* Satoshi to a BTC */
-#define CB_LEAN_SCRIPTSIG 1 /* if true, only put minimal data into cb script sig */
 #if PAYOUT_REWARDS * CBGENLEN > MAX_CB_SPACE
 #error Please set PAYOUT_REWARDS to fit inside a coinbase tx (MAX_CB_SPACE)!
 #endif
@@ -686,7 +684,7 @@ static size_t _add_txnbin(txns_buffer_t *buf, uint64_t amount, const void *txnbi
 	memcpy(tmp + 9, txnbin, txnlen);
 	if (unlikely(strbuffer_append_bytes(&buf->buffer, (const char *)tmp, size) != 0)) {
 		quit(1, "INTERNAL ERROR: %s: buffer size overflow, strbuffer is too large: %lu",
-		     __FUNCTION__, buf->buffer.length);
+		     __FUNCTION__, buf->buffer.size);
 		return 0; // not reached
 	}
 	assert(++buf->num_txns && "INTERNAL ERROR: integer overflow for txns_buffer_t::num_txns!");
@@ -839,30 +837,10 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 	len = ser_number(wb->coinb1bin + ofs, wb->height);
 	ofs += len;
 
-#if !CB_LEAN_SCRIPTSIG
-	/* Followed by flags (comes from gbt["coinbaseaux"]["flags"]) -- usually empty (0 bytes) */
-	len = strlen(wb->flags) / 2;
-	if (len > MAX_CB_FLAGS_LEN)
-		len = MAX_CB_FLAGS_LEN;
-	wb->coinb1bin[ofs++] = len;
-	hex2bin(wb->coinb1bin + ofs, wb->flags, len);
-	ofs += len;
-
-	/* Followed by timestamp */
-	ts_t now;
-	ts_realtime(&now);
-	len = ser_number(wb->coinb1bin + ofs, now.tv_sec);
-	ofs += len;
-
-	/* Followed by our unique randomiser based on the nsec timestamp */
-	len = ser_number(wb->coinb1bin + ofs, now.tv_nsec);
-	ofs += len;
-#else
-	// LEAN mode: just write the current time in micros directly
+	// just write the current time in micros directly, in host byte order
 	len = sizeof(t0);
 	memcpy(wb->coinb1bin + ofs, &t0, len);
 	ofs += len;
-#endif
 
 	// Make room for the nonce data (usually 12 bytes). this will come from the client
 	// when they submit their shares.
@@ -886,12 +864,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 		// ensure that what follows is <=100 bytes total for the scriptsig otherwise
 		// block will be rejected as per BCH consensus rules.
 		int spaceLeft = MAX_COINBASE_SCRIPTSIG_LEN - len + 1; // <-- +1 here is because 'len' accounts for the scriptsig length byte, which is not counted towards the 100-byte total
-		char cbprefix[] =
-#if !CB_LEAN_SCRIPTSIG
-			"#/" HARDCODED_COINBASE_PREFIX_STR " ";
-#else
-			"/" HARDCODED_COINBASE_PREFIX_STR " "; // no leading length byte in LEAN mode
-#endif
+		char cbprefix[] = "/" HARDCODED_COINBASE_PREFIX_STR " ";
 		static const char cbsuffix[] = HARDCODED_COINBASE_SUFFIX_STR "/";
 		static const int cbsuffix_len = sizeof(cbsuffix)-1;
 		int cbprefix_len = sizeof(cbprefix)-1;
@@ -932,13 +905,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 			wb->coinb2len += n;
 			spaceLeft -= n;
 		}
-#if !CB_LEAN_SCRIPTSIG
-		// mark length at beginning of text just before first '/', just to be sure.
-		wb->coinb2bin[0] = (uchar)(wb->coinb2len-1);
-		LOGDEBUG("CB text: \"%.*s\"", wb->coinb2len-1, wb->coinb2bin+1);
-#else
 		LOGDEBUG("CB text: \"%.*s\"", wb->coinb2len, wb->coinb2bin);
-#endif
 	}
 	len += wb->coinb2len;
 
@@ -5850,7 +5817,7 @@ static void read_userstats(pool_t *ckp, sdata_t *sdata, int tvsec_diff)
 		sdata->stats.rolling_herp = 0.1;
 	if (!sdata->stats.rolling_lns)
 		sdata->stats.rolling_lns = 0.1;
-	/* Start out with more than enough space */
+	/* Note this value isn't used apart from advisory information -- it's just an upper-bound estimate. */
 	sdata->stats.cbspace = users * CBGENLEN;
 
 	if (likely(users))
