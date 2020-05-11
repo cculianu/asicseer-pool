@@ -675,7 +675,7 @@ static size_t _add_txnbin(txns_buffer_t *buf, uint64_t amount, const void *txnbi
 	const size_t size = 8 + 1 + txnlen;
 	uint8_t *tmp = alloca(size);
 	const size_t ret = buf->buffer.length;
-	*(uint64_t *)tmp = htole64(amount);
+	*(uint64_t *)tmp = htole64(amount); // this is guaranteed aligned access
 	if (unlikely(txnlen >= 253)) {
 		quit(1, "INTERNAL ERROR: %s: txnlen must be <253 bytes!", __FUNCTION__);
 		return 0; // not reached
@@ -790,8 +790,10 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, txns_buffer_t
 		// payout remaining dust to the user with the most hash, because there is no pool fee (and so no pool payout output)
 		const char * const username = max_payee.user->username;
 		LOGDEBUG("Added %"PRId64" sats in dust to most-hash-payee: %s", total, username);
-		const uint64_t newreward = max_payee.reward + total;
-		*(uint64_t *)(txns->buffer.value + max_payee.amt_pos) = htole64(newreward); // update coinbase binary
+		uint64_t newreward = max_payee.reward + total;
+		newreward = htole64(newreward);
+		// update coinbase binary, avoiding unaligned access issues by doing a byte copy
+		memcpy(txns->buffer.value + max_payee.amt_pos, &newreward, sizeof(newreward));
 		total = 0;
 		json_set_double(payout_entries, username, newreward / (double)SATOSHIS); // update json
 	}
@@ -983,8 +985,10 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 				leftover = 0;
 #define SET_POOL_AMT(amt) \
 	do { \
+		uint64_t le_amt = amt; \
+		le_amt = htole64(le_amt); \
 		assert(pool_has_amt); \
-		*(uint64_t *)(txns_buf.buffer.value + pool_amt_pos) = htole64(amt); \
+		memcpy(txns_buf.buffer.value + pool_amt_pos, &le_amt, sizeof(le_amt)); \
 	} while(0)
 				SET_POOL_AMT(pf64);
 				LOGDEBUG("%f leftover from dev donations back to pool address: %s", d, ckp->bchaddress);
@@ -1016,7 +1020,11 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 				ok = true;
 			}
 			if (ok) {
-				const uint64_t pool_amt = pool_has_amt ? le64toh(*(uint64_t *)(txns_buf.buffer.value + pool_amt_pos)) : 0;
+				uint64_t pool_amt = 0;
+				if (pool_has_amt) {
+					memcpy(&pool_amt, txns_buf.buffer.value + pool_amt_pos, sizeof(pool_amt));
+					pool_amt = le64toh(pool_amt);
+				}
 				LOGINFO("%"PRId64" sats adjustment to pool address: %s, total pool payout now: %1.8f",
 				        c64, ckp->bchaddress, pool_amt / (double)SATOSHIS);
 			} else {
