@@ -1058,7 +1058,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 		assert(endpos + wb->coinb1len + wb->enonce1varlen + wb->enonce2varlen <= MAX_COINBASE_TX_LEN
 		       && "INTERNAL ERROR: coinbase tx length exceeded. FIXME!");
 		wb->coinb2len = (int)endpos;
-		assert(((size_t)wb->coinb2len) == endpos && "INTERNAL ERROR: integer overflow");
+		assert(((size_t)wb->coinb2len) == endpos && wb->coinb2len > -1 && "INTERNAL ERROR: integer overflow");
 		uint8_t *compact_size_buf = alloca(9);
 		const int nb = write_compact_size(compact_size_buf, num_txns);
 		if (unlikely(nb > compact_size_reserved)) {
