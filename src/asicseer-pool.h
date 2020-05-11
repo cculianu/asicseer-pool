@@ -18,6 +18,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <inttypes.h>
+#include <stdatomic.h>
 
 #include "donation.h"
 #include "libasicseerpool.h"
@@ -93,7 +94,7 @@ struct connsock {
 	/* Semaphore used to serialise request/responses */
 	sem_t sem;
 
-	bool alive;
+	atomic_bool alive;
 };
 
 typedef struct connsock connsock_t;
@@ -125,8 +126,8 @@ struct server_instance {
 	char *url;
 	char *auth;
 	char *pass;
-	bool notify;
-	bool alive;
+	atomic_bool notify;
+	atomic_bool alive;
 	connsock_t cs;
 };
 

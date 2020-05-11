@@ -185,6 +185,7 @@ struct generator_data {
 	int64_t share_id;
 
 	server_instance_t *current_si;
+	mutex_t current_si_lock; ///< guards current_si
 
 	proxy_instance_t *current_proxy;
 };
@@ -280,7 +281,9 @@ retry:
 	sleep(5);
 	goto retry;
 living:
+	mutex_lock(&gdata->current_si_lock);
 	gdata->current_si = alive;
+	mutex_unlock(&gdata->current_si_lock);
 	cs = &alive->cs;
 	LOGINFO("Connected to live server %s:%s", cs->url, cs->port);
 	send_proc(ckp->connector, alive ? "accept" : "reject");
@@ -313,6 +316,14 @@ static void clear_unix_msg(unix_msg_t **umsg)
 	}
 }
 
+static server_instance_t * _get_current_si_threadsafe(gdata_t *gdata)
+{
+	mutex_lock(&gdata->current_si_lock);
+	server_instance_t *ret = gdata->current_si;
+	mutex_unlock(&gdata->current_si_lock);
+	return ret;
+}
+
 bool generator_submitblock(pool_t *ckp, const char *buf)
 {
 	gdata_t *gdata = ckp->gdata;
@@ -320,7 +331,7 @@ bool generator_submitblock(pool_t *ckp, const char *buf)
 	bool warn = false;
 	connsock_t *cs;
 
-	while (unlikely(!(si = gdata->current_si))) {
+	while (unlikely(!(si = _get_current_si_threadsafe(gdata)))) {
 		if (!warn)
 			LOGWARNING("No live current server in generator_blocksubmit! Resubmitting indefinitely!");
 		warn = true;
@@ -351,7 +362,7 @@ bool generator_get_blockhash(pool_t *ckp, int height, char *hash)
 	server_instance_t *si;
 	connsock_t *cs;
 
-	if (unlikely(!(si = gdata->current_si))) {
+	if (unlikely(!(si = _get_current_si_threadsafe(gdata)))) {
 		LOGWARNING("No live current server in generator_get_blockhash");
 		return false;
 	}
@@ -837,7 +848,7 @@ struct genwork *generator_getbase(pool_t *ckp)
 	connsock_t *cs;
 
 	/* Use temporary variables to prevent deref while accessing */
-	si = gdata->current_si;
+	si = _get_current_si_threadsafe(gdata);
 	if (unlikely(!si)) {
 		LOGWARNING("No live current server in generator_genbase");
 		goto out;
@@ -861,7 +872,7 @@ int generator_getbest(pool_t *ckp, char *hash)
 	server_instance_t *si;
 	connsock_t *cs;
 
-	si = gdata->current_si;
+	si = _get_current_si_threadsafe(gdata);
 	if (unlikely(!si)) {
 		LOGWARNING("No live current server in generator_getbest");
 		goto out;
@@ -887,7 +898,7 @@ bool generator_get_chain(pool_t *ckp, char *chain)
 	bool ret = false;
 	connsock_t *cs;
 
-	si = gdata->current_si;
+	si = _get_current_si_threadsafe(gdata);
 	if (unlikely(!si)) {
 		LOGWARNING("No live current server in generator_get_chain");
 		goto out;
@@ -905,7 +916,7 @@ bool generator_checkaddr(pool_t *ckp, const char *addr, bool *script)
 	int ret = false;
 	connsock_t *cs;
 
-	si = gdata->current_si;
+	si = _get_current_si_threadsafe(gdata);
 	if (unlikely(!si)) {
 		LOGWARNING("No live current server in generator_checkaddr");
 		goto out;
@@ -923,7 +934,7 @@ char *generator_get_txn(pool_t *ckp, const char *hash)
 	char *ret = NULL;
 	connsock_t *cs;
 
-	si = gdata->current_si;
+	si = _get_current_si_threadsafe(gdata);
 	if (unlikely(!si)) {
 		LOGWARNING("No live current server in generator_get_txn");
 		goto out;
@@ -3241,15 +3252,27 @@ static proxy_instance_t *__add_proxy(pool_t *ckp, gdata_t *gdata, const int id)
 	return proxy;
 }
 
+static void _init_mutexes(gdata_t *gdata)
+{
+	mutex_init(&gdata->lock);
+	mutex_init(&gdata->notify_lock);
+	mutex_init(&gdata->share_lock);
+	mutex_init(&gdata->current_si_lock);
+}
+
+static void _destroy_mutexes(gdata_t *gdata)
+{
+	mutex_destroy(&gdata->current_si_lock);
+	mutex_destroy(&gdata->share_lock);
+	mutex_destroy(&gdata->notify_lock);
+	mutex_destroy(&gdata->lock);
+}
+
 static void proxy_mode(pool_t *ckp, proc_instance_t *pi)
 {
 	gdata_t *gdata = ckp->gdata;
 	proxy_instance_t *proxy;
 	int i;
-
-	mutex_init(&gdata->lock);
-	mutex_init(&gdata->notify_lock);
-	mutex_init(&gdata->share_lock);
 
 	if (ckp->node)
 		setup_servers(ckp);
@@ -3261,6 +3284,7 @@ static void proxy_mode(pool_t *ckp, proc_instance_t *pi)
 			create_pthread(&proxy->pth_precv, passthrough_recv, proxy);
 			proxy->passsends = create_ckmsgq(ckp, "passsend", &passthrough_send);
 		} else {
+			// FIXME: this doesn't look like it should ever execute more than once. -Calin
 			prepare_proxy(proxy);
 			create_pthread(&gdata->pth_uprecv, userproxy_recv, ckp);
 			mutex_init(&gdata->psend_lock);
@@ -3284,6 +3308,8 @@ void *generator(void *arg)
 	ckp->gdata = gdata;
 	gdata->ckp = ckp;
 
+	_init_mutexes(gdata);
+
 	if (ckp->proxy) {
 		/* Wait for the stratifier to be ready for us */
 		while (!ckp->stratifier_ready)
@@ -3293,6 +3319,8 @@ void *generator(void *arg)
 		server_mode(ckp, pi);
 	/* We should never get here unless there's a fatal error */
 	LOGEMERG("Generator failure, shutting down");
+
+	_destroy_mutexes(gdata);
 	exit(1);
 	return NULL;
 }

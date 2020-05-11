@@ -528,12 +528,14 @@ struct stratifier_data {
 	sem_t update_sem;
 	/* Time we last sent out a stratum update */
 	time_t update_time;
+	mutex_t update_time_lock; ///< guards update_time
 
 	int64_t workbase_id;
 	int64_t blockchange_id;
 	int session_id;
 	char lasthash[68];
 	char lastswaphash[68];
+	mutex_t last_hash_lock; ///< guards lasthash and lastswaphash
 
 	ckmsgq_t *updateq;	// Generator base work updates
 	ckmsgq_t *ssends;	// Stratum sends
@@ -1490,7 +1492,11 @@ static void add_base(pool_t *ckp, sdata_t *sdata, workbase_t *wb, bool *new_bloc
 		memcpy(sdata->lasthash, wb->prevhash, 65);
 		hex2bin(bin, sdata->lasthash, 32);
 		swap_256(swap, bin);
-		__bin2hex(sdata->lastswaphash, swap, 32);
+		{
+			mutex_lock(&sdata->last_hash_lock);
+			__bin2hex(sdata->lastswaphash, swap, 32);
+			mutex_unlock(&sdata->last_hash_lock);
+		}
 		sdata->blockchange_id = wb->id;
 	}
 	if (*new_block && ckp->logshares) {
@@ -1966,10 +1972,17 @@ static void block_update(pool_t *ckp, int *prio)
 	bool ret = false;
 	txntable_t *txns;
 	workbase_t *wb;
+	time_t update_time;
+
+	{
+		mutex_lock(&sdata->update_time_lock);
+		update_time = sdata->update_time;
+		mutex_unlock(&sdata->update_time_lock);
+	}
 
 	/* Skip update if we're getting stacked low priority updates too close
 	 * together. */
-	if (*prio < GEN_PRIORITY && time(NULL) < sdata->update_time + (ckp->update_interval / 2) &&
+	if (*prio < GEN_PRIORITY && time(NULL) < update_time + (ckp->update_interval / 2) &&
 	    sdata->current_workbase) {
 		ret = true;
 		goto out;
@@ -2004,7 +2017,12 @@ retry:
 	LOGINFO("Broadcast updated stratum base");
 
 	if (new_block) {
-		LOGNOTICE("Block hash changed to %s", sdata->lastswaphash);
+#define DECLARE_GET_LASTSWAPHASH_THREADSAFE(varname, sdata) \
+		mutex_lock(&sdata->last_hash_lock); \
+		const char * const varname = strdupa(sdata->lastswaphash); \
+		mutex_unlock(&sdata->last_hash_lock)
+		DECLARE_GET_LASTSWAPHASH_THREADSAFE(lastswaphash, sdata);
+		LOGNOTICE("Block hash changed to %s", lastswaphash);
 		/* Checking existence of DL list lockless but not trying to
 		 * reference data */
 		if (sdata->stats.unconfirmed)
@@ -2016,9 +2034,12 @@ retry:
 		update_txns(ckp, sdata, txns, true);
 	/* Reset the update time to avoid stacked low priority notifies. Bring
 	 * forward the next notify in case of a new block. */
+	mutex_lock(&sdata->update_time_lock);
 	sdata->update_time = time(NULL);
 	if (new_block)
 		sdata->update_time -= ckp->update_interval / 2;
+	update_time = sdata->update_time;
+	mutex_unlock(&sdata->update_time_lock);
 out:
 
 	cksem_post(&sdata->update_sem);
@@ -2427,8 +2448,10 @@ static void add_node_base(pool_t *ckp, json_t *val, bool trusted, int64_t client
 	else
 		add_base(ckp, sdata, wb, &new_block);
 
-	if (new_block)
-		LOGNOTICE("Block hash changed to %s", sdata->lastswaphash);
+	if (new_block) {
+		DECLARE_GET_LASTSWAPHASH_THREADSAFE(lastswaphash, sdata);
+		LOGNOTICE("Block hash changed to %s", lastswaphash);
+	}
 }
 
 /* Calculate share diff and fill in hash and swap. Need to hold workbase read count */
@@ -2941,9 +2964,11 @@ static sdata_t *duplicate_sdata(const sdata_t *sdata)
 	dsdata->ckp = sdata->ckp;
 
 	/* Copy the transaction binaries for workbase creation */
-	memcpy(dsdata->txnbin, sdata->txnbin, 48); // FIXME: why are we not copying txnlen? -Calin
+	memcpy(dsdata->txnbin, sdata->txnbin, 48);
+	dsdata->txnlen = sdata->txnlen;
 	for (int i = 0; i < DONATION_NUM_ADDRESSES; ++i) {
-		memcpy(dsdata->donation_data[i].txnbin, sdata->donation_data[i].txnbin, 48); // FIXME: why are we not copying txnlen? -Calin
+		memcpy(dsdata->donation_data[i].txnbin, sdata->donation_data[i].txnbin, 48);
+		dsdata->donation_data[i].txnlen = sdata->donation_data[i].txnlen;
 	}
 
 	/* Use the same work queues for all subproxies */
@@ -2958,6 +2983,11 @@ static sdata_t *duplicate_sdata(const sdata_t *sdata)
 	cklock_init(&dsdata->workbase_lock);
 	cksem_init(&dsdata->update_sem);
 	cksem_post(&dsdata->update_sem);
+
+	// Added by Calin. Unclear if this is needed for this proxy sdata.
+	mutex_init(&dsdata->update_time_lock);
+	mutex_init(&dsdata->last_hash_lock);
+
 	return dsdata;
 }
 
@@ -3612,10 +3642,11 @@ static void update_notify(pool_t *ckp, const char *cmd)
 
 	add_base(ckp, dsdata, wb, &new_block);
 	if (new_block) {
+		DECLARE_GET_LASTSWAPHASH_THREADSAFE(lastswaphash, dsdata);
 		if (subid)
-			LOGINFO("Block hash on proxy %d:%d changed to %s", id, subid, dsdata->lastswaphash);
+			LOGINFO("Block hash on proxy %d:%d changed to %s", id, subid, lastswaphash);
 		else
-			LOGNOTICE("Block hash on proxy %d changed to %s", id, dsdata->lastswaphash);
+			LOGNOTICE("Block hash on proxy %d changed to %s", id, lastswaphash);
 	}
 
 	check_proxy(sdata, proxy);
@@ -3732,6 +3763,10 @@ static void free_proxy(proxy_t *proxy)
 			clear_workbase(wb);
 		}
 		ck_wunlock(&dsdata->workbase_lock);
+
+		// Added by Calin. Unclear if this lock is even necessary for the fake proxy stratifier data.
+		mutex_destroy(&dsdata->last_hash_lock);
+		mutex_destroy(&dsdata->update_time_lock);
 	}
 
 	free(proxy->sdata);
@@ -5069,10 +5104,14 @@ retry:
 	}
 
 	do {
-		time_t end_t;
-
+		time_t end_t, update_time;
+		{
+			mutex_lock(&sdata->update_time_lock);
+			update_time = sdata->update_time;
+			mutex_unlock(&sdata->update_time_lock);
+		}
 		end_t = time(NULL);
-		if (end_t - sdata->update_time >= ckp->update_interval) {
+		if (end_t - update_time >= ckp->update_interval) {
 			if (!ckp->proxy) {
 				LOGDEBUG("%ds elapsed in strat_loop, updating gbt base",
 					 ckp->update_interval);
@@ -5232,11 +5271,13 @@ static void *blockupdate(void *arg)
 			case GETBEST_NOTIFY:
 				cksleep_ms(5000);
 				break;
-			case GETBEST_SUCCESS:
-				if (strcmp(hash, sdata->lastswaphash)) {
+			case GETBEST_SUCCESS: {
+				DECLARE_GET_LASTSWAPHASH_THREADSAFE(lastswaphash, sdata);
+				if (strcmp(hash, lastswaphash)) {
 					update_base(sdata, GEN_PRIORITY);
 					break;
 				}
+			}
 			case GETBEST_FAILED:
 			default:
 				cksleep_ms(ckp->blockpoll);
@@ -9806,6 +9847,9 @@ void *stratifier(void *arg)
 		create_pthread(&pth_statsupdate, statsupdate, ckp);
 
 	mutex_init(&sdata->share_lock);
+
+	mutex_init(&sdata->update_time_lock);
+	mutex_init(&sdata->last_hash_lock);
 
 	ckp->stratifier_ready = true;
 	LOGWARNING("%s stratifier ready", ckp->name);
