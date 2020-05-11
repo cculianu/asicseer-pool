@@ -1860,7 +1860,8 @@ int ser_number(uchar *s, int32_t val)
 		len = 3;
 	else
 		len = 4;
-	*i32 = htole32(val);
+	const int32_t tmp = htole32(val);
+	memcpy(i32, &tmp, len);
 	s[0] = len++;
 	return len;
 }
