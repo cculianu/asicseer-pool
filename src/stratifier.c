@@ -1064,9 +1064,10 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 		if (unlikely(nb > compact_size_reserved)) {
 			quit(1, "INTERNAL ERROR: Got %lu txs in coinbase! This is unsupported!", num_txns);
 		} else if (nb == compact_size_reserved) {
-			// yay. exact match. just copy the compact size
+			// >= 253 txns. this is what we assumed as worst-case and we don't need to realign the data.
 			memcpy(wb->coinb2bin + compact_size_pos, compact_size_buf, nb);
 		} else if (nb == 1) {
+			// < 253 txns, we need to slide the tx data blob backwards by 2 bytes.
 			const int blob_size = wb->coinb2len - first_tx_pos;
 			const int ndiff = compact_size_reserved - nb;
 			assert(blob_size >= 0);
