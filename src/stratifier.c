@@ -931,8 +931,8 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 	wb->coinb2len += compact_size_reserved; // point past the reserved space.
 	int first_tx_pos = wb->coinb2len;
 
-	// Now we "give" wb->coinb2bin to the txns_buffer, which may end up modifying the pointer's destination
-	// as it grows the buffer.
+	// Now we "give" wb->coinb2bin to the txns_buffer, which may end up modifying the pointed-to buffer
+	// address as it grows the buffer.
 	txns_buffer_give(&txns_buf, (void **)&wb->coinb2bin, wb->coinb2len, COINB2_INITIAL_CAPACITY);
 	// NOTE: wb->coinb2bin will be temporarily NULL now until we "take" the buffer back.
 
@@ -1055,7 +1055,8 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 		size_t endpos, cap;
 		txns_buffer_take(&txns_buf, (void **)&wb->coinb2bin, &endpos, &cap);
 		LOGDEBUG("Coinb2 taken, endpos: %lu cap: %lu", endpos, cap);
-		assert(endpos + wb->coinb1len <= MAX_COINBASE_TX_LEN && "INTERNAL ERROR: coinbase tx length exceeded. FIXME!");
+		assert(endpos + wb->coinb1len + wb->enonce1varlen + wb->enoncevar2len <= MAX_COINBASE_TX_LEN
+		       && "INTERNAL ERROR: coinbase tx length exceeded. FIXME!");
 		wb->coinb2len = (int)endpos;
 		assert(((size_t)wb->coinb2len) == endpos && "INTERNAL ERROR: integer overflow");
 		uint8_t *compact_size_buf = alloca(9);
