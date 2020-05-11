@@ -653,7 +653,7 @@ static void txns_buffer_give(txns_buffer_t *t, void **buf, size_t pos, size_t ca
 	assert(pos <= capacity);
 
 	memset(t, 0, sizeof(*t));
-	t->buffer.data = (char *)*buf;
+	t->buffer.data = *buf;
 	*buf = NULL;
 	t->buffer.length = pos;
 	t->buffer.size = capacity;
