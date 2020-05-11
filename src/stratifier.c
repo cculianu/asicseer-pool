@@ -1066,7 +1066,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 		} else if (nb == compact_size_reserved) {
 			// yay. exact match. just copy the compact size
 			memcpy(wb->coinb2bin + compact_size_pos, compact_size_buf, nb);
-		} else if (nb < compact_size_reserved) {
+		} else if (nb == 1) {
 			const int blob_size = wb->coinb2len - first_tx_pos;
 			const int ndiff = compact_size_reserved - nb;
 			assert(blob_size >= 0);
