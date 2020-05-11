@@ -775,7 +775,7 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, txns_buffer_t
 			LOGINFO("User %s reward %"PRIu64, user->username, total_reward);
 
 		/* Add the user's coinbase reward, using the cached cscript */
-		amt_pos = _add_txnbin(txns, user->txnbin, user->txnlen);
+		amt_pos = _add_txnbin(txns, total_reward, user->txnbin, user->txnlen);
 
 		if (!pf64 && total_reward > max_payee.reward) {
 			// remember this as the largest payee in case we need to give them leftover dust
@@ -966,7 +966,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 
 	// Now we "give" wb->coinb2bin to the txns_buffer, which may end up modifying the pointer's destination
 	// as it grows the buffer.
-	txns_buffer_give(&txns_buf, &wb->coinb2bin, wb->coinb2len, COINB2_INITIAL_CAPACITY);
+	txns_buffer_give(&txns_buf, (void **)&wb->coinb2bin, wb->coinb2len, COINB2_INITIAL_CAPACITY);
 	// NOTE: wb->coinb2bin will be temporarily NULL now until we "take" the buffer back.
 
 	// Generation value
@@ -1049,11 +1049,12 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 				ok = true;
 			}
 			if (ok) {
+				const uint64_t pool_amt = pool_has_amt ? le64toh(*(uint64_t *)(txns_buf.buffer.value + pool_amt_pos)) : 0;
 				LOGINFO("%"PRId64" sats adjustment to pool address: %s, total pool payout now: %1.8f",
-				        c64, ckp->bchaddress, (p64 ? le64toh(*p64) : 0) / (double)SATOSHIS);
+				        c64, ckp->bchaddress, pool_amt / (double)SATOSHIS);
 			} else {
-				LOGEMERG("Unexpected state! p64 is %s, c64 is %"PRId64 ", pf64 is %"PRIu64", f64 is %"PRIu64"! FIXME in %s line %d.",
-				         p64 ? "not null" : "NULL", c64, pf64, f64, __FILE__, __LINE__);
+				LOGEMERG("Unexpected state! pool_has_amt is %d, c64 is %"PRId64 ", pf64 is %"PRIu64", f64 is %"PRIu64"! FIXME in %s line %d.",
+				         (int)pool_has_amt, c64, pf64, f64, __FILE__, __LINE__);
 			}
 			c64 = 0;
 		}
