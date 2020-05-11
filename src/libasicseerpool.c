@@ -1463,7 +1463,7 @@ void *_ckzrealloc(void *oldbuf, size_t len, bool zeromem, const char *file, cons
 		}
 		cksleep_ms(backoff);
 		backoff <<= 1;
-		if (unlikely(!backoff))
+		if (unlikely(backoff <= 0))
 			// overflow past end, start over -- this is here for correctness but should never
 			// happen in practice as it indicates we have been sleeping for 2 million seconds
 			backoff = 1;
@@ -1875,6 +1875,35 @@ int get_sernumber(uchar *s)
 		return 0;
 	memcpy(&val, &s[1], len);
 	return le32toh(val);
+}
+
+int write_compact_size(void *dest, size_t nSize)
+{
+	uint8_t *buf = (uint8_t *)dest;
+	if (nSize < 253) {
+		*buf = (uint8_t)nSize;
+		return 1;
+	}
+	if (nSize <= UINT16_MAX) {
+		*buf++ = 0xfd;
+		// avoid unaligned access
+		const uint16_t datum = htole16((uint16_t)nSize);
+		memcpy(buf, &datum, 2);
+		return 3;
+	}
+	if (nSize <= UINT32_MAX) {
+		*buf++ = 0xfe;
+		// avoid unaligned access
+		const uint32_t datum = htole32((uint32_t)nSize);
+		memcpy(buf, &datum, 4);
+		return 5;
+	}
+	// 64-bit (8 byte) .. unlikely.
+	*buf++ = 0xff;
+	// avoid unaligned access
+	const uint64_t datum = htole64((uint64_t)nSize);
+	memcpy(buf, &datum, 8);
+	return 9;
 }
 
 /* For testing a le encoded 256 byte hash against a target */

@@ -8,10 +8,15 @@
 #ifndef STRBUFFER_H
 #define STRBUFFER_H
 
+#include <stdint.h>
 #include <stdlib.h>
 
 typedef struct {
-    char *value;
+    union {
+        char    *value;
+        uint8_t *uvalue;
+        void    *data;
+    };
     size_t length;   /* bytes used */
     size_t size;     /* bytes allocated */
 } strbuffer_t;
