@@ -24,6 +24,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <strbuffer.h> // from jansson, for strbuffer_t
+
 #include "cashaddr.h"
 #include "asicseer-pool.h"
 #include "donation.h"
@@ -638,29 +640,67 @@ static int postponed_sort(generation_t *a, generation_t *b)
 	return (b->postponed - a->postponed);
 }
 
-// add an amount,scriptbin to the current coinb2bin generation. Returns a pointer to the amount64 for the txn.
-static uint64_t *_add_txnbin(workbase_t *wb, uint64_t *gentxns, uint64_t amount, const void *txnbin, size_t txnlen)
-{
-	uint64_t *u64 = (uint64_t *)&wb->coinb2bin[wb->coinb2len];
-	*u64 = htole64(amount);
-	wb->coinb2len += 8;
+typedef struct {
+	strbuffer_t buffer;
+	size_t num_txns;
+} txns_buffer_t;
 
-	wb->coinb2bin[wb->coinb2len++] = (uchar)txnlen;
-	memcpy(wb->coinb2bin + wb->coinb2len, txnbin, txnlen);
-	wb->coinb2len += txnlen;
-	/* Increment number of generation transactions */
-	*gentxns = htole64(le64toh(*gentxns) + 1UL);
-	return u64;
+static void txns_buffer_give(txns_buffer_t *t, void **buf, size_t pos, size_t capacity)
+{
+	assert(t);
+	assert(buf && *buf);
+	assert(capacity);
+	assert(pos <= capacity);
+
+	memset(t, 0, sizeof(*t));
+	t->buffer.data = (char *)*buf;
+	*buf = NULL;
+	t->buffer.length = pos;
+	t->buffer.size = capacity;
+	t->num_txns = 0;
 }
-/* Add generation transactions to the coinbase for each user, return any spare
+
+static void txns_buffer_take(txns_buffer_t *t, void **bufptr, size_t *pos, size_t *capacity)
+{
+	assert(bufptr);
+	if (pos) *pos = t->buffer.length;
+	if (capacity) *capacity = t->buffer.size;
+	*bufptr = strbuffer_steal_value(&t->buffer);
+}
+
+/// Add an amount[8 bytes],scriptbinlen[1 byte],scriptbin[txnlen bytes] to txns_buffer_t `buf`.
+/// Returns an index into the buffer where the amount data begins on success.
+/// On failure (which is unlikely) this function will call quit().  So this always returns on success.
+/// IMPORTANT: txnlen must be <253 bytes otherwise this will always fail.
+static size_t _add_txnbin(txns_buffer_t *buf, uint64_t amount, const void *txnbin, size_t txnlen)
+{
+	const size_t size = 8 + 1 + txnlen;
+	uint8_t *tmp = alloca(size);
+	const size_t ret = buf->buffer.length;
+	*(uint64_t *)tmp = htole64(amount);
+	if (unlikely(txnlen >= 253)) {
+		quit(1, "INTERNAL ERROR: %s: txnlen must be <253 bytes!", __FUNCTION__);
+		return 0; // not reached
+	}
+	tmp[8] = (uint8_t)txnlen;
+	memcpy(tmp + 9, txnbin, txnlen);
+	if (unlikely(strbuffer_append_bytes(&buf->buffer, (const char *)tmp, size) != 0)) {
+		quit(1, "INTERNAL ERROR: %s: buffer size overflow, strbuffer is too large: %lu",
+		     __FUNCTION__, buf->buffer.length);
+		return 0; // not reached
+	}
+	assert(++buf->num_txns && "INTERNAL ERROR: integer overflow for txns_buffer_t::num_txns!");
+	return ret;
+}
+
+/* Add generation transactions to the transaction buffer `txns` for each user, return any spare
  * change. Note that the return value may be negative if users had fee discounts,
  * in which case there is "negative" change and the pool output must deduct this amount
  * from its own output (that is, add the negative to the pool output value).  This negative
  * output will never result in the pf64 (fee) value becoming smaller than the dust limit,
  * however -- so the pool may safely just add whatever the negative return value is
  * (or add the positive return value which will always be >=546 sats).*/
-static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64, uint64_t pf64,
-                                   uint64_t *gentxns)
+static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, txns_buffer_t *txns, uint64_t g64, uint64_t pf64)
 {
 	json_t * const payout = json_object(),
 	       * const payout_entries = json_object(),
@@ -669,10 +709,10 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 	int64_t total = g64;
 	int64_t total_fee_discounts = 0;
 	const int64_t s_pf64 = (int64_t)pf64; // signed version of pf64
-	uint64_t *u64 = NULL;
+	size_t amt_pos = 0;
 	struct payee_info {
 		uint64_t reward;
-		uint64_t *cb_u64;
+		size_t amt_pos;
 		user_instance_t *user;
 	} max_payee = {0,0,0};
 
@@ -735,12 +775,12 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 			LOGINFO("User %s reward %"PRIu64, user->username, total_reward);
 
 		/* Add the user's coinbase reward, using the cached cscript */
-		u64 = _add_txnbin(wb, gentxns, total_reward, user->txnbin, user->txnlen);
+		amt_pos = _add_txnbin(txns, user->txnbin, user->txnlen);
 
 		if (!pf64 && total_reward > max_payee.reward) {
 			// remember this as the largest payee in case we need to give them leftover dust
 			max_payee.reward = total_reward;
-			max_payee.cb_u64 = u64;
+			max_payee.amt_pos = amt_pos;
 			max_payee.user = user;
 		}
 		// deduct this total reward from the payee total -- note total may end up negative here if
@@ -753,7 +793,7 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, uint64_t g64,
 		const char * const username = max_payee.user->username;
 		LOGDEBUG("Added %"PRId64" sats in dust to most-hash-payee: %s", total, username);
 		const uint64_t newreward = max_payee.reward + total;
-		*(max_payee.cb_u64) = htole64(newreward); // update coinbase binary
+		*(uint64_t *)(txns->buffer.value + max_payee.amt_pos) = htole64(newreward); // update coinbase binary
 		total = 0;
 		json_set_double(payout_entries, username, newreward / (double)SATOSHIS); // update json
 	}
@@ -776,14 +816,13 @@ skip:
 static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 {
 	const int64_t t0 = time_micros();
-	uint64_t *p64 = NULL, g64 = 0, f64 = 0, pf64 = 0, df64 = 0, *gentxns = NULL;
+	uint64_t g64 = 0, f64 = 0, pf64 = 0, df64 = 0;
 	sdata_t *sdata = ckp->sdata;
-	int len, ofs = 0, cbspace;
+	int len, ofs = 0;
 	char header[228];
-
-	mutex_lock(&sdata->stats_lock);
-	cbspace = sdata->stats.cbspace;
-	mutex_unlock(&sdata->stats_lock);
+	txns_buffer_t txns_buf;
+	size_t pool_amt_pos = 0;
+	bool pool_has_amt = false;
 
 	/* Set fixed length coinb1 arrays to be more than enough */
 	wb->coinb1 = ckzalloc(256);
@@ -839,7 +878,9 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 	len += wb->enonce1varlen;
 	len += wb->enonce2varlen;
 
-	wb->coinb2bin = ckzalloc(512 + cbspace);
+	static const size_t COINB2_INITIAL_CAPACITY = 512;
+
+	wb->coinb2bin = ckzalloc(COINB2_INITIAL_CAPACITY);
 	wb->coinb2len = 0;
 	{
 		// ensure that what follows is <=100 bytes total for the scriptsig otherwise
@@ -916,7 +957,18 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 	memcpy(wb->coinb2bin + wb->coinb2len, "\xff\xff\xff\xff", 4); // sequence
 	wb->coinb2len += 4;
 
-	gentxns = (uint64_t *)&wb->coinb2bin[wb->coinb2len++];
+	// at this pint wb->coinb2bin[wb->coinb2len] points to the vtx.out length field (compact size).
+	// reserve 3 bytes for this field.  Common case is we will have to move the data back by 2 bytes, however.
+	const int compact_size_pos = wb->coinb2len;
+	static const int compact_size_reserved = 3;
+	wb->coinb2len += compact_size_reserved; // point past the reserved space.
+	int first_tx_pos = wb->coinb2len;
+
+	// Now we "give" wb->coinb2bin to the txns_buffer, which may end up modifying the pointer's destination
+	// as it grows the buffer.
+	txns_buffer_give(&txns_buf, &wb->coinb2bin, wb->coinb2len, COINB2_INITIAL_CAPACITY);
+	// NOTE: wb->coinb2bin will be temporarily NULL now until we "take" the buffer back.
+
 	// Generation value
 	g64 = wb->coinbasevalue; // generation (reward)
 	f64 = round(g64 * (ckp->pool_fee/100.0)); // pool fee gross (including dev donation)
@@ -939,7 +991,8 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 			pf64 = f64 - df64;
 
 			// add pool net fee
-			p64 = _add_txnbin(wb, gentxns, pf64, sdata->txnbin, sdata->txnlen);
+			pool_amt_pos = _add_txnbin(&txns_buf, pf64, sdata->txnbin, sdata->txnlen);
+			pool_has_amt = true;
 			const double fee = pf64 / (double)SATOSHIS;
 			LOGDEBUG("%1.8f pool fee to pool address: %s", fee, ckp->bchaddress);
 			// now add donations for each dev
@@ -948,7 +1001,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 				for (int i = 0; i < DONATION_NUM_ADDRESSES && leftover > 0; ++i) {
 					if (sdata->donation_data[i].txnlen && ckp->dev_donations[i].valid) {
 						// good address
-						_add_txnbin(wb, gentxns, don_each, sdata->donation_data[i].txnbin, sdata->donation_data[i].txnlen);
+						_add_txnbin(&txns_buf, don_each, sdata->donation_data[i].txnbin, sdata->donation_data[i].txnlen);
 						leftover -= (int64_t)don_each;
 						const double d = don_each / (double)SATOSHIS;
 						LOGDEBUG("%f dev donation to address: %s", d, ckp->dev_donations[i].address);
@@ -961,7 +1014,12 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 				pf64 += leftover;
 				df64 -= leftover;
 				leftover = 0;
-				*p64 = htole64(pf64);
+#define SET_POOL_AMT(amt) \
+	do { \
+		assert(pool_has_amt); \
+		*(uint64_t *)(txns_buf.buffer.value + pool_amt_pos) = htole64(amt); \
+	} while(0)
+				SET_POOL_AMT(pf64);
 				LOGDEBUG("%f leftover from dev donations back to pool address: %s", d, ckp->bchaddress);
 			} else if (unlikely(leftover < 0)) {
 				// This should never happen but is here as a defensive programming measure.
@@ -972,21 +1030,22 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 			f64 = pf64 = 0;
 		}
 
-		assert(!pf64 || p64); // if there is a pool fee (pf64), then there must have been a pool payout generated above.
+		assert(!pf64 || pool_has_amt); // if there is a pool fee (pf64), then there must have been a pool payout generated above.
 
-		c64 = add_user_generation(sdata, wb, g64 - f64, pf64, gentxns); // add miner payouts, minus total fee
+		c64 = add_user_generation(sdata, wb, &txns_buf, g64 - f64, pf64); // add miner payouts, minus total fee
 
 		/* Add any change left over from user gen to pool -- note c64 may be negative here if pool fee discounts occurred */
-		if ( c64 && (p64 || c64 >= DUST_LIMIT_SATS) && sdata->txnlen) {
+		if ( c64 && (pool_has_amt || c64 >= DUST_LIMIT_SATS) && sdata->txnlen) {
 			bool ok = false;
 			pf64 = (uint64_t)(((int64_t)pf64) + c64); // add or deduct modifiction returned from add_user_generation
-			if (!p64 && pf64 >= DUST_LIMIT_SATS) {
+			if (!pool_has_amt && pf64 >= DUST_LIMIT_SATS) {
 				// pay extra change > dust limit back to pool, new output at end
-				p64 = _add_txnbin(wb, gentxns, pf64, sdata->txnbin, sdata->txnlen);
+				pool_amt_pos = _add_txnbin(&txns_buf, pf64, sdata->txnbin, sdata->txnlen);
+				pool_has_amt = true;
 				ok = true;
-			} else if (p64 && pf64 >= DUST_LIMIT_SATS) {
+			} else if (pool_has_amt && pf64 >= DUST_LIMIT_SATS) {
 				// pay dust back to pool, re-use pool fee output (output 0)
-				*p64 = htole64( pf64 );
+				SET_POOL_AMT( pf64 );
 				ok = true;
 			}
 			if (ok) {
@@ -1004,9 +1063,9 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 			// ourselves (missing pool bchaddress?)
 			LOGWARNING("%"PRId64" sats in change left over after generating coinbase outs! FIXME!", c64);
 		}
-		if (!p64 && pf64)
+		if (!pool_has_amt && pf64)
 			LOGWARNING("%"PRId64" sats in pool fee left over after generating coinbase outs! FIXME!", pf64);
-		if (p64 && pf64 < DUST_LIMIT_SATS)
+		if (pool_has_amt && pf64 < DUST_LIMIT_SATS)
 			LOGWARNING("%"PRId64" sats in pool fee is below dust limit (%d)! FIXME!", pf64, (int)DUST_LIMIT_SATS);
 		if (wb->payout) {
 			// tabulate this as "pool fee" in json
@@ -1016,7 +1075,46 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 		}
 	} else {
 		// payout directly to pool in this mode (asicseer-db mode)
-		p64 = _add_txnbin(wb, gentxns, g64, sdata->txnbin, sdata->txnlen);
+		pool_amt_pos = _add_txnbin(&txns_buf, g64, sdata->txnbin, sdata->txnlen);
+		pool_has_amt = true;
+	}
+#undef SET_POOL_AMT
+	{
+		assert(!wb->coinb2bin);
+		// take back the coinb2 pointer, write compact size before the txns.
+		// note that we may have to move the data blob back by 2 bytes here.
+		const size_t num_txns = txns_buf.num_txns;
+		size_t endpos, cap;
+		txns_buffer_take(&txns_buf, (void **)&wb->coinb2bin, &endpos, &cap);
+		LOGDEBUG("Coinb2 taken, endpos: %lu cap: %lu", endpos, cap);
+		assert(endpos + wb->coinb1len <= MAX_COINBASE_TX_LEN && "INTERNAL ERROR: coinbase tx length exceeded. FIXME!");
+		wb->coinb2len = (int)endpos;
+		assert(((size_t)wb->coinb2len) == endpos && "INTERNAL ERROR: integer overflow");
+		uint8_t *compact_size_buf = alloca(9);
+		const int nb = write_compact_size(compact_size_buf, num_txns);
+		if (unlikely(nb > compact_size_reserved)) {
+			quit(1, "INTERNAL ERROR: Got %lu txs in coinbase! This is unsupported!", num_txns);
+		} else if (nb == compact_size_reserved) {
+			// yay. exact match. just copy the compact size
+			memcpy(wb->coinb2bin + compact_size_pos, compact_size_buf, nb);
+		} else if (nb < compact_size_reserved) {
+			const int blob_size = wb->coinb2len - first_tx_pos;
+			const int ndiff = compact_size_reserved - nb;
+			assert(blob_size >= 0);
+			assert(ndiff == first_tx_pos - (compact_size_pos + 1));
+			if (blob_size) {
+				memmove(wb->coinb2bin + compact_size_pos + 1, wb->coinb2bin + first_tx_pos, blob_size);
+				endpos -= ndiff;
+				wb->coinb2len -= ndiff;
+				LOGDEBUG("Coinb2 moved %d blob backwards by %d bytes, endpos now: %d",
+				         blob_size, ndiff, wb->coinb2len);
+			}
+			first_tx_pos -= ndiff;
+			wb->coinb2bin[compact_size_pos] = *compact_size_buf; // write size byte
+		} else {
+			// this should never happen.
+			quit(1, "Unexpected compact_size number of bytes!");
+		}
 	}
 	wb->coinb2len += 4; // Blank lock
 
@@ -5605,14 +5703,6 @@ static user_instance_t *get_create_user(sdata_t *sdata, const char *username, bo
 static worker_instance_t *get_create_worker(sdata_t *sdata, user_instance_t *user,
 					    const char *workername, bool *new_worker);
 
-static int __clamp_cbspace(int cbspace)
-{
-	if (cbspace > MAX_CB_SPACE) {
-		cbspace = (MAX_CB_SPACE / CBGENLEN) * CBGENLEN;
-	}
-	return MAX(cbspace, 0);
-}
-
 /* Load the statistics of and create all known users at startup */
 static void read_userstats(pool_t *ckp, sdata_t *sdata, int tvsec_diff)
 {
@@ -5759,10 +5849,10 @@ static void read_userstats(pool_t *ckp, sdata_t *sdata, int tvsec_diff)
 	if (!sdata->stats.rolling_lns)
 		sdata->stats.rolling_lns = 0.1;
 	/* Start out with more than enough space */
-	sdata->stats.cbspace = __clamp_cbspace(users * CBGENLEN);
+	sdata->stats.cbspace = users * CBGENLEN;
 
 	if (likely(users))
-		LOGWARNING("Loaded %d users and %d workers", users, workers);
+		LOGWARNING("Loaded %d users and %d workers; est. cbspace %d bytes", users, workers, sdata->stats.cbspace);
 }
 
 #define DEFAULT_AUTH_BACKOFF	(3)  /* Set initial backoff to 3 seconds */
@@ -8927,8 +9017,7 @@ static void *statsupdate(void *arg)
 		char suffix1[16], suffix5[16], suffix15[16], suffix60[16], cdfield[64];
 		char suffix360[16], suffix1440[16], suffix10080[16];
 		char pcstring[16];
-		int remote_users = 0, remote_workers = 0, idle_workers = 0,
-			cbspace = 0, payouts = 0;
+		int remote_users = 0, remote_workers = 0, idle_workers = 0, cbspace = 0, payouts = 0;
 		log_entry_t *log_entries = NULL, *miner_entries = NULL;
 		char_entry_t *char_list = NULL;
 		long double numer, herp, lns;
@@ -9210,8 +9299,7 @@ static void *statsupdate(void *arg)
 
 		calc_user_paygens(sdata);
 
-		cbspace = __clamp_cbspace(cbspace);
-		LOGINFO("Leaving %d bytes free in coinbase for user txn generation", cbspace);
+		LOGINFO("Estimated %d bytes will be needed in coinbase for user payouts", cbspace);
 
 		mutex_lock(&sdata->stats_lock);
 		stats->cbspace = cbspace;

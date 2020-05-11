@@ -20,7 +20,7 @@
 
 #define STRBUFFER_MIN_SIZE  4096
 #define STRBUFFER_FACTOR    2
-#define STRBUFFER_SIZE_MAX  ((size_t)-1)
+#define STRBUFFER_SIZE_MAX  ((size_t)-1L)
 
 int strbuffer_init(strbuffer_t *strbuff)
 {
@@ -74,7 +74,7 @@ int strbuffer_append_bytes(strbuffer_t *strbuff, const char *data, size_t size)
     /* Leave room for EOL and NULL bytes */
     if(size + 2 > strbuff->size - strbuff->length)
     {
-	int backoff = 1;
+        useconds_t backoff = 1U;
         size_t new_size;
         char *new_value;
 
@@ -91,7 +91,7 @@ int strbuffer_append_bytes(strbuffer_t *strbuff, const char *data, size_t size)
 		new_value = realloc(strbuff->value, new_size);
 		if (new_value)
 			break;
-		usleep(backoff * 1000);
+		usleep(backoff * 1000U);
 		backoff <<= 1;
 	}
 

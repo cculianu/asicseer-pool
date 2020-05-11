@@ -589,6 +589,11 @@ int safecmp(const char *a, const char *b);
 int safecasecmp(const char *a, const char *b, int len); // pass len < 0 to compare all
 bool cmdmatch(const char *buf, const char *cmd);
 
+/// Writes length_byte(s) + `size_to_write` to the buffer at dest.  Returns the number of bytes written,
+/// including the size byte(s). `dest` should have space for at least 9 bytes.
+/// Return value will always be <= 9.
+int write_compact_size(void *dest, size_t size_to_write);
+
 // returns 0 on address parse failure, otherwise returns length of generated CScript
 int address_to_txn(char *p2h, const char *addr, const bool script, const char *default_cashaddr_prefix);
 
