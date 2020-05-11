@@ -767,10 +767,10 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, txns_buffer_t
 		}
 		json_set_double(payout_entries, user->username, total_reward / (double)SATOSHIS);
 		if (credit)
-			LOGINFO("User %s reward %"PRIu64" + %"PRId64 " fee discount credit (%0.2f%% fee discount)",
-			        user->username, reward, credit, user->fee_discount * 100.0);
+			LOGINFO("User %s reward %"PRIu64" + %"PRId64 " fee discount credit (%0.2f%% fee discount) = %1.8f total",
+			        user->username, reward, credit, user->fee_discount * 100.0, total_reward / (double)SATOSHIS);
 		else
-			LOGINFO("User %s reward %"PRIu64, user->username, total_reward);
+			LOGINFO("User %s reward %1.8f", user->username, total_reward / (double)SATOSHIS);
 
 		/* Add the user's coinbase reward, using the cached cscript */
 		amt_pos = _add_txnbin(txns, total_reward, user->txnbin, user->txnlen);
