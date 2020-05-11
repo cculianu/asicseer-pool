@@ -1107,7 +1107,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 				memmove(wb->coinb2bin + compact_size_pos + 1, wb->coinb2bin + first_tx_pos, blob_size);
 				endpos -= ndiff;
 				wb->coinb2len -= ndiff;
-				LOGDEBUG("Coinb2 moved %d blob backwards by %d bytes, endpos now: %d",
+				LOGDEBUG("Coinb2 moved %d-byte blob backwards by %d bytes, endpos now: %d",
 				         blob_size, ndiff, wb->coinb2len);
 			}
 			first_tx_pos -= ndiff;
@@ -1116,6 +1116,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 			// this should never happen.
 			quit(1, "Unexpected compact_size number of bytes!");
 		}
+		LOGDEBUG("num_txs: %lu", num_txns);
 	}
 	wb->coinb2len += 4; // Blank lock
 
