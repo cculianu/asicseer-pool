@@ -1886,17 +1886,23 @@ int write_compact_size(void *dest, size_t nSize)
 	}
 	if (nSize <= UINT16_MAX) {
 		*buf++ = 0xfd;
-		*(uint16_t *)buf = htole16((uint16_t)nSize);
+		// avoid unaligned access
+		const uint16_t datum = htole16((uint16_t)nSize);
+		memcpy(buf, &datum, 2);
 		return 3;
 	}
 	if (nSize <= UINT32_MAX) {
 		*buf++ = 0xfe;
-		*(uint32_t *)buf = htole32((uint32_t)nSize);
+		// avoid unaligned access
+		const uint32_t datum = htole32((uint32_t)nSize);
+		memcpy(buf, &datum, 4);
 		return 5;
 	}
 	// 64-bit (8 byte) .. unlikely.
 	*buf++ = 0xff;
-	*(uint64_t *)buf = htole64((uint64_t)nSize);
+	// avoid unaligned access
+	const uint64_t datum = htole64((uint64_t)nSize);
+	memcpy(buf, &datum, 8);
 	return 9;
 }
 
