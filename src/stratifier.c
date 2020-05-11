@@ -924,7 +924,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 	memcpy(wb->coinb2bin + wb->coinb2len, "\xff\xff\xff\xff", 4); // sequence
 	wb->coinb2len += 4;
 
-	// at this pint wb->coinb2bin[wb->coinb2len] points to the vtx.out length field (compact size).
+	// at this pint wb->coinb2bin[wb->coinb2len] points to the tx.vout length field (compact size).
 	// reserve 3 bytes for this field.  Common case is we will have to move the data back by 2 bytes, however.
 	const int compact_size_pos = wb->coinb2len;
 	static const int compact_size_reserved = 3;
