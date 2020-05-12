@@ -6310,7 +6310,7 @@ static void client_auth(pool_t *ckp, stratum_instance_t *client, user_instance_t
 
 /* Needs to be entered with client holding a ref count. */
 static json_t *parse_authorise(stratum_instance_t *client, const json_t *params_val,
-                   json_t **err_val, int *errnum)
+                               json_t **err_val, int *errnum)
 {
     user_instance_t *user;
     pool_t *ckp = client->ckp;
@@ -6337,11 +6337,16 @@ static json_t *parse_authorise(stratum_instance_t *client, const json_t *params_
         *err_val = json_string("Invalid workername parameter");
         goto out;
     }
-    if (!strlen(buf)) {
+    const size_t buflen = strlen(buf);
+    if (!buflen) {
         *err_val = json_string("Empty workername parameter");
         goto out;
     }
-    if (!memcmp(buf, ".", 1) || !memcmp(buf, "_", 1)) {
+    if (buflen > MAX_USERNAME) {
+        *err_val = json_string("Username parameter too long");
+        goto out;
+    }
+    if (*buf == '.' || *buf == '_') {
         *err_val = json_string("Empty username parameter");
         goto out;
     }
