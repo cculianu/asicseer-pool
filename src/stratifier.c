@@ -5874,7 +5874,7 @@ static void read_userstats(pool_t *ckp, sdata_t *sdata, int tvsec_diff)
 	sdata->stats.cbspace = users * CBGENLEN;
 
 	if (likely(users))
-		LOGWARNING("Loaded %d users and %d workers; est. cbspace %d bytes", users, workers, sdata->stats.cbspace);
+		LOGWARNING("Loaded %d users and %d workers; cb txouts ~%d bytes", users, workers, sdata->stats.cbspace);
 }
 
 #define DEFAULT_AUTH_BACKOFF	(3)  /* Set initial backoff to 3 seconds */
@@ -6691,15 +6691,17 @@ test_blocksolve(const stratum_instance_t *client, const workbase_t *wb, const uc
 		/* Log to disk unlocked  with a dup of the json */
 		ASPRINTF(&fname, "%s/pool/blocks/%d.unconfirmed", ckp->logdir, wb->height);
 		fp = fopen(fname, "we");
-		if (unlikely(!fp))
+		if (unlikely(!fp)) {
 			LOGERR("Failed to fopen %s", fname);
-		dealloc(fname);
-		s = json_dumps(blockval, JSON_NO_UTF8 | JSON_PRESERVE_ORDER |
-			JSON_REAL_PRECISION(12) | JSON_INDENT(1) | JSON_EOL);
+		} else {
+			s = json_dumps(blockval, JSON_NO_UTF8 | JSON_PRESERVE_ORDER |
+				JSON_REAL_PRECISION(12) | JSON_INDENT(1) | JSON_EOL);
+			fprintf(fp, "%s", s);
+			free(s);
+			fclose(fp);
+		}
 		json_decref(blockval);
-		fprintf(fp, "%s", s);
-		free(s);
-		fclose(fp);
+		dealloc(fname);
 		block_solve(ckp, val_copy);
 	} else
 		block_reject(val_copy);
@@ -8873,18 +8875,17 @@ static void dump_onelog_entries(char **fname, log_entry_t **entries)
 
 	if (unlikely(!fp)) {
 		LOGERR("Failed to fopen %s in dump_onelog_entries", *fname);
-		return;
+	} else {
+		DL_FOREACH_SAFE(*entries, entry, tmpentry) {
+			DL_DELETE(*entries, entry);
+			fprintf(fp, "%s", entry->buf);
+			free(entry->buf);
+			free(entry);
+		}
+
+		fclose(fp);
 	}
 	free(*fname);
-
-	DL_FOREACH_SAFE(*entries, entry, tmpentry) {
-		DL_DELETE(*entries, entry);
-		fprintf(fp, "%s", entry->buf);
-		free(entry->buf);
-		free(entry);
-	}
-
-	fclose(fp);
 }
 
 static void upstream_workers(pool_t *ckp, user_instance_t *user)
