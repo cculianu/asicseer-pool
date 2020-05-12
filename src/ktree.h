@@ -15,15 +15,19 @@
 #include "klist.h"
 #include "libasicseerpool.h"
 
+#ifdef  __cplusplus
+extern "C" {
+#endif
+
 #define quithere(status, fmt, ...) \
-	quitfrom(status, __FILE__, __func__, __LINE__, fmt, ##__VA_ARGS__)
+    quitfrom(status, __FILE__, __func__, __LINE__, fmt, ##__VA_ARGS__)
 
 #define KTREE_FFL " - from %s %s() line %d"
 #define KTREE_FFL_HERE __FILE__, __func__, __LINE__
 #define KTREE_FFL_PASS file, func, line
 #define KTREE_FFL_ARGS  __maybe_unused const char *file, \
-			__maybe_unused const char *func, \
-			__maybe_unused const int line
+            __maybe_unused const char *func, \
+            __maybe_unused const int line
 
 #define cmp_t int32_t
 
@@ -32,7 +36,7 @@
 #define CMP_BIG_Z(a,b) (((a) < (b)) ? -1 : 1)
 #define CMP_BIG(a,b) (((a) == (b)) ? 0 : CMP_BIG_Z(a,b))
 #define CMP_TV(a,b) (((a).tv_sec == (b).tv_sec) ? CMP_BIG((a).tv_usec,(b).tv_usec) : \
-						  CMP_BIG_Z((a).tv_sec,(b).tv_sec))
+                          CMP_BIG_Z((a).tv_sec,(b).tv_sec))
 #define CMP_BIGINT CMP_BIG
 #define CMP_DOUBLE CMP_BIG
 
@@ -41,24 +45,24 @@
 
 typedef struct knode
 {
-	K_ITEM	*kitem;
-	bool	isNil;
-	bool	red;
-	struct	knode	*parent;
-	struct	knode	*left;
-	struct	knode	*right;
-	K_ITEM	*data;
-	long	test;
+    K_ITEM	*kitem;
+    bool	isNil;
+    bool	red;
+    struct	knode	*parent;
+    struct	knode	*left;
+    struct	knode	*right;
+    K_ITEM	*data;
+    long	test;
 } K_NODE;
 
 typedef struct ktree
 {
-	const char *name;
-	K_NODE	*root;
-	cmp_t (*cmp_funct)(K_ITEM *, K_ITEM *);
-	K_LIST	*master;
-	K_LIST	*node_free;
-	K_STORE	*node_store;
+    const char *name;
+    K_NODE	*root;
+    cmp_t (*cmp_funct)(K_ITEM *, K_ITEM *);
+    K_LIST	*master;
+    K_LIST	*node_free;
+    K_STORE	*node_store;
 } K_TREE;
 
 typedef void *K_TREE_CTX;
@@ -68,16 +72,16 @@ typedef void *K_TREE_CTX;
 #define NODE_LIMIT 0
 
 extern K_TREE *_new_ktree(const char *name, cmp_t (*cmp_funct)(K_ITEM *, K_ITEM *),
-			  K_LIST *master, int alloc, int limit, bool local_tree,
-			  KTREE_FFL_ARGS);
+              K_LIST *master, int alloc, int limit, bool local_tree,
+              KTREE_FFL_ARGS);
 #define new_ktree(_name, _cmp_funct, _master) \
-	_new_ktree(_name, _cmp_funct, _master, _master->allocate, _master->limit, false, KLIST_FFL_HERE)
+    _new_ktree(_name, _cmp_funct, _master, _master->allocate, _master->limit, false, KLIST_FFL_HERE)
 #define new_ktree_local(_name, _cmp_funct, _master) \
-	_new_ktree(_name, _cmp_funct, _master, _master->allocate, _master->limit, true, KLIST_FFL_HERE)
+    _new_ktree(_name, _cmp_funct, _master, _master->allocate, _master->limit, true, KLIST_FFL_HERE)
 #define new_ktree_auto(_name, _cmp_funct, _master) \
-	_new_ktree(_name, _cmp_funct, _master, NODE_ALLOC, NODE_LIMIT, true, KLIST_FFL_HERE)
+    _new_ktree(_name, _cmp_funct, _master, NODE_ALLOC, NODE_LIMIT, true, KLIST_FFL_HERE)
 #define new_ktree_size(_name, _cmp_funct, _master, _alloc, _limit) \
-	_new_ktree(_name, _cmp_funct, _master, _alloc, _limit, false, KLIST_FFL_HERE)
+    _new_ktree(_name, _cmp_funct, _master, _alloc, _limit, false, KLIST_FFL_HERE)
 extern void _dump_ktree(K_TREE *tree, char *(*dsp_funct)(K_ITEM *), KTREE_FFL_ARGS);
 #define dump_ktree(_tree, _dsp_funct) _dump_ktree(_tree, _dsp_funct, KLIST_FFL_HERE)
 extern void _dsp_ktree(K_TREE *tree, char *filename, char *msg, KTREE_FFL_ARGS);
@@ -112,8 +116,12 @@ extern void _remove_from_ktree_free(K_TREE *tree, K_ITEM *data, bool chklock, KT
 //#define remove_from_ktree_nolock(_tree, _data) _remove_from_ktree_free(_tree, _data, false, KLIST_FFL_HERE)
 extern void _free_ktree(K_TREE *tree, void (*free_funct)(void *), KTREE_FFL_ARGS);
 #define free_ktree(_tree, _free_funct) do { \
-		_free_ktree(_tree, _free_funct, KLIST_FFL_HERE); \
-		_tree = NULL; \
-	} while (0)
+        _free_ktree(_tree, _free_funct, KLIST_FFL_HERE); \
+        _tree = NULL; \
+    } while (0)
 
+#ifdef  __cplusplus
+}
 #endif
+
+#endif // ___KTREE_H

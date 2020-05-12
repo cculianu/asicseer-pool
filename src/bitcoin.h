@@ -12,6 +12,13 @@
 #ifndef BITCOIN_H
 #define BITCOIN_H
 
+#include <stdbool.h>
+#include "connector.h"
+
+#ifdef  __cplusplus
+extern "C" {
+#endif
+
 typedef struct genwork gbtbase_t;
 
 bool validate_address(connsock_t *cs, const char *address, bool *script);
@@ -29,5 +36,9 @@ char *get_txn(connsock_t *cs, const char *hash);
 bool get_chain(connsock_t *cs, char *chain);
 
 #define DUST_LIMIT_SATS 546
+
+#ifdef  __cplusplus
+}
+#endif
 
 #endif /* BITCOIN_H */

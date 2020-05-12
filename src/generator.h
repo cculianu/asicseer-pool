@@ -13,6 +13,11 @@
 #define GENERATOR_H
 
 #include "config.h"
+#include "asicseer-pool.h"
+
+#ifdef  __cplusplus
+extern "C" {
+#endif
 
 #define GETBEST_FAILED -1
 #define GETBEST_NOTIFY 0
@@ -31,4 +36,9 @@ void *generator(void *arg);
  * Request getblockchaininfo from bitcoind for "chain", writing the value into "chain"
  * which should be at least 16 bytes long. */
 bool generator_get_chain(pool_t *ckp, char *chain);
+
+#ifdef  __cplusplus
+}
+#endif
+
 #endif /* GENERATOR_H */

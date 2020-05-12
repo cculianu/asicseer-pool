@@ -9,6 +9,11 @@
 
 #include <stdint.h>
 
+#ifdef  __cplusplus
+extern "C" {
+#endif
+
+
 /* Returns a 20-byte buffer containing the hash160 of the pk or script decoded
  * from a cashaddr string, or NULL on bad address string. The passed-in string
  * may be preceded by a prefix such as "bitcoincash:", "bchtest:", or "bchreg:".
@@ -29,5 +34,9 @@ extern uint8_t *cashaddr_decode_hash160(const char *addr,
 #define CASHADDR_PREFIX_MAIN "bitcoincash"
 #define CASHADDR_PREFIX_TEST "bchtest"
 #define CASHADDR_PREFIX_REGTEST "bchreg"
+
+#ifdef  __cplusplus
+}
+#endif
 
 #endif

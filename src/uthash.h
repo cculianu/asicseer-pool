@@ -79,6 +79,10 @@ typedef unsigned int uint32_t;
 typedef unsigned char uint8_t;
 #endif
 
+#ifdef  __cplusplus
+extern "C" {
+#endif
+
 #ifndef uthash_fatal
 #define uthash_fatal(msg) exit(-1)        /* fatal error (out of memory,etc) */
 #endif
@@ -1099,5 +1103,9 @@ typedef struct UT_hash_handle {
    unsigned keylen;                  /* enclosing struct's key len     */
    unsigned hashv;                   /* result of hash-fcn(key)        */
 } UT_hash_handle;
+
+#ifdef  __cplusplus
+}
+#endif
 
 #endif /* UTHASH_H */

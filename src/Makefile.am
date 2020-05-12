@@ -24,8 +24,7 @@ libasicseerpool_a_LIBADD = $(native_objs)
 
 bin_PROGRAMS = asicseer-pool asicseer-pmsg notifier summariser
 asicseer_pool_SOURCES = asicseer-pool.c asicseer-pool.h generator.c generator.h bitcoin.c bitcoin.h \
-		 stratifier.c stratifier.h connector.c connector.h uthash.h \
-		 utlist.h
+			stratifier.c stratifier.h connector.c connector.h uthash.h utlist.h donation.h
 asicseer_pool_LDADD = libasicseerpool.a @JANSSON_LIBS@ @LIBS@
 
 asicseer_pmsg_SOURCES = asicseer-pmsg.c
@@ -39,7 +38,7 @@ summariser_LDADD = libasicseerpool.a @JANSSON_LIBS@
 
 if WANT_ASICSEER_DB
 bin_PROGRAMS += asicseer-db
-asicseer_db_SOURCES = asicseer-db.c ckdb_cmd.c ckdb_data.c ckdb_dbio.c ckdb_btc.c \
-		ckdb_crypt.c asicseer-db.h klist.c ktree.c klist.h ktree.h
+asicseer_db_SOURCES = asicseer-db.c ckdb_cmd.c ckdb_data.c ckdb_dbio.c ckdb_btc.c ckdb_crypt.c \
+		      asicseer-db.h klist.c ktree.c klist.h ktree.h
 asicseer_db_LDADD = libasicseerpool.a @JANSSON_LIBS@ @LIBS@
 endif

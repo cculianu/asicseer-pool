@@ -39,6 +39,12 @@
 #ifndef SHA2_H
 #define SHA2_H
 
+#include <stdint.h>
+
+#ifdef  __cplusplus
+extern "C" {
+#endif
+
 #define SHA256_DIGEST_SIZE ( 256 / 8)
 #define SHA256_BLOCK_SIZE  ( 512 / 8)
 
@@ -67,5 +73,9 @@ void sha256_update(sha256_ctx *ctx, const unsigned char *message,
 void sha256_final(sha256_ctx *ctx, unsigned char *digest);
 void sha256(const unsigned char *message, unsigned int len,
             unsigned char *digest);
+
+#ifdef  __cplusplus
+}
+#endif
 
 #endif /* !SHA2_H */

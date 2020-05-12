@@ -93,7 +93,7 @@ extern void sha256_rorx(const void *, uint32_t[8], uint64_t);
 void sha256_transf(sha256_ctx *ctx, const unsigned char *message,
                    unsigned int block_nb)
 {
-	sha256_rorx(message, ctx->h, block_nb);
+    sha256_rorx(message, ctx->h, block_nb);
 }
 #elif defined(USE_AVX1)
 extern void sha256_avx(const unsigned char *, uint32_t[8], uint64_t);
@@ -101,7 +101,7 @@ extern void sha256_avx(const unsigned char *, uint32_t[8], uint64_t);
 void sha256_transf(sha256_ctx *ctx, const unsigned char *message,
                    unsigned int block_nb)
 {
-	sha256_avx(message, ctx->h, block_nb);
+    sha256_avx(message, ctx->h, block_nb);
 }
 #elif defined(USE_SSE4)
 extern void sha256_sse4(const unsigned char *, uint32_t[8], uint64_t);
@@ -109,7 +109,7 @@ extern void sha256_sse4(const unsigned char *, uint32_t[8], uint64_t);
 void sha256_transf(sha256_ctx *ctx, const unsigned char *message,
                    unsigned int block_nb)
 {
-	sha256_sse4(message, ctx->h, block_nb);
+    sha256_sse4(message, ctx->h, block_nb);
 }
 #else
 void sha256_transf(sha256_ctx *ctx, const unsigned char *message,

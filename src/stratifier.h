@@ -12,6 +12,12 @@
 #ifndef STRATIFIER_H
 #define STRATIFIER_H
 
+#include "asicseer-pool.h"
+
+#ifdef  __cplusplus
+extern "C" {
+#endif
+
 /* Max depth of the merkle tree. Increase this if blocks ever have more than 4 billion tx's. */
 #define GENWORK_MAX_MERKLE_DEPTH 32
 
@@ -27,78 +33,78 @@
 
 /* Generic structure for both workbase in stratifier and gbtbase in generator */
 struct genwork {
-	/* Hash table data */
-	UT_hash_handle hh;
+    /* Hash table data */
+    UT_hash_handle hh;
 
-	/* The next two fields need to be consecutive as both of them are
-	 * used as the key for their hashtable entry in remote_workbases */
-	int64_t id;
-	/* The client id this workinfo came from if remote */
-	int64_t client_id;
+    /* The next two fields need to be consecutive as both of them are
+     * used as the key for their hashtable entry in remote_workbases */
+    int64_t id;
+    /* The client id this workinfo came from if remote */
+    int64_t client_id;
 
-	char idstring[20];
+    char idstring[20];
 
-	/* How many readers we currently have of this workbase, set
-	 * under write workbase_lock */
-	int readcount;
+    /* How many readers we currently have of this workbase, set
+     * under write workbase_lock */
+    int readcount;
 
-	/* The id a remote workinfo is mapped to locally */
-	int64_t mapped_id;
+    /* The id a remote workinfo is mapped to locally */
+    int64_t mapped_id;
 
-	ts_t gentime;
-	tv_t retired;
+    ts_t gentime;
+    tv_t retired;
 
-	/* GBT/shared variables */
-	char target[68];
-	double diff;
-	double network_diff;
-	uint32_t version;
-	uint32_t curtime;
-	char prevhash[68];
-	char ntime[12];
-	uint32_t ntime32;
-	char bbversion[12];
-	char nbit[12];
-	uint64_t coinbasevalue;
-	int height;
-	char *flags;
-	int txns;
-	char *txn_data;
-	char *txn_hashes;
-	int merkles;
-	char merklehash[GENWORK_MAX_MERKLE_DEPTH][68];
-	char merklebin[GENWORK_MAX_MERKLE_DEPTH][32];
-	json_t *merkle_array;
+    /* GBT/shared variables */
+    char target[68];
+    double diff;
+    double network_diff;
+    uint32_t version;
+    uint32_t curtime;
+    char prevhash[68];
+    char ntime[12];
+    uint32_t ntime32;
+    char bbversion[12];
+    char nbit[12];
+    uint64_t coinbasevalue;
+    int height;
+    char *flags;
+    int txns;
+    char *txn_data;
+    char *txn_hashes;
+    int merkles;
+    char merklehash[GENWORK_MAX_MERKLE_DEPTH][68];
+    char merklebin[GENWORK_MAX_MERKLE_DEPTH][32];
+    json_t *merkle_array;
 
-	/* Template variables, lengths are binary lengths! */
-	char *coinb1; // coinbase1
-	uchar *coinb1bin;
-	int coinb1len; // length of above
+    /* Template variables, lengths are binary lengths! */
+    char *coinb1; // coinbase1
+    uchar *coinb1bin;
+    int coinb1len; // length of above
 
-	char enonce1const[32]; // extranonce1 section that is constant
-	uchar enonce1constbin[16];
-	int enonce1constlen; // length of above - usually zero unless proxying
-	int enonce1varlen; // length of unique extranonce1 string for each worker - usually 8
+    char enonce1const[32]; // extranonce1 section that is constant
+    uchar enonce1constbin[16];
+    int enonce1constlen; // length of above - usually zero unless proxying
+    int enonce1varlen; // length of unique extranonce1 string for each worker - usually 8
 
-	int enonce2varlen; // length of space left for extranonce2 - usually 8 unless proxying
+    int enonce2varlen; // length of space left for extranonce2 - usually 8 unless proxying
 
-	char *coinb2; // coinbase2
-	uchar *coinb2bin;
-	int coinb2len; // length of above
+    char *coinb2; // coinbase2
+    uchar *coinb2bin;
+    int coinb2len; // length of above
 
-	/* Cached header binary */
-	char headerbin[112];
+    /* Cached header binary */
+    char headerbin[112];
 
-	char *logdir;
+    char *logdir;
 
-	pool_t *ckp;
-	bool proxy; /* This workbase is proxied work */
+    pool_t *ckp;
+    bool proxy; /* This workbase is proxied work */
 
-	bool incomplete; /* This is a remote workinfo without all the txn data */
+    bool incomplete; /* This is a remote workinfo without all the txn data */
 
-	json_t *payout; /* Current generation payout summary data */
+    json_t *payout; /* Current generation payout summary data */
 
-	json_t *json; /* getblocktemplate json */
+    json_t *json; /* getblocktemplate json */
 };
 
 void parse_remote_txns(pool_t *ckp, const json_t *val);
@@ -116,5 +122,9 @@ void _stratifier_add_recv(pool_t *ckp, json_t *val, const char *file, const char
 void normalize_bchsig(char *);
 
 void *stratifier(void *arg);
+
+#ifdef  __cplusplus
+}
+#endif
 
 #endif /* STRATIFIER_H */

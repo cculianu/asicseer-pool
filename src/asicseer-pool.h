@@ -24,15 +24,19 @@
 #include "libasicseerpool.h"
 #include "uthash.h"
 
+#ifdef  __cplusplus
+extern "C" {
+#endif
+
 #define RPC_TIMEOUT 60
 
 struct pool_instance;
 typedef struct pool_instance pool_t;
 
 struct ckmsg {
-	struct ckmsg *next;
-	struct ckmsg *prev;
-	void *data;
+    struct ckmsg *next;
+    struct ckmsg *prev;
+    void *data;
 };
 
 typedef struct ckmsg ckmsg_t;
@@ -40,22 +44,22 @@ typedef struct ckmsg ckmsg_t;
 typedef struct unix_msg unix_msg_t;
 
 struct unix_msg {
-	unix_msg_t *next;
-	unix_msg_t *prev;
-	int sockd;
-	char *buf;
+    unix_msg_t *next;
+    unix_msg_t *prev;
+    int sockd;
+    char *buf;
 };
 
 struct ckmsgq {
-	pool_t *ckp;
-	char name[16];
-	pthread_t pth;
-	mutex_t *lock;
-	pthread_cond_t *cond;
-	ckmsg_t *msgs;
-	void (*func)(pool_t *, void *);
-	int64_t messages;
-	volatile bool active;
+    pool_t *ckp;
+    char name[16];
+    pthread_t pth;
+    mutex_t *lock;
+    pthread_cond_t *cond;
+    ckmsg_t *msgs;
+    void (*func)(pool_t *, void *);
+    int64_t messages;
+    volatile bool active;
 };
 
 typedef struct ckmsgq ckmsgq_t;
@@ -63,38 +67,38 @@ typedef struct ckmsgq ckmsgq_t;
 typedef struct proc_instance proc_instance_t;
 
 struct proc_instance {
-	pool_t *ckp;
-	unixsock_t us;
-	char *processname;
-	char *sockname;
-	int pid;
-	int oldpid;
-	pthread_t pth_process;
+    pool_t *ckp;
+    unixsock_t us;
+    char *processname;
+    char *sockname;
+    int pid;
+    int oldpid;
+    pthread_t pth_process;
 
-	/* Linked list of received messages, locking and conditional */
-	unix_msg_t *unix_msgs;
-	mutex_t rmsg_lock;
-	pthread_cond_t rmsg_cond;
+    /* Linked list of received messages, locking and conditional */
+    unix_msg_t *unix_msgs;
+    mutex_t rmsg_lock;
+    pthread_cond_t rmsg_cond;
 };
 
 struct connsock {
-	int fd;
-	char *url;
-	char *port;
-	char *auth;
+    int fd;
+    char *url;
+    char *port;
+    char *auth;
 
-	char *buf;
-	int bufofs;
-	int buflen;
-	int bufsize;
-	int rcvbufsiz;
-	int sendbufsiz;
+    char *buf;
+    int bufofs;
+    int buflen;
+    int bufsize;
+    int rcvbufsiz;
+    int sendbufsiz;
 
-	pool_t *ckp;
-	/* Semaphore used to serialise request/responses */
-	sem_t sem;
+    pool_t *ckp;
+    /* Semaphore used to serialise request/responses */
+    sem_t sem;
 
-	atomic_bool alive;
+    atomic_bool alive;
 };
 
 typedef struct connsock connsock_t;
@@ -102,274 +106,274 @@ typedef struct connsock connsock_t;
 typedef struct char_entry char_entry_t;
 
 struct char_entry {
-	char_entry_t *next;
-	char_entry_t *prev;
-	char *buf;
-	double comparator;
+    char_entry_t *next;
+    char_entry_t *prev;
+    char *buf;
+    double comparator;
 };
 
 typedef struct log_entry log_entry_t;
 
 struct log_entry {
-	log_entry_t *next;
-	log_entry_t *prev;
-	char *fname;
-	char *buf;
-	double comparator;
+    log_entry_t *next;
+    log_entry_t *prev;
+    char *fname;
+    char *buf;
+    double comparator;
 };
 
 struct server_instance {
-	/* Hash table data */
-	UT_hash_handle hh;
-	int id;
+    /* Hash table data */
+    UT_hash_handle hh;
+    int id;
 
-	char *url;
-	char *auth;
-	char *pass;
-	atomic_bool notify;
-	atomic_bool alive;
-	connsock_t cs;
+    char *url;
+    char *auth;
+    char *pass;
+    atomic_bool notify;
+    atomic_bool alive;
+    connsock_t cs;
 };
 
 typedef struct server_instance server_instance_t;
 
 // Overrides for client mindiff and startdiff, applied based on useragent string from mining.subscribe.
 typedef struct mindiff_override {
-	/* If a client's useragent starts with this string (case insensitive),  then we apply the override. */
-	const char *useragent; // NB: in this program this is a malloc'd string owned by this object
-	size_t ualen; // strlen(useragent), cached so we don't have to recompute it each time
-	/* This override is applied if it's >= global mindiff, it affects client starting difficulty and minimum difficulty. */
-	int64_t mindiff;
+    /* If a client's useragent starts with this string (case insensitive),  then we apply the override. */
+    const char *useragent; // NB: in this program this is a malloc'd string owned by this object
+    size_t ualen; // strlen(useragent), cached so we don't have to recompute it each time
+    /* This override is applied if it's >= global mindiff, it affects client starting difficulty and minimum difficulty. */
+    int64_t mindiff;
 } mindiff_override_t;
 
 // Comes from config as "fee_discounts", which is a dict.
 // e.g.: "fee_discounts" : { "username" : 0.25, "anotherusername" : 0.0 }
 typedef struct user_fee_discount {
-	UT_hash_handle hh;
-	// The username specified in config
-	const char *username;
-	// A value between [0.0, 1.0] where 0.0 = no discount, 1.0 = full discount
-	double discount;
+    UT_hash_handle hh;
+    // The username specified in config
+    const char *username;
+    // A value between [0.0, 1.0] where 0.0 = no discount, 1.0 = full discount
+    double discount;
 } user_fee_discount_t;
 
 struct pool_instance {
-	/* Start time */
-	time_t starttime;
-	/* Start pid */
-	pid_t startpid;
-	/* The initial command line arguments */
-	char **initial_args;
-	/* Number of arguments */
-	int args;
-	/* Filename of config file */
-	char *config;
-	/* Kill old instance with same name */
-	bool killold;
-	/* Whether to log shares or not */
-	bool logshares;
-	/* Logging level */
-	int loglevel;
-	/* Main process name */
-	char *name;
-	/* Directory where sockets are created */
-	char *socket_dir;
-	/* Directory where ckdb sockets are */
-	char *ckdb_sockdir;
-	/* Name of the ckdb process */
-	char *ckdb_name;
-	char *ckdb_sockname;
-	/* Group ID for unix sockets */
-	char *grpnam;
-	gid_t gr_gid;
-	/* Directory where logs are written */
-	char *logdir;
-	/* Logfile */
-	char *logfilename;
-	FILE *logfp;
-	int logfd;
-	time_t lastopen_t;
-	/* Connector fds if we inherit them from a running process */
-	int *oldconnfd;
-	/* Should we inherit a running instance's socket and shut it down */
-	bool handover;
-	/* How many clients maximum to accept before rejecting further */
-	int maxclients;
+    /* Start time */
+    time_t starttime;
+    /* Start pid */
+    pid_t startpid;
+    /* The initial command line arguments */
+    char **initial_args;
+    /* Number of arguments */
+    int args;
+    /* Filename of config file */
+    char *config;
+    /* Kill old instance with same name */
+    bool killold;
+    /* Whether to log shares or not */
+    bool logshares;
+    /* Logging level */
+    int loglevel;
+    /* Main process name */
+    char *name;
+    /* Directory where sockets are created */
+    char *socket_dir;
+    /* Directory where ckdb sockets are */
+    char *ckdb_sockdir;
+    /* Name of the ckdb process */
+    char *ckdb_name;
+    char *ckdb_sockname;
+    /* Group ID for unix sockets */
+    char *grpnam;
+    gid_t gr_gid;
+    /* Directory where logs are written */
+    char *logdir;
+    /* Logfile */
+    char *logfilename;
+    FILE *logfp;
+    int logfd;
+    time_t lastopen_t;
+    /* Connector fds if we inherit them from a running process */
+    int *oldconnfd;
+    /* Should we inherit a running instance's socket and shut it down */
+    bool handover;
+    /* How many clients maximum to accept before rejecting further */
+    int maxclients;
 
-	/* API message queue */
-	ckmsgq_t *ckpapi;
+    /* API message queue */
+    ckmsgq_t *ckpapi;
 
-	/* Logger message queue */
-	ckmsgq_t *logger;
-	ckmsgq_t *console_logger;
+    /* Logger message queue */
+    ckmsgq_t *logger;
+    ckmsgq_t *console_logger;
 
-	/* Process instance data of parent/child processes */
-	proc_instance_t main;
+    /* Process instance data of parent/child processes */
+    proc_instance_t main;
 
-	proc_instance_t generator;
-	proc_instance_t stratifier;
-	proc_instance_t connector;
+    proc_instance_t generator;
+    proc_instance_t stratifier;
+    proc_instance_t connector;
 
-	volatile bool generator_ready; // TODO: use a real atomic value here
-	volatile bool stratifier_ready; // TODO: use a real atomic value here
-	volatile bool connector_ready; // TODO: use a real atomic value here
+    volatile bool generator_ready; // TODO: use a real atomic value here
+    volatile bool stratifier_ready; // TODO: use a real atomic value here
+    volatile bool connector_ready; // TODO: use a real atomic value here
 
-	/* Threads of main process */
-	pthread_t pth_listener;
-	pthread_t pth_watchdog;
+    /* Threads of main process */
+    pthread_t pth_listener;
+    pthread_t pth_watchdog;
 
-	/* Are we running in trusted remote node mode */
-	bool remote;
-	/* Does our upstream pool in remote mode have ckdb */
-	bool upstream_ckdb;
+    /* Are we running in trusted remote node mode */
+    bool remote;
+    /* Does our upstream pool in remote mode have ckdb */
+    bool upstream_ckdb;
 
-	/* Are we running in node proxy mode */
-	bool node;
+    /* Are we running in node proxy mode */
+    bool node;
 
-	/* Are we running in passthrough mode */
-	bool passthrough;
+    /* Are we running in passthrough mode */
+    bool passthrough;
 
-	/* Are we a redirecting passthrough */
-	bool redirector;
+    /* Are we a redirecting passthrough */
+    bool redirector;
 
-	/* Are we running as a proxy */
-	bool proxy;
+    /* Are we running as a proxy */
+    bool proxy;
 
-	/* Are we running without ckdb */
-	bool standalone;
+    /* Are we running without ckdb */
+    bool standalone;
 
-	/* Are we running in userproxy mode */
-	bool userproxy;
+    /* Are we running in userproxy mode */
+    bool userproxy;
 
-	/* Should we daemonise the asicseer-pool process */
-	bool daemon;
+    /* Should we daemonise the asicseer-pool process */
+    bool daemon;
 
-	/* Should we disable the throbber */
-	bool quiet;
+    /* Should we disable the throbber */
+    bool quiet;
 
-	/* Have we given warnings about the inability to raise buf sizes */
-	bool wmem_warn;
-	bool rmem_warn;
+    /* Have we given warnings about the inability to raise buf sizes */
+    bool wmem_warn;
+    bool rmem_warn;
 
-	/* Bitcoind data */
-	int btcds;
-	char **btcdurl;
-	char **btcdauth;
-	char **btcdpass;
-	bool *btcdnotify;
-	int blockpoll; // How frequently in ms to poll bitcoind for block updates
-	int nonce1length; // Extranonce1 length
-	int nonce2length; // Extranonce2 length
+    /* Bitcoind data */
+    int btcds;
+    char **btcdurl;
+    char **btcdauth;
+    char **btcdpass;
+    bool *btcdnotify;
+    int blockpoll; // How frequently in ms to poll bitcoind for block updates
+    int nonce1length; // Extranonce1 length
+    int nonce2length; // Extranonce2 length
 
-	/* Difficulty settings */
-	int64_t mindiff; // Default 1
-	int64_t startdiff; // Default 42
-	int64_t maxdiff; // No default
+    /* Difficulty settings */
+    int64_t mindiff; // Default 1
+    int64_t startdiff; // Default 42
+    int64_t maxdiff; // No default
 
-	const mindiff_override_t *mindiff_overrides; // Taken from top-level "mindiff_overrides" : { ... } in config.
-	size_t n_mindiff_overrides; // The number of mindiff_override in the above array. Will be 0 if array is NULL.
+    const mindiff_override_t *mindiff_overrides; // Taken from top-level "mindiff_overrides" : { ... } in config.
+    size_t n_mindiff_overrides; // The number of mindiff_override in the above array. Will be 0 if array is NULL.
 
-	user_fee_discount_t *user_fee_discounts; // Hash table, comes from config "fee_discounts". NULL if table is empty.
+    user_fee_discount_t *user_fee_discounts; // Hash table, comes from config "fee_discounts". NULL if table is empty.
 
-	/* Which chain are we on: "main", "test", or "regtest". Defaults to "main" but may be read
-	   from bitcoind and updated if !proxy instance.
-	   If you change these buffer sizes, update bitcoin.c get_chain(). */
-	char chain[16];
-	char cashaddr_prefix[16]; // defaults to "bitcoincash" but may be "bchtest" or "bchreg" after chain is correctly updated from bitcoind
-	bool not_mainnet; // if true, we are not on main net but rather on test net or regtest net
+    /* Which chain are we on: "main", "test", or "regtest". Defaults to "main" but may be read
+       from bitcoind and updated if !proxy instance.
+       If you change these buffer sizes, update bitcoin.c get_chain(). */
+    char chain[16];
+    char cashaddr_prefix[16]; // defaults to "bitcoincash" but may be "bchtest" or "bchreg" after chain is correctly updated from bitcoind
+    bool not_mainnet; // if true, we are not on main net but rather on test net or regtest net
 
-	/* Coinbase data */
-	char *bchaddress; // Address to mine to. In SPLNS mode this is used as a fallback address ok worker address failure, etc.
-	bool script; // Address is a script address
-	char *bchsig; // Optional signature to add to coinbase
-	struct {
-		char *address;
-		bool isscript;
-		bool valid;
-	} dev_donations[DONATION_NUM_ADDRESSES];  // [0] = calin, [1] = bchn -- see donation.h
+    /* Coinbase data */
+    char *bchaddress; // Address to mine to. In SPLNS mode this is used as a fallback address ok worker address failure, etc.
+    bool script; // Address is a script address
+    char *bchsig; // Optional signature to add to coinbase
+    struct {
+        char *address;
+        bool isscript;
+        bool valid;
+    } dev_donations[DONATION_NUM_ADDRESSES];  // [0] = calin, [1] = bchn -- see donation.h
 
-	double pool_fee; // comes from "pool_fee" in config, as a percentage. Defaults to 1.0 if unspecified. SPLNS mode only.
+    double pool_fee; // comes from "pool_fee" in config, as a percentage. Defaults to 1.0 if unspecified. SPLNS mode only.
 
-	/* Stratum options */
-	server_instance_t **servers;
-	char **serverurl; // Array of URLs to bind our server/proxy to
-	int serverurls; // Number of server bindings
-	bool *nodeserver; // If this server URL serves node information
-	bool *trusted; // If this server URL accepts trusted remote nodes
-	char *upstream; // Upstream pool in trusted remote mode
+    /* Stratum options */
+    server_instance_t **servers;
+    char **serverurl; // Array of URLs to bind our server/proxy to
+    int serverurls; // Number of server bindings
+    bool *nodeserver; // If this server URL serves node information
+    bool *trusted; // If this server URL accepts trusted remote nodes
+    char *upstream; // Upstream pool in trusted remote mode
 
-	int update_interval; // Seconds between stratum updates
+    int update_interval; // Seconds between stratum updates
 
-	uint32_t version_mask; // Bits which set to true means allow miner to modify those bits
+    uint32_t version_mask; // Bits which set to true means allow miner to modify those bits
 
-	/* Proxy options */
-	int proxies;
-	char **proxyurl;
-	char **proxyauth;
-	char **proxypass;
+    /* Proxy options */
+    int proxies;
+    char **proxyurl;
+    char **proxyauth;
+    char **proxypass;
 
-	/* Passthrough redirect options */
-	int redirecturls;
-	char **redirecturl;
-	char **redirectport;
+    /* Passthrough redirect options */
+    int redirecturls;
+    char **redirecturl;
+    char **redirectport;
 
-	/* Private data for each process */
-	void *gdata;
-	void *sdata;
-	void *cdata;
+    /* Private data for each process */
+    void *gdata;
+    void *sdata;
+    void *cdata;
 };
 
 enum stratum_msgtype {
-	SM_RECONNECT = 0,
-	SM_DIFF,
-	SM_MSG,
-	SM_UPDATE,
-	SM_ERROR,
-	SM_SUBSCRIBE,
-	SM_SUBSCRIBERESULT,
-	SM_SHARE,
-	SM_SHARERESULT,
-	SM_AUTH,
-	SM_AUTHRESULT,
-	SM_TXNS,
-	SM_TXNSRESULT,
-	SM_PING,
-	SM_WORKINFO,
-	SM_SUGGESTDIFF,
-	SM_BLOCK,
-	SM_PONG,
-	SM_TRANSACTIONS,
-	SM_SHAREERR,
-	SM_WORKERSTATS,
-	SM_REQTXNS,
-	SM_CONFIGURE,
-	SM_NONE
+    SM_RECONNECT = 0,
+    SM_DIFF,
+    SM_MSG,
+    SM_UPDATE,
+    SM_ERROR,
+    SM_SUBSCRIBE,
+    SM_SUBSCRIBERESULT,
+    SM_SHARE,
+    SM_SHARERESULT,
+    SM_AUTH,
+    SM_AUTHRESULT,
+    SM_TXNS,
+    SM_TXNSRESULT,
+    SM_PING,
+    SM_WORKINFO,
+    SM_SUGGESTDIFF,
+    SM_BLOCK,
+    SM_PONG,
+    SM_TRANSACTIONS,
+    SM_SHAREERR,
+    SM_WORKERSTATS,
+    SM_REQTXNS,
+    SM_CONFIGURE,
+    SM_NONE
 };
 
 static const char __maybe_unused *stratum_msgs[] = {
-	"reconnect",
-	"diff",
-	"message",
-	"update",
-	"error",
-	"subscribe",
-	"subscribe.result",
-	"share",
-	"share.result",
-	"auth",
-	"auth.result",
-	"txns",
-	"txns.result",
-	"ping",
-	"workinfo",
-	"suggestdiff",
-	"block",
-	"pong",
-	"transactions",
-	"shareerr",
-	"workerstats",
-	"reqtxns",
-	"mining.configure",
-	""
+    "reconnect",
+    "diff",
+    "message",
+    "update",
+    "error",
+    "subscribe",
+    "subscribe.result",
+    "share",
+    "share.result",
+    "auth",
+    "auth.result",
+    "txns",
+    "txns.result",
+    "ping",
+    "workinfo",
+    "suggestdiff",
+    "block",
+    "pong",
+    "transactions",
+    "shareerr",
+    "workerstats",
+    "reqtxns",
+    "mining.configure",
+    ""
 };
 
 #ifdef USE_ASICSEER_DB
@@ -399,12 +403,12 @@ int read_socket_line(connsock_t *cs, float *timeout);
 void _queue_proc(proc_instance_t *pi, const char *msg, const char *file, const char *func, const int line);
 #define send_proc(pi, msg) _queue_proc(&(pi), msg, __FILE__, __func__, __LINE__)
 char *_send_recv_proc(const proc_instance_t *pi, const char *msg, int writetimeout, int readtimedout,
-		      const char *file, const char *func, const int line);
+              const char *file, const char *func, const int line);
 #define send_recv_proc(pi, msg) _send_recv_proc(&(pi), msg, UNIX_WRITE_TIMEOUT, UNIX_READ_TIMEOUT, __FILE__, __func__, __LINE__)
 char *_send_recv_ckdb(const pool_t *ckp, const char *msg, const char *file, const char *func, const int line);
 #define send_recv_ckdb(ckp, msg) _send_recv_ckdb(ckp, msg, __FILE__, __func__, __LINE__)
 char *_ckdb_msg_call(const pool_t *ckp, const char *msg,  const char *file, const char *func,
-		     const int line);
+             const int line);
 #define ckdb_msg_call(ckp, msg) _ckdb_msg_call(ckp, msg, __FILE__, __func__, __LINE__)
 
 json_t *json_rpc_call(connsock_t *cs, const char *rpc_req);
@@ -427,8 +431,8 @@ bool json_getdel_int64(int64_t *store, json_t *val, const char *res);
 typedef struct apimsg apimsg_t;
 
 struct apimsg {
-	char *buf;
-	int sockd;
+    char *buf;
+    int sockd;
 };
 
 static inline void asicseer_pool_api(pool_t __maybe_unused *ckp, apimsg_t __maybe_unused *apimsg) {};
@@ -440,11 +444,15 @@ static inline void send_api_response(json_t __maybe_unused *val, const int __may
  * client if one exists. */
 static inline int64_t subclient(const int64_t client_id)
 {
-	return (client_id >> 32);
+    return (client_id >> 32);
 }
 
 // Returns a value from 0.0 (no discount) to 1.0 (full discount) for a particular
 // username.  This is set in the config file as a dict named "fee_discounts".
 extern double username_get_fee_discount(pool_t *ckp, const char *username);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* ASICSEER_POOL_H */

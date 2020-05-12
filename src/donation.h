@@ -19,4 +19,4 @@
 #define DONATION_ADDRESS_BCHN "3NoBpEBHZq6YqwUBdPAMW41w5BTJSC7yuQ"  // BCHN donation wallet
 #define DONATION_NUM_ADDRESSES 2
 
-#endif
+#endif // DONATION_H

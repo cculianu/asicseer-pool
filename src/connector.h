@@ -12,11 +12,26 @@
 #ifndef CONNECTOR_H
 #define CONNECTOR_H
 
+#include "config.h"
+
+#include <jansson.h>
+#include <stdint.h>
+
+#include "asicseer-pool.h"
+
+#ifdef  __cplusplus
+extern "C" {
+#endif
+
 int64_t connector_newclientid(pool_t *ckp);
 void connector_upstream_msg(pool_t *ckp, char *msg);
 void connector_add_message(pool_t *ckp, json_t *val);
 char *connector_stats(void *data, const int runtime);
 void connector_send_fd(pool_t *ckp, const int fdno, const int sockd);
 void *connector(void *arg);
+
+#ifdef  __cplusplus
+}
+#endif
 
 #endif /* CONNECTOR_H */
