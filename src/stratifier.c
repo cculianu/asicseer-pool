@@ -61,7 +61,10 @@ static const double nonces = 4294967296;
 #if PAYOUT_REWARDS * CBGENLEN > MAX_CB_SPACE
 #error Please set PAYOUT_REWARDS to fit inside a coinbase tx (MAX_CB_SPACE)!
 #endif
-
+#if defined(__clang__) && !defined(strdupa)
+// In case we are compiling with some compiler other than the GCC suite (strdupa is GCC only).
+#define strdupa(s) strcpy(alloca(strlen(s) + 1), s)
+#endif
 typedef struct json_entry json_entry_t;
 typedef struct generation generation_t;
 typedef struct user_instance user_instance_t;
