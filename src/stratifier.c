@@ -733,6 +733,8 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, txns_buffer_t
 	json_object_set_new_nocheck(payout, "payouts", payout_entries);
 	json_set_double(payout, "herp", total_herp);
 	json_object_set_new_nocheck(payout, "postponed", postponed_entries);
+	// add a timestamp for file writer
+	json_set_int64(payout, "time", (int64_t)time(NULL));
 
 	if (unlikely(total_herp <= 0.)) { // paranoia -- should always be false
 		LOGWARNING("total_herp is %0.9f!", total_herp);
@@ -1404,7 +1406,7 @@ static json_t *generate_workinfo(pool_t *ckp, const workbase_t *wb, const char *
 	sprintf(cdfield, "%lu,%lu", wb->gentime.tv_sec, wb->gentime.tv_nsec);
 
 	JSON_CPACK(val, "{sI,ss,ss,ss,ss,ss,ss,ss,ss,sI,so,ss,ss,ss,ss}",
-			"workinfoid", wb->id,
+			"workinfoid", (json_int_t)wb->id,
 			"poolinstance", ckp->name,
 			"transactiontree", wb->txn_hashes,
 			"prevhash", wb->prevhash,
@@ -1413,7 +1415,7 @@ static json_t *generate_workinfo(pool_t *ckp, const workbase_t *wb, const char *
 			"version", wb->bbversion,
 			"ntime", wb->ntime,
 			"bits", wb->nbit,
-			"reward", wb->coinbasevalue,
+			"reward", (json_int_t)wb->coinbasevalue,
 			"merklehash", json_deep_copy(wb->merkle_array),
 			"createdate", cdfield,
 			"createby", "code",
@@ -1441,7 +1443,7 @@ static void send_ageworkinfo(pool_t *ckp, const int64_t id)
 	sprintf(cdfield, "%lu,%lu", ts_now.tv_sec, ts_now.tv_nsec);
 
 	JSON_CPACK(val, "{sI,ss,ss,ss,ss,ss}",
-			"workinfoid", id,
+			"workinfoid", (json_int_t)id,
 			"poolinstance", ckp->name,
 			"createdate", cdfield,
 			"createby", "code",
@@ -8756,7 +8758,7 @@ static void update_workerstats(pool_t *ckp, sdata_t *sdata)
 		DL_FOREACH(user->worker_instances, worker) {
 			double ghs1, ghs5, ghs60, ghs1440;
 			json_t *val;
-			int elapsed;
+			time_t elapsed;
 
 			/* Send one lot of stats once the worker is idle if
 			 * they have submitted no shares in the last 10 minutes
@@ -8768,9 +8770,9 @@ static void update_workerstats(pool_t *ckp, sdata_t *sdata)
 			ghs5 = worker->dsps5 * nonces;
 			ghs60 = worker->dsps60 * nonces;
 			ghs1440 = worker->dsps1440 * nonces;
-			JSON_CPACK(val, "{ss,si,ss,ss,si,sf,sf,sf,sf,sb,ss,ss,ss,ss}",
+			JSON_CPACK(val, "{ss,sI,ss,ss,si,sf,sf,sf,sf,sb,ss,ss,ss,ss}",
 					"poolinstance", ckp->name,
-					"elapsed", elapsed,
+					"elapsed", (json_int_t)elapsed,
 					"username", user->username,
 					"workername", worker->workername,
 					"instances", worker->instance_count,
@@ -9207,19 +9209,19 @@ static void *statsupdate(void *arg)
 				LOGDEBUG("Storing worker %s", worker->workername);
 
 				percent = round(worker->herp / worker->lns * 100) / 100;
-				JSON_CPACK(val, "{ss,ss,ss,ss,ss,ss,si,sI,sf,sf,sf,sf}",
-					        "workername", worker->workername,
+				JSON_CPACK(val, "{ss,ss,ss,ss,ss,ss,sI,sI,sf,sf,sf,sf}",
+						"workername", worker->workername,
 						"hashrate1m", suffix1,
 						"hashrate5m", suffix5,
 						"hashrate1hr", suffix60,
 						"hashrate1d", suffix1440,
 						"hashrate7d", suffix10080,
-						"lastshare", worker->last_share.tv_sec,
-						"shares", worker->shares,
+						"lastshare", (json_int_t)worker->last_share.tv_sec,
+						"shares", (json_int_t)worker->shares,
 						"bestshare", worker->best_diff,
-					        "lns", worker->lns,
-					        "luck", percent,
-					        "herp", worker->herp);
+						"lns", worker->lns,
+						"luck", percent,
+						"herp", worker->herp);
 				json_array_append_new(user_array, val);
 				val = NULL;
 			}
@@ -9267,22 +9269,24 @@ static void *statsupdate(void *arg)
 			derp /= SATOSHIS;
 
 			percent = round(user->herp / user->lns * 100) / 100;
-			JSON_CPACK(val, "{ss,ss,ss,ss,ss,si,si,sI,sf,sf,sf,sf,si,sf,sf}",
+			JSON_CPACK(val, "{ss,ss,ss,ss,ss,sI,si,sI,sf,sf,sf,sf,si,sf,sf,sI}",
 					"hashrate1m", suffix1,
 					"hashrate5m", suffix5,
 					"hashrate1hr", suffix60,
 					"hashrate1d", suffix1440,
 					"hashrate7d", suffix10080,
-					"lastshare", user->last_share.tv_sec,
+					"lastshare", (json_int_t)user->last_share.tv_sec,
 					"workers", user->workers + user->remote_workers,
-					"shares", user->shares,
+					"shares", (json_int_t)user->shares,
 					"bestshare", user->best_diff,
-				        "lns", user->lns,
-				        "luck", percent,
-				        "accumulated", user->accumulated,
-				        "postponed", user->postponed,
-				        "herp", user->herp,
-				        "derp", derp);
+					"lns", user->lns,
+					"luck", percent,
+					"accumulated", user->accumulated,
+					"postponed", user->postponed,
+					"herp", user->herp,
+					"derp", derp,
+					// add timestamp for reference
+					"time", (json_int_t)now.tv_sec);
 
 			if (user->remote_workers) {
 				remote_workers += user->remote_workers;
@@ -9362,9 +9366,9 @@ static void *statsupdate(void *arg)
 			LOGERR("Failed to fopen %s", fname);
 		dealloc(fname);
 
-		JSON_CPACK(val, "{si,si,si,si,si,si}",
-				"runtime", diff.tv_sec,
-				"lastupdate", now.tv_sec,
+		JSON_CPACK(val, "{sI,sI,si,si,si,si}",
+				"runtime", (json_int_t)diff.tv_sec,
+				"lastupdate", (json_int_t)now.tv_sec,
 				"Users", stats->users + stats->remote_users,
 				"Workers", stats->workers + stats->remote_workers,
 				"Idle", idle_workers,
@@ -9372,7 +9376,7 @@ static void *statsupdate(void *arg)
 		s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER);
 		json_decref(val);
 		LOGNOTICE("Pool:%s", s);
-		fprintf(fp, "%s\n", s);
+		if (likely(fp)) fprintf(fp, "%s\n", s);
 		dealloc(s);
 
 		JSON_CPACK(val, "{ss,ss,ss,ss,ss,ss,ss}",
@@ -9386,36 +9390,36 @@ static void *statsupdate(void *arg)
 		s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER);
 		json_decref(val);
 		LOGNOTICE("Pool:%s", s);
-		fprintf(fp, "%s\n", s);
+		if (likely(fp)) fprintf(fp, "%s\n", s);
 		dealloc(s);
 
 		JSON_CPACK(val, "{sf,sf,sf,sf}",
-			        "SPS1m", stats->sps1,
+				"SPS1m", stats->sps1,
 				"SPS5m", stats->sps5,
 				"SPS15m", stats->sps15,
 				"SPS1h", stats->sps60);
 		s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER | JSON_REAL_PRECISION(3));
 		json_decref(val);
 		LOGNOTICE("Pool:%s", s);
-		fprintf(fp, "%s\n", s);
+		if (likely(fp)) fprintf(fp, "%s\n", s);
 		dealloc(s);
 
 		percent = (double)stats->accounted_diff_shares * 100 / (double)stats->network_diff;
 		snprintf(pcstring, 15, "%.1f", percent);
 		JSON_CPACK(val, "{ss,sI,sI,sf,sf,sf}",
-			        "diff", pcstring,
-				"accepted", stats->accounted_diff_shares,
-			        "rejected", stats->accounted_rejects,
-			        "lns", rolling_lns,
-			        "herp", rolling_herp,
-			        "reward", reward / SATOSHIS);
+				"diff", pcstring,
+				"accepted", (json_int_t)stats->accounted_diff_shares,
+				"rejected", (json_int_t)stats->accounted_rejects,
+				"lns", rolling_lns,
+				"herp", rolling_herp,
+				"reward", reward / SATOSHIS);
 		s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER | JSON_REAL_PRECISION(16));
 		json_decref(val);
 		val = NULL;
 		LOGNOTICE("Pool:%s", s);
-		fprintf(fp, "%s\n", s);
+		if (likely(fp)) fprintf(fp, "%s\n", s);
 		dealloc(s);
-		fclose(fp);
+		if (likely(fp)) fclose(fp);
 
 		ck_rlock(&sdata->workbase_lock);
 		if (likely(sdata->current_workbase && sdata->current_workbase->payout))
@@ -9425,15 +9429,17 @@ static void *statsupdate(void *arg)
 		if (likely(val)) {
 			ASPRINTF(&fname, "%s/pool/pool.work", ckp->logdir);
 			fp = fopen(fname, "we");
-			if (unlikely(!fp))
+			if (unlikely(!fp)) {
 				LOGERR("Failed to fopen %s", fname);
-			dealloc(fname);
-			s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER |
-				JSON_REAL_PRECISION(12) | JSON_INDENT(1) | JSON_EOL);
+			} else {
+				s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER |
+					JSON_REAL_PRECISION(12) | JSON_INDENT(1) | JSON_EOL);
+				fprintf(fp, "%s", s);
+				dealloc(s);
+				fclose(fp);
+			}
 			json_decref(val);
-			fprintf(fp, "%s", s);
-			dealloc(s);
-			fclose(fp);
+			dealloc(fname);
 		}
 
 		if (ckp->proxy && sdata->proxy) {
@@ -9441,9 +9447,9 @@ static void *statsupdate(void *arg)
 
 			mutex_lock(&sdata->proxy_lock);
 			JSON_CPACK(val, "{sI,si,si}",
-				   "current", sdata->proxy->id,
-				   "active", HASH_COUNT(sdata->proxies),
-				   "total", sdata->proxy_count);
+					"current", (json_int_t)sdata->proxy->id,
+					"active", (int)HASH_COUNT(sdata->proxies),
+					"total", sdata->proxy_count);
 			mutex_unlock(&sdata->proxy_lock);
 
 			s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER);
@@ -9454,10 +9460,10 @@ static void *statsupdate(void *arg)
 			mutex_lock(&sdata->proxy_lock);
 			HASH_ITER(hh, sdata->proxies, proxy, proxytmp) {
 				JSON_CPACK(val, "{sI,si,sI,sb}",
-					   "id", proxy->id,
-					   "subproxies", proxy->subproxy_count,
-					   "clients", proxy->combined_clients,
-					   "alive", !proxy->dead);
+						"id", (json_int_t)proxy->id,
+						"subproxies", proxy->subproxy_count,
+						"clients", (json_int_t)proxy->combined_clients,
+						"alive", !proxy->dead);
 				s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER);
 				json_decref(val);
 				ASPRINTF(&sp, "Proxies:%s", s);
@@ -9465,13 +9471,13 @@ static void *statsupdate(void *arg)
 				add_msg_entry(&char_list, &sp);
 				HASH_ITER(sh, proxy->subproxies, subproxy, subtmp) {
 					JSON_CPACK(val, "{sI,si,si,sI,sI,sf,sb}",
-						   "id", subproxy->id,
-						   "subid", subproxy->subid,
-						   "nonce2len", subproxy->nonce2len,
-						   "clients", subproxy->bound_clients,
-						   "maxclients", subproxy->max_clients,
-						   "diff", subproxy->diff,
-						   "alive", !subproxy->dead);
+							"id", (json_int_t)subproxy->id,
+							"subid", subproxy->subid,
+							"nonce2len", subproxy->nonce2len,
+							"clients", (json_int_t)subproxy->bound_clients,
+							"maxclients", (json_int_t)subproxy->max_clients,
+							"diff", subproxy->diff,
+							"alive", !subproxy->dead);
 					s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER);
 					json_decref(val);
 					ASPRINTF(&sp, "Subproxies:%s", s);
@@ -9485,9 +9491,9 @@ static void *statsupdate(void *arg)
 
 		ts_realtime(&ts_now);
 		sprintf(cdfield, "%lu,%lu", ts_now.tv_sec, ts_now.tv_nsec);
-		JSON_CPACK(val, "{ss,si,si,si,sf,sf,sf,sf,ss,ss,ss,ss}",
+		JSON_CPACK(val, "{ss,sI,si,si,sf,sf,sf,sf,ss,ss,ss,ss}",
 				"poolinstance", ckp->name,
-				"elapsed", diff.tv_sec,
+				"elapsed", (json_int_t)diff.tv_sec,
 				"users", stats->users + stats->remote_users,
 				"workers", stats->workers + stats->remote_workers,
 				"hashrate", ghs1,
