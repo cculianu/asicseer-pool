@@ -79,8 +79,8 @@ struct client_instance {
 
     /* Has this client already been told to redirect */
     bool redirected;
-    /* Has this client been authorised in redirector mode */
-    bool authorised;
+    /* Has this client been authorized in redirector mode */
+    bool authorized;
 
     /* Time this client started blocking, 0 when not blocked */
     time_t blocked_time;
@@ -1027,7 +1027,7 @@ static void send_client(pool_t *ckp, cdata_t *cdata, const int64_t id, char *buf
             free(buf);
             return;
         }
-        if (ckp->redirector && !client->redirected && client->authorised) {
+        if (ckp->redirector && !client->redirected && client->authorized) {
             /* If clients match the IP of clients that have already
              * been whitelisted as finding valid shares then
              * redirect them immediately. */
@@ -1049,7 +1049,7 @@ static void send_client(pool_t *ckp, cdata_t *cdata, const int64_t id, char *buf
     pthread_cond_signal(&cdata->sender_cond);
     mutex_unlock(&cdata->sender_lock);
 
-    /* Redirect after sending response to shares and authorise */
+    /* Redirect after sending response to shares and authorize */
     if (unlikely(redirect))
         redirect_client(ckp, client);
 }
@@ -1328,14 +1328,14 @@ static void client_message_processor(pool_t *ckp, json_t *json_msg)
     if (subclient(client_id))
         json_object_set_new_nocheck(json_msg, "client_id", json_integer(client_id & 0xffffffffll));
 
-    /* Flag redirector clients once they've been authorised */
+    /* Flag redirector clients once they've been authorized */
     if (ckp->redirector && (client = ref_client_by_id(cdata, client_id))) {
-        if (!client->redirected && !client->authorised) {
+        if (!client->redirected && !client->authorized) {
             json_t *method_val = json_object_get(json_msg, "node.method");
             const char *method = json_string_value(method_val);
 
             if (!safecmp(method, stratum_msgs[SM_AUTHRESULT]))
-                client->authorised = true;
+                client->authorized = true;
         }
         dec_instance_ref(cdata, client);
     }

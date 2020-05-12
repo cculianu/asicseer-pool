@@ -214,9 +214,9 @@ struct user_instance {
     tv_t last_share;
     tv_t last_decay;
 
-    bool authorised; /* Has this username ever been authorised? */
+    bool authorized; /* Has this username ever been authorized? */
     time_t auth_time;
-    time_t failed_authtime; /* Last time this username failed to authorise */
+    time_t failed_authtime; /* Last time this username failed to authorize */
     int auth_backoff; /* How long to reject any auth attempts since last failure */
     bool throttled; /* Have we begun rejecting auth attempts */
 
@@ -321,7 +321,7 @@ struct stratum_instance {
     bool node; /* Is this a mining node */
     bool subscribed;
     bool authorising; /* In progress, protected by instance_lock */
-    bool authorised;
+    bool authorized;
     bool dropped;
     bool idle;
     int reject;	/* Indicator that this client is having a run of rejects
@@ -450,7 +450,7 @@ struct txntable {
 #define ID_HEARTBEAT 9
 
 static const char *ckdb_ids[] = {
-    "authorise",
+    "authorize",
     "workinfo",
     "ageworkinfo",
     "shares",
@@ -463,7 +463,7 @@ static const char *ckdb_ids[] = {
 };
 
 static const char *ckdb_seq_names[] = {
-    "seqauthorise",
+    "seqauthorize",
     "seqworkinfo",
     "seqageworkinfo",
     "seqshares",
@@ -2898,7 +2898,7 @@ static void __disconnect_session(sdata_t *sdata, const stratum_instance_t *clien
         }
     }
 
-    if (!client->enonce1_64 || !client->user_instance || !client->authorised)
+    if (!client->enonce1_64 || !client->user_instance || !client->authorized)
         return;
     HASH_FIND_INT(sdata->disconnected_sessions, &client->session_id, session);
     if (session)
@@ -3249,7 +3249,7 @@ static void reconnect_global_clients(sdata_t *sdata)
     HASH_ITER(hh, sdata->stratum_instances, client, tmpclient) {
         if (client->dropped)
             continue;
-        if (!client->authorised)
+        if (!client->authorized)
             continue;
         /* Is this client bound to a dead proxy? */
         if (!client->reconnect) {
@@ -3536,7 +3536,7 @@ static void check_userproxies(sdata_t *sdata, proxy_t *proxy, const int userid)
     HASH_ITER(hh, sdata->stratum_instances, client, tmpclient) {
         if (client->dropped)
             continue;
-        if (!client->authorised)
+        if (!client->authorized)
             continue;
         if (client->user_id != userid)
             continue;
@@ -4036,7 +4036,7 @@ out_unlock:
 
 static inline bool client_active(stratum_instance_t *client)
 {
-    return (client->authorised && !client->dropped);
+    return (client->authorized && !client->dropped);
 }
 
 static inline bool remote_server(stratum_instance_t *client)
@@ -4783,7 +4783,7 @@ static json_t *clientinfo(const stratum_instance_t *client)
     json_set_int(val, "starttime", client->start_time);
     json_set_string(val, "address", client->address);
     json_set_bool(val, "subscribed", client->subscribed);
-    json_set_bool(val, "authorised", client->authorised);
+    json_set_bool(val, "authorized", client->authorized);
     json_set_bool(val, "idle", client->idle);
     json_set_string(val, "useragent", client->useragent ? client->useragent : "");
     json_set_string(val, "workername", client->workername ? client->workername : "");
@@ -5804,8 +5804,8 @@ static void read_userstats(pool_t *ckp, sdata_t *sdata, int tvsec_diff)
         }
         dealloc(buf);
 
-        /* Assume any user with logs was authorised */
-        user->authorised = true;
+        /* Assume any user with logs was authorized */
+        user->authorized = true;
         copy_tv(&user->last_decay, &now);
         user->dsps1 = dsps_from_key(val, "hashrate1m");
         user->dsps5 = dsps_from_key(val, "hashrate5m");
@@ -6109,9 +6109,9 @@ static void parse_worker_diffs(pool_t *ckp, json_t *worker_array)
     }
 }
 
-/* Send this to the database and parse the response to authorise a user
+/* Send this to the database and parse the response to authorize a user
  * and get SUID parameters back. We don't add these requests to the sdata->ckdbqueue
- * since we have to wait for the response but this is done from the authoriser
+ * since we have to wait for the response but this is done from the authorizer
  * thread so it won't hold anything up but other authorisations. Needs to be
  * entered with client holding a ref count. */
 static int send_recv_auth(stratum_instance_t *client)
@@ -6199,7 +6199,7 @@ static int send_recv_auth(stratum_instance_t *client)
             parse_worker_diffs(ckp, worker_array);
             user->auth_time = time(NULL);
         }
-        if (secondaryuserid && (!safecmp(response, "ok.authorise") ||
+        if (secondaryuserid && (!safecmp(response, "ok.authorize") ||
                     !safecmp(response, "ok.addrauth"))) {
             if (!user->secondaryuserid)
                 user->secondaryuserid = secondaryuserid;
@@ -6212,7 +6212,7 @@ static int send_recv_auth(stratum_instance_t *client)
         goto out;
     }
     if (contended)
-        LOGWARNING("Prolonged lock contention for "DB_PROGNAME" while trying to authorise");
+        LOGWARNING("Prolonged lock contention for "DB_PROGNAME" while trying to authorize");
     else {
         if (!sdata->ckdb_offline)
             LOGWARNING("Got no auth response from "DB_PROGNAME" :(");
@@ -6226,9 +6226,9 @@ out:
     return ret;
 }
 
-/* For sending auths to asicseer-db after we've already decided we can authorise
+/* For sending auths to asicseer-db after we've already decided we can authorize
  * these clients while asicseer-db is offline, based on an existing client of the
- * same username already having been authorised. Needs to be entered with
+ * same username already having been authorized. Needs to be entered with
  * client holding a ref count. */
 static void queue_delayed_auth(stratum_instance_t *client)
 {
@@ -6272,16 +6272,16 @@ static void client_auth(pool_t *ckp, stratum_instance_t *client, user_instance_t
                         const bool ret)
 {
     if (ret) {
-        client->authorised = ret;
-        user->authorised = ret;
+        client->authorized = ret;
+        user->authorized = ret;
         if (ckp->proxy) {
-            LOGNOTICE("Authorised client %s to proxy %d:%d, worker %s as user %s",
+            LOGNOTICE("authorized client %s to proxy %d:%d, worker %s as user %s",
                   client->identity, client->proxyid, client->subproxyid,
                       client->workername, user->username);
             if (ckp->userproxy)
                 check_global_user(ckp, user, client);
         } else {
-            LOGNOTICE("Authorised client %s worker %s as user %s",
+            LOGNOTICE("authorized client %s worker %s as user %s",
                   client->identity, client->workername, user->username);
         }
         user->failed_authtime = 0;
@@ -6289,11 +6289,11 @@ static void client_auth(pool_t *ckp, stratum_instance_t *client, user_instance_t
         user->throttled = false;
     } else {
         if (user->throttled) {
-            LOGINFO("Client %s %s worker %s failed to authorise as throttled user %s",
+            LOGINFO("Client %s %s worker %s failed to authorize as throttled user %s",
                 client->identity, client->address, client->workername,
                     user->username);
         } else {
-            LOGNOTICE("Client %s %s worker %s failed to authorise as user %s",
+            LOGNOTICE("Client %s %s worker %s failed to authorize as user %s",
                   client->identity, client->address, client->workername,
                       user->username);
         }
@@ -6309,7 +6309,7 @@ static void client_auth(pool_t *ckp, stratum_instance_t *client, user_instance_t
 }
 
 /* Needs to be entered with client holding a ref count. */
-static json_t *parse_authorise(stratum_instance_t *client, const json_t *params_val,
+static json_t *parse_authorize(stratum_instance_t *client, const json_t *params_val,
                                json_t **err_val, int *errnum)
 {
     user_instance_t *user;
@@ -6386,14 +6386,14 @@ static json_t *parse_authorise(stratum_instance_t *client, const json_t *params_
         ret = user->bchaddress;
     else {
         /* Preauth workers for the first 10 minutes after the user is
-         * first authorised by asicseer-db to avoid floods of worker auths.
+         * first authorized by asicseer-db to avoid floods of worker auths.
          * *errnum is implied zero already so ret will be set true */
         if (!user->auth_time || time(NULL) - user->auth_time > 600)
             *errnum = send_recv_auth(client);
         if (!*errnum)
             ret = true;
         else if (*errnum < 0 && user->secondaryuserid) {
-            /* This user has already been authorised but asicseer-db is
+            /* This user has already been authorized but asicseer-db is
              * offline so we assume they already exist but add the
              * auth request to the queued messages. */
             queue_delayed_auth(client);
@@ -7204,7 +7204,7 @@ static void suggest_diff(pool_t *ckp, stratum_instance_t *client, const char *me
     int64_t sdiff;
 
     if (unlikely(!client_active(client))) {
-        LOGNOTICE("Attempted to suggest diff on unauthorised client %s", client->identity);
+        LOGNOTICE("Attempted to suggest diff on unauthorized client %s", client->identity);
         return;
     }
     if (arr_val && json_is_integer(arr_val))
@@ -7324,7 +7324,7 @@ static void parse_method(pool_t *ckp, sdata_t *sdata, stratum_instance_t *client
      * copy the json item for id_val as is for the response. By far the
      * most common messages will be shares so look for those first */
     method = json_string_value(method_val);
-    if (likely(cmdmatch(method, "mining.submit") && client->authorised)) {
+    if (likely(cmdmatch(method, "mining.submit") && client->authorized)) {
         json_params_t *jp = create_json_params(client_id, method_val, params_val, id_val);
 
         ckmsgq_add(sdata->sshareq, jp);
@@ -7367,7 +7367,7 @@ static void parse_method(pool_t *ckp, sdata_t *sdata, stratum_instance_t *client
         /* Add this client as a trusted remote node in the connector and
          * drop the client in the stratifier */
         if (!ckp->trusted[client->server] || ckp->proxy) {
-            LOGNOTICE("Dropping client %s %s trying to authorise as remote node on non trusted server %d",
+            LOGNOTICE("Dropping client %s %s trying to authorize as remote node on non trusted server %d",
                   client->identity, client->address, client->server);
             connector_drop_client(ckp, client_id);
         } else {
@@ -7385,7 +7385,7 @@ static void parse_method(pool_t *ckp, sdata_t *sdata, stratum_instance_t *client
         /* Add this client as a passthrough in the connector and
          * add it to the list of mining nodes in the stratifier */
         if (!ckp->nodeserver[client->server] || ckp->proxy) {
-            LOGNOTICE("Dropping client %s %s trying to authorise as node on non node server %d",
+            LOGNOTICE("Dropping client %s %s trying to authorize as node on non node server %d",
                   client->identity, client->address, client->server);
             connector_drop_client(ckp, client_id);
             drop_client(ckp, sdata, client_id);
@@ -7419,13 +7419,13 @@ static void parse_method(pool_t *ckp, sdata_t *sdata, stratum_instance_t *client
         return;
     }
 
-    /* We shouldn't really allow unsubscribed users to authorise first but
+    /* We shouldn't really allow unsubscribed users to authorize first but
      * some broken stratum implementations do that and we can handle it. */
     if (cmdmatch(method, "mining.auth")) {
         json_params_t *jp;
 
-        if (unlikely(client->authorised)) {
-            LOGNOTICE("Client %s %s trying to authorise twice",
+        if (unlikely(client->authorized)) {
+            LOGNOTICE("Client %s %s trying to authorize twice",
                   client->identity, client->address);
             return;
         }
@@ -7460,9 +7460,9 @@ static void parse_method(pool_t *ckp, sdata_t *sdata, stratum_instance_t *client
         return;
     }
 
-    /* We should only accept authorised requests from here on */
-    if (!client->authorised) {
-        LOGINFO("Dropping %s from unauthorised client %s %s", method,
+    /* We should only accept authorized requests from here on */
+    if (!client->authorized) {
+        LOGINFO("Dropping %s from unauthorized client %s %s", method,
             client->identity, client->address);
         return;
     }
@@ -7532,16 +7532,16 @@ static void parse_subscribe_result(stratum_instance_t *client, json_t *val)
     LOGINFO("Client %s got enonce1 %"PRIx64" string %s", client->identity, client->enonce1_64, client->enonce1);
 }
 
-static void parse_authorise_result(pool_t *ckp, sdata_t *sdata, stratum_instance_t *client,
+static void parse_authorize_result(pool_t *ckp, sdata_t *sdata, stratum_instance_t *client,
                                    json_t *val)
 {
     if (!json_is_true(val)) {
-        LOGNOTICE("Client %s was not authorised upstream, dropping", client->identity);
-        client->authorised = false;
+        LOGNOTICE("Client %s was not authorized upstream, dropping", client->identity);
+        client->authorized = false;
         connector_drop_client(ckp, client->id);
         drop_client(ckp, sdata, client->id);
     } else
-        LOGINFO("Client %s was authorised upstream", client->identity);
+        LOGINFO("Client %s was authorized upstream", client->identity);
 }
 
 static int node_msg_type(json_t *val)
@@ -7643,7 +7643,7 @@ static void parse_remote_share(pool_t *ckp, sdata_t *sdata, json_t *val, const c
 
     herp = sqrt(MIN(sdiff, network_diff) / diff) * diff / 2;
     user = generate_remote_user(ckp, workername);
-    user->authorised = true;
+    user->authorized = true;
     worker = get_worker(sdata, user, workername);
     check_best_diff(ckp, sdata, user, worker, sdiff, NULL);
 
@@ -7722,7 +7722,7 @@ static void send_auth_success(pool_t *ckp, sdata_t *sdata, stratum_instance_t *c
 {
     char *buf;
 
-    ASPRINTF(&buf, "Authorised, welcome to %s %s!", ckp->name,
+    ASPRINTF(&buf, "authorized, welcome to %s %s!", ckp->name,
          client->user_instance->username);
     stratum_send_message(sdata, client, buf);
     free(buf);
@@ -8160,10 +8160,10 @@ static void node_client_msg(pool_t *ckp, json_t *val, stratum_instance_t *client
             parse_subscribe_result(client, res_val);
             break;
         case SM_AUTH:
-            parse_authorise(client, params, &err_val, &errnum);
+            parse_authorize(client, params, &err_val, &errnum);
             break;
         case SM_AUTHRESULT:
-            parse_authorise_result(ckp, sdata, client, res_val);
+            parse_authorize_result(ckp, sdata, client, res_val);
             break;
         case SM_NONE:
             buf = json_dumps(val, 0);
@@ -8400,8 +8400,8 @@ static void sshare_process(pool_t *ckp, json_params_t *jp)
         LOGINFO("Share processor failed to find client id %"PRId64" in hashtable!", client_id);
         goto out;
     }
-    if (unlikely(!client->authorised)) {
-        LOGDEBUG("Client %s no longer authorised to submit shares", client->identity);
+    if (unlikely(!client->authorized)) {
+        LOGDEBUG("Client %s no longer authorized to submit shares", client->identity);
         goto out_decref;
     }
     json_msg = json_object();
@@ -8416,7 +8416,7 @@ out:
     discard_json_params(jp);
 }
 
-/* As ref_instance_by_id but only returns clients not authorising or authorised,
+/* As ref_instance_by_id but only returns clients not authorising or authorized,
  * and sets the authorising flag */
 static stratum_instance_t *preauth_ref_instance_by_id(sdata_t *sdata, const int64_t id)
 {
@@ -8425,7 +8425,7 @@ static stratum_instance_t *preauth_ref_instance_by_id(sdata_t *sdata, const int6
     ck_wlock(&sdata->instance_lock);
     client = __instance_by_id(sdata, id);
     if (client) {
-        if (client->dropped || client->authorising || client->authorised)
+        if (client->dropped || client->authorising || client->authorized)
             client = NULL;
         else {
             __inc_instance_ref(client);
@@ -8476,11 +8476,11 @@ static void sauth_process(pool_t *ckp, json_params_t *jp)
 
     client = preauth_ref_instance_by_id(sdata, client_id);
     if (unlikely(!client)) {
-        LOGINFO("Authoriser failed to find client id %"PRId64" in hashtable!", client_id);
+        LOGINFO("authorizer failed to find client id %"PRId64" in hashtable!", client_id);
         goto out_noclient;
     }
 
-    result_val = parse_authorise(client, jp->params, &err_val, &errnum);
+    result_val = parse_authorize(client, jp->params, &err_val, &errnum);
     ret = json_is_true(result_val);
     if (ret) {
         /* So far okay in remote mode, remainder to be done by upstream
@@ -8758,7 +8758,7 @@ static void update_workerstats(pool_t *ckp, sdata_t *sdata)
         worker_instance_t *worker;
         uint8_t cycle_mask;
 
-        if (!user->authorised)
+        if (!user->authorized)
             continue;
 
         /* Select users using a mask to return each user's stats once
@@ -9119,7 +9119,7 @@ static void *statsupdate(void *arg)
                 connector_test_client(ckp, client->id);
             else if (remote_server(client)) {
                 /* Do nothing to these */
-            } else if (!client->authorised) {
+            } else if (!client->authorized) {
                 /* Test for clients that haven't authed in over a minute
                  * and drop them lazily */
                 if (now.tv_sec > client->start_time + 60) {
@@ -9159,7 +9159,7 @@ static void *statsupdate(void *arg)
             worker_instance_t *worker;
             json_t *user_array;
 
-            if (!user->authorised)
+            if (!user->authorized)
                 continue;
 
             user_array = json_array();
@@ -9831,7 +9831,7 @@ void *stratifier(void *arg)
     sdata->updateq = create_ckmsgq(ckp, "updater", &block_update);
     sdata->sshareq = create_ckmsgqs(ckp, "sprocessor", &sshare_process, threads);
     sdata->ssends = create_ckmsgqs(ckp, "ssender", &ssend_process, threads);
-    sdata->sauthq = create_ckmsgq(ckp, "authoriser", &sauth_process);
+    sdata->sauthq = create_ckmsgq(ckp, "authorizer", &sauth_process);
     sdata->stxnq = create_ckmsgq(ckp, "stxnq", &send_transactions);
     sdata->srecvs = create_ckmsgqs(ckp, "sreceiver", &srecv_process, threads);
     if (!CKP_STANDALONE(ckp)) {

@@ -3149,7 +3149,7 @@ static char *cmd_auth_do(PGconn *conn, char *cmd, char *id, char *by,
 
     if (switch_state < SWITCH_STATE_AUTHWORKERS) {
         snprintf(reply, siz,
-             "ok.authorise={\"secondaryuserid\":\"%s\","
+             "ok.authorize={\"secondaryuserid\":\"%s\","
              "\"difficultydefault\":%d}",
              users->secondaryuserid, workers->difficultydefault);
         LOGDEBUG("%s.%s", id, reply);
@@ -3158,7 +3158,7 @@ static char *cmd_auth_do(PGconn *conn, char *cmd, char *id, char *by,
 
     APPEND_REALLOC_INIT(buf, off, len);
     snprintf(reply, siz,
-         "ok.authorise={\"secondaryuserid\":\"%s\","
+         "ok.authorize={\"secondaryuserid\":\"%s\","
          "\"workers\":[",
          users->secondaryuserid);
     APPEND_REALLOC(buf, off, len, reply);
@@ -8721,7 +8721,7 @@ out:
  *  createdate = true
  *   means that the data sent must contain a fld or json fld called createdate
  *
- * The reply format for authorise, addrauth and heartbeat includes json:
+ * The reply format for authorize, addrauth and heartbeat includes json:
  *   ID.STAMP.ok.cmd={json}
  *  where cmd is auth, addrauth, or heartbeat
  * For the heartbeat pulse reply it has no '={}'
@@ -8738,7 +8738,7 @@ struct CMDS ckdb_cmds[] = {
     { CMD_SHARES,	STR_SHARES,	false,	true,	cmd_sharelog,	SEQ_SHARES,	ACCESS_POOL },
     { CMD_SHAREERRORS,STR_SHAREERRORS,false,true,	cmd_sharelog,	SEQ_SHAREERRORS,ACCESS_POOL },
     { CMD_AGEWORKINFO,STR_AGEWORKINFO,false,true,	cmd_sharelog,	SEQ_AGEWORKINFO,ACCESS_POOL },
-    { CMD_AUTH,	"authorise",	false,	true,	cmd_auth,	SEQ_AUTH,	ACCESS_POOL },
+    { CMD_AUTH,	"authorize",	false,	true,	cmd_auth,	SEQ_AUTH,	ACCESS_POOL },
     { CMD_ADDRAUTH,	"addrauth",	false,	true,	cmd_addrauth,	SEQ_ADDRAUTH,	ACCESS_POOL },
     { CMD_HEARTBEAT,"heartbeat",	false,	true,	cmd_heartbeat,	SEQ_HEARTBEAT,	ACCESS_POOL },
     { CMD_ADDUSER,	"adduser",	false,	false,	cmd_adduser,	SEQ_NONE,	ACCESS_WEB },

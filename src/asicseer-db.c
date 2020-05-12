@@ -66,12 +66,12 @@
  *  on dbstatus
  * Once the DB is loaded, we can immediately start receiving asicseer-pool
  *  messages since asicseer-pool already has logged all messages to the CLLs
- *  and asicseer-pool only verifies authorise responses
+ *  and asicseer-pool only verifies authorize responses
  *  Thus we can queue all messages:
  *	workinfo, shares, shareerror, ageworkinfo, poolstats, userstats
  *	and blocks
  *  with an ok.queued reply to asicseer-pool, to be processed after the reload
- *  completes and just process authorise messages immediately while the
+ *  completes and just process authorize messages immediately while the
  *  reload runs
  * However, we start the asicseer-pool message queue after loading
  *  the optioncontrol, idcontrol, users, workers and useratts DB tables,
@@ -79,7 +79,7 @@
  *  ready for messages almost immediately
  * The first asicseer-pool message allows us to know where asicseer-pool is up to
  *  in the CCLs - see reload_from() for how this is handled
- * The users table, required for the authorise messages, is always updated
+ * The users table, required for the authorize messages, is always updated
  *  in the disk DB immediately
  */
 
@@ -883,7 +883,7 @@ double ovent_limits_ipc_factor = 2.0;
 // maximum lifetime of all o_limits - set by code
 int o_limits_max_lifetime = -1;
 
-// AUTHS authorise.id.json={...}
+// AUTHS authorize.id.json={...}
 K_TREE *auths_root;
 K_LIST *auths_free;
 K_STORE *auths_store;

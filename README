@@ -186,7 +186,7 @@ asicseer-pool supports the following options:
 -A Standalone mode tells asicseer-pool not to try to communicate with
 asicseer-db or log any asicseer-db requests in the rotating db logs it would
 otherwise store. All users are automatically accepted without any attempt to
-authorise users in any way. This option is explicitly enabled when built without
+authorize users in any way. This option is explicitly enabled when built without
 db support.
 
 -c <CONFIG> tells asicseer-pool to override its default configuration filename

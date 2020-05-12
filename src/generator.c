@@ -137,7 +137,7 @@ struct proxy_instance {
     bool reconnecting; /* Testing of parent in progress */
     int64_t recruit; /* No of recruiting requests in progress */
     bool alive;
-    bool authorised;
+    bool authorized;
 
      /* Are we in the middle of a blocked write of this message? */
     cs_msg_t *sending;
@@ -226,7 +226,7 @@ static bool server_alive(pool_t *ckp, server_instance_t *si, bool pinging)
         return ret;
     }
 
-    /* Test we can connect, authorise and get a block template */
+    /* Test we can connect, authorize and get a block template */
     if (!gen_gbtbase(cs, &gbt)) {
         if (!pinging) {
             LOGINFO("Failed to get test block template from %s:%s!",
@@ -1462,14 +1462,14 @@ static bool auth_stratum(pool_t *ckp, connsock_t *cs, proxy_instance_t *proxi)
     }
 
     if (err_val && !json_is_null(err_val)) {
-        LOGWARNING("Proxy %d:%d %s failed to authorise in auth_stratum due to err_val, got: %s",
+        LOGWARNING("Proxy %d:%d %s failed to authorize in auth_stratum due to err_val, got: %s",
                proxi->id, proxi->subid, proxi->url, buf);
         goto out;
     }
     if (res_val) {
         ret = json_is_true(res_val);
         if (!ret) {
-            LOGWARNING("Proxy %d:%d %s failed to authorise in auth_stratum, got: %s",
+            LOGWARNING("Proxy %d:%d %s failed to authorize in auth_stratum, got: %s",
                    proxi->id, proxi->subid, proxi->url, buf);
             goto out;
         }
@@ -2042,7 +2042,7 @@ static bool proxy_alive(pool_t *ckp, proxy_instance_t *proxi, connsock_t *cs,
         ret = true;
         goto out;
     }
-    /* Test we can connect, authorise and get stratum information */
+    /* Test we can connect, authorize and get stratum information */
     if (!subscribe_stratum(ckp, cs, proxi)) {
         if (!pinging) {
             LOGWARNING("Failed initial subscribe to %s:%s !",
@@ -2054,12 +2054,12 @@ static bool proxy_alive(pool_t *ckp, proxy_instance_t *proxi, connsock_t *cs,
         send_subscribe(ckp, proxi);
     if (!auth_stratum(ckp, cs, proxi)) {
         if (!pinging) {
-            LOGWARNING("Failed initial authorise to %s:%s with %s:%s !",
+            LOGWARNING("Failed initial authorize to %s:%s with %s:%s !",
                    cs->url, cs->port, proxi->auth, proxi->pass);
         }
         goto out;
     }
-    proxi->authorised = ret = true;
+    proxi->authorized = ret = true;
 out:
     if (!ret) {
         send_stratifier_deadproxy(ckp, proxi->id, proxi->subid);
@@ -2438,7 +2438,7 @@ static void *userproxy_recv(void *arg)
         proxy = event.data.ptr;
         /* Make sure we haven't popped this off before we've finished
          * subscribe/auth */
-        if (unlikely(!proxy->authorised))
+        if (unlikely(!proxy->authorized))
             continue;
 
         now = time(NULL);

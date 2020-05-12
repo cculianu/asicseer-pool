@@ -1489,7 +1489,7 @@ typedef struct breakqueue {
  * Note that if the CMD queues get too large they will be too slow responding
  *  to the sockets that sent the message, however the CMD ml_item processing
  *  responds immediately before processing the ml_item for all but ADDRAUTH,
- *  AUTHORISE and HEARTBEAT
+ *  authorize and HEARTBEAT
  * The reload also uses this limit when filling the reload break queue
  *  thus limiting the line processing of reload files
  */
@@ -2773,7 +2773,7 @@ extern int o_limits_max_lifetime;
 
 #define APIKEY "KAPIKey"
 
-// AUTHS authorise.id.json={...}
+// AUTHS authorize.id.json={...}
 typedef struct auths {
     int64_t authid;
     char *in_poolinstance;
