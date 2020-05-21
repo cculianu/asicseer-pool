@@ -80,7 +80,7 @@ struct genwork {
     char enonce1const[32]; // extranonce1 section that is constant
     uchar enonce1constbin[16];
     int enonce1constlen; // length of above - usually zero unless proxying
-    int enonce1varlen; // length of unique extranonce1 string for each worker - usually 8
+    int enonce1varlen; // length of unique extranonce1 string for each worker - usually 4
 
     int enonce2varlen; // length of space left for extranonce2 - usually 8 unless proxying
 

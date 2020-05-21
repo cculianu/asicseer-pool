@@ -690,14 +690,14 @@ static size_t _add_txnbin(cb1_buffer_t *buf, uint64_t amount, const void *txnbin
     return ret;
 }
 
-/* Add generation transactions to the transaction buffer `txns` for each user, return any spare
+/* Add generation transactions to the coinbase buffer `cb_buf` for each user, return any spare
  * change. Note that the return value may be negative if users had fee discounts,
  * in which case there is "negative" change and the pool output must deduct this amount
  * from its own output (that is, add the negative to the pool output value).  This negative
  * output will never result in the pf64 (fee) value becoming smaller than the dust limit,
  * however -- so the pool may safely just add whatever the negative return value is
  * (or add the positive return value which will always be >=546 sats).*/
-static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, cb1_buffer_t *txns, uint64_t g64, uint64_t pf64)
+static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, cb1_buffer_t *cb_buf, uint64_t g64, uint64_t pf64)
 {
     json_t * const payout = json_object(),
            * const payout_entries = json_object(),
@@ -786,13 +786,13 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, cb1_buffer_t 
             }
             for (int i = 0; i < N; ++i) {
                 const uint64_t rew = per_out + ( i+1 == N ? rem : 0 );
-                amt_pos = _add_txnbin(txns, rew, user->txnbin, user->txnlen);
+                amt_pos = _add_txnbin(cb_buf, rew, user->txnbin, user->txnlen);
                 LOGDEBUG("User %s outp %d reward %"PRIu64, user->username, 1 + i + payouts, rew);
             }
         }
 #else
         /* Add the user's coinbase reward, using the cached cscript */
-        amt_pos = _add_txnbin(txns, total_reward, user->txnbin, user->txnlen);
+        amt_pos = _add_txnbin(cb_buf, total_reward, user->txnbin, user->txnlen);
 #endif
 
         if (!pf64 && total_reward > max_payee.reward) {
@@ -813,7 +813,7 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, cb1_buffer_t 
         uint64_t newreward = max_payee.reward + total;
         newreward = htole64(newreward);
         // update coinbase binary, avoiding unaligned access issues by doing a byte copy
-        memcpy(txns->buffer.value + max_payee.amt_pos, &newreward, sizeof(newreward));
+        memcpy(cb_buf->buffer.value + max_payee.amt_pos, &newreward, sizeof(newreward));
         total = 0;
         json_set_double(payout_entries, username, newreward / (double)SATOSHIS); // update json
     }
@@ -832,18 +832,141 @@ skip:
     return total;
 }
 
-/// This is called in a serialized context (form a ckmsgq)
+static void add_coinbase_payouts(const pool_t *ckp, workbase_t *wb, cb1_buffer_t *cb1_buf)
+{
+    uint64_t g64, f64, pf64, df64;
+    int64_t c64;
+    sdata_t *sdata = ckp->sdata;
+    size_t pool_amt_pos = 0;
+    bool pool_has_amt = false;
+
+    // Generation value
+    g64 = wb->coinbasevalue; // generation (reward)
+    f64 = round(g64 * (ckp->pool_fee/100.0)); // pool fee gross (including dev donation)
+    pf64 = f64; // pool fee net (minus dev donation), starts off as f64 initially but may be decreased below
+    df64 = 0; // total dev donations (10% of f64 * num_devs), 0 initially, may be increased below
+    c64 = 0; // leftover change/dust, 0 initially, may increase below, or go below 0 if pool fee was credited back to pool discount users (see add_user_generation)
+
+    if (CKP_STANDALONE(ckp)) {
+        // payout to miners directly in SPLNS mode (also pay out hard-coded dev donations)
+
+        // first, add pool fee, if any
+        if (likely(f64 >= DUST_LIMIT_SATS && sdata->txnlen)) {
+            df64 = DONATION_FRACTION > 0 ? (f64 / DONATION_FRACTION) * sdata->n_good_donation : 0;
+            uint64_t don_each = sdata->n_good_donation ? df64 / sdata->n_good_donation : 0;
+            if (unlikely(don_each < DUST_LIMIT_SATS || f64 - df64 < DUST_LIMIT_SATS)) {
+                // can't make the outputs -- one of them would end up below dust limit. Don't pay out devs here.
+                df64 = 0;
+                don_each = 0;
+            }
+            pf64 = f64 - df64;
+
+            // add pool net fee
+            pool_amt_pos = _add_txnbin(cb1_buf, pf64, sdata->txnbin, sdata->txnlen);
+            pool_has_amt = true;
+            const double fee = pf64 / (double)SATOSHIS;
+            LOGDEBUG("%1.8f pool fee to pool address: %s", fee, ckp->bchaddress);
+            // now add donations for each dev
+            int64_t leftover = df64;
+            if (df64 && don_each) {
+                for (int i = 0; i < DONATION_NUM_ADDRESSES && leftover > 0; ++i) {
+                    if (sdata->donation_data[i].txnlen && ckp->dev_donations[i].valid) {
+                        // good address
+                        _add_txnbin(cb1_buf, don_each, sdata->donation_data[i].txnbin, sdata->donation_data[i].txnlen);
+                        leftover -= (int64_t)don_each;
+                        const double d = don_each / (double)SATOSHIS;
+                        LOGDEBUG("%f dev donation to address: %s", d, ckp->dev_donations[i].address);
+                    }
+                }
+            }
+            if (unlikely(leftover > 0)) { // this branch is here to enforce correctness but should never be taken.
+                // leftover from paying out dev donations -- back to pool
+                const double d = leftover / (double)SATOSHIS;
+                pf64 += leftover;
+                df64 -= leftover;
+                leftover = 0;
+#define SET_POOL_AMT(amt) \
+    do { \
+        uint64_t le_amt = amt; \
+        le_amt = htole64(le_amt); \
+        assert(pool_has_amt); \
+        memcpy(cb1_buf->buffer.value + pool_amt_pos, &le_amt, sizeof(le_amt)); \
+    } while(0)
+                SET_POOL_AMT(pf64);
+                LOGDEBUG("%f leftover from dev donations back to pool address: %s", d, ckp->bchaddress);
+            } else if (unlikely(leftover < 0)) {
+                // This should never happen but is here as a defensive programming measure.
+                LOGEMERG("Negative sats left over after paying out dev donations: %"PRId64". FIXME!", leftover);
+            }
+        } else {
+            // fee too small, just ignore
+            f64 = pf64 = 0;
+        }
+
+        assert(!pf64 || pool_has_amt); // if there is a pool fee (pf64), then there must have been a pool payout generated above.
+
+        c64 = add_user_generation(sdata, wb, cb1_buf, g64 - f64, pf64); // add miner payouts, minus total fee
+
+        /* Add any change left over from user gen to pool -- note c64 may be negative here if pool fee discounts occurred */
+        if ( c64 && (pool_has_amt || c64 >= DUST_LIMIT_SATS) && sdata->txnlen) {
+            bool ok = false;
+            pf64 = (uint64_t)(((int64_t)pf64) + c64); // add or deduct modifiction returned from add_user_generation
+            if (!pool_has_amt && pf64 >= DUST_LIMIT_SATS) {
+                // pay extra change > dust limit back to pool, new output at end
+                pool_amt_pos = _add_txnbin(cb1_buf, pf64, sdata->txnbin, sdata->txnlen);
+                pool_has_amt = true;
+                ok = true;
+            } else if (pool_has_amt && pf64 >= DUST_LIMIT_SATS) {
+                // pay dust back to pool, re-use pool fee output (output 0)
+                SET_POOL_AMT( pf64 );
+                ok = true;
+            }
+            if (ok) {
+                uint64_t pool_amt = 0;
+                if (pool_has_amt) {
+                    memcpy(&pool_amt, cb1_buf->buffer.value + pool_amt_pos, sizeof(pool_amt));
+                    pool_amt = le64toh(pool_amt);
+                }
+                LOGINFO("%"PRId64" sats adjustment to pool address: %s, total pool payout now: %1.8f",
+                        c64, ckp->bchaddress, pool_amt / (double)SATOSHIS);
+            } else {
+                LOGEMERG("Unexpected state! pool_has_amt is %d, c64 is %"PRId64 ", pf64 is %"PRIu64", f64 is %"PRIu64"! FIXME in %s line %d.",
+                         (int)pool_has_amt, c64, pf64, f64, __FILE__, __LINE__);
+            }
+            c64 = 0;
+        }
+        if (c64) {
+            // FIXME -- this branch should never be reached because add_user_generation should
+            // have paid dust to largest payee. If we get here it means we couldn't have paid
+            // ourselves (missing pool bchaddress?)
+            LOGWARNING("%"PRId64" sats in change left over after generating coinbase outs! FIXME!", c64);
+        }
+        if (!pool_has_amt && pf64)
+            LOGWARNING("%"PRId64" sats in pool fee left over after generating coinbase outs! FIXME!", pf64);
+        if (pool_has_amt && pf64 < DUST_LIMIT_SATS)
+            LOGWARNING("%"PRId64" sats in pool fee is below dust limit (%d)! FIXME!", pf64, (int)DUST_LIMIT_SATS);
+        if (wb->payout) {
+            // tabulate this as "pool fee" in json
+            json_set_double(wb->payout, "fee", f64 / (double)SATOSHIS);
+            json_set_double(wb->payout, "net_fee", pf64 / (double)SATOSHIS);
+            json_set_double(wb->payout, "dev_donation", df64 / (double)SATOSHIS);
+        }
+    } else {
+        // payout directly to pool in this mode (asicseer-db mode)
+        pool_amt_pos = _add_txnbin(cb1_buf, g64, sdata->txnbin, sdata->txnlen);
+        pool_has_amt = true;
+    }
+#undef SET_POOL_AMT
+}
+
+/// This is called in a serialized context (from a ckmsgq)
 static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 {
     static const size_t COINB1_INITIAL_CAPACITY = 512;
     const int64_t t0 = time_micros();
-    uint64_t g64 = 0, f64 = 0, pf64 = 0, df64 = 0;
-    sdata_t *sdata = ckp->sdata;
     char header[228];
     cb1_buffer_t cb1_buf;
     strbuffer_t *strbuf = &cb1_buf.buffer; // for convenience -- used below
-    size_t pool_amt_pos = 0;
-    bool pool_has_amt = false;
     int len = 0;
 
     // ensure these are cleared (they normally already are)
@@ -900,123 +1023,11 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
     }
     int first_tx_pos = strbuf->length;
 
-    // Generation value
-    g64 = wb->coinbasevalue; // generation (reward)
-    f64 = round(g64 * (ckp->pool_fee/100.0)); // pool fee gross (including dev donation)
-    pf64 = f64; // pool fee net (minus dev donation), starts off as f64 initially but may be decreased below
-    df64 = 0; // total dev donations (10% of f64 * num_devs), 0 initially, may be increased below
-    int64_t c64 = 0; // leftover change/dust, 0 initially, may increase below, or go below 0 if pool fee was credited back to pool discount users (see add_user_generation)
+    /* Add all the payout outputs (including pool fees and donations, if any, etc).
+       In the rare case of leftover satoshis, they are guaranteed to go back to the pool
+       as a fallback.  The below call always succeeds if it returns. */
+    add_coinbase_payouts(ckp, wb, &cb1_buf);
 
-    if (CKP_STANDALONE(ckp)) {
-        // payout to miners directly in SPLNS mode (also pay out hard-coded dev donations)
-
-        // first, add pool fee, if any
-        if (likely(f64 >= DUST_LIMIT_SATS && sdata->txnlen)) {
-            df64 = DONATION_FRACTION > 0 ? (f64 / DONATION_FRACTION) * sdata->n_good_donation : 0;
-            uint64_t don_each = sdata->n_good_donation ? df64 / sdata->n_good_donation : 0;
-            if (unlikely(don_each < DUST_LIMIT_SATS || f64 - df64 < DUST_LIMIT_SATS)) {
-                // can't make the outputs -- one of them would end up below dust limit. Don't pay out devs here.
-                df64 = 0;
-                don_each = 0;
-            }
-            pf64 = f64 - df64;
-
-            // add pool net fee
-            pool_amt_pos = _add_txnbin(&cb1_buf, pf64, sdata->txnbin, sdata->txnlen);
-            pool_has_amt = true;
-            const double fee = pf64 / (double)SATOSHIS;
-            LOGDEBUG("%1.8f pool fee to pool address: %s", fee, ckp->bchaddress);
-            // now add donations for each dev
-            int64_t leftover = df64;
-            if (df64 && don_each) {
-                for (int i = 0; i < DONATION_NUM_ADDRESSES && leftover > 0; ++i) {
-                    if (sdata->donation_data[i].txnlen && ckp->dev_donations[i].valid) {
-                        // good address
-                        _add_txnbin(&cb1_buf, don_each, sdata->donation_data[i].txnbin, sdata->donation_data[i].txnlen);
-                        leftover -= (int64_t)don_each;
-                        const double d = don_each / (double)SATOSHIS;
-                        LOGDEBUG("%f dev donation to address: %s", d, ckp->dev_donations[i].address);
-                    }
-                }
-            }
-            if (unlikely(leftover > 0)) { // this branch is here to enforce correctness but should never be taken.
-                // leftover from paying out dev donations -- back to pool
-                const double d = leftover / (double)SATOSHIS;
-                pf64 += leftover;
-                df64 -= leftover;
-                leftover = 0;
-#define SET_POOL_AMT(amt) \
-    do { \
-        uint64_t le_amt = amt; \
-        le_amt = htole64(le_amt); \
-        assert(pool_has_amt); \
-        memcpy(cb1_buf.buffer.value + pool_amt_pos, &le_amt, sizeof(le_amt)); \
-    } while(0)
-                SET_POOL_AMT(pf64);
-                LOGDEBUG("%f leftover from dev donations back to pool address: %s", d, ckp->bchaddress);
-            } else if (unlikely(leftover < 0)) {
-                // This should never happen but is here as a defensive programming measure.
-                LOGEMERG("Negative sats left over after paying out dev donations: %"PRId64". FIXME!", leftover);
-            }
-        } else {
-            // fee too small, just ignore
-            f64 = pf64 = 0;
-        }
-
-        assert(!pf64 || pool_has_amt); // if there is a pool fee (pf64), then there must have been a pool payout generated above.
-
-        c64 = add_user_generation(sdata, wb, &cb1_buf, g64 - f64, pf64); // add miner payouts, minus total fee
-
-        /* Add any change left over from user gen to pool -- note c64 may be negative here if pool fee discounts occurred */
-        if ( c64 && (pool_has_amt || c64 >= DUST_LIMIT_SATS) && sdata->txnlen) {
-            bool ok = false;
-            pf64 = (uint64_t)(((int64_t)pf64) + c64); // add or deduct modifiction returned from add_user_generation
-            if (!pool_has_amt && pf64 >= DUST_LIMIT_SATS) {
-                // pay extra change > dust limit back to pool, new output at end
-                pool_amt_pos = _add_txnbin(&cb1_buf, pf64, sdata->txnbin, sdata->txnlen);
-                pool_has_amt = true;
-                ok = true;
-            } else if (pool_has_amt && pf64 >= DUST_LIMIT_SATS) {
-                // pay dust back to pool, re-use pool fee output (output 0)
-                SET_POOL_AMT( pf64 );
-                ok = true;
-            }
-            if (ok) {
-                uint64_t pool_amt = 0;
-                if (pool_has_amt) {
-                    memcpy(&pool_amt, cb1_buf.buffer.value + pool_amt_pos, sizeof(pool_amt));
-                    pool_amt = le64toh(pool_amt);
-                }
-                LOGINFO("%"PRId64" sats adjustment to pool address: %s, total pool payout now: %1.8f",
-                        c64, ckp->bchaddress, pool_amt / (double)SATOSHIS);
-            } else {
-                LOGEMERG("Unexpected state! pool_has_amt is %d, c64 is %"PRId64 ", pf64 is %"PRIu64", f64 is %"PRIu64"! FIXME in %s line %d.",
-                         (int)pool_has_amt, c64, pf64, f64, __FILE__, __LINE__);
-            }
-            c64 = 0;
-        }
-        if (c64) {
-            // FIXME -- this branch should never be reached because add_user_generation should
-            // have paid dust to largest payee. If we get here it means we couldn't have paid
-            // ourselves (missing pool bchaddress?)
-            LOGWARNING("%"PRId64" sats in change left over after generating coinbase outs! FIXME!", c64);
-        }
-        if (!pool_has_amt && pf64)
-            LOGWARNING("%"PRId64" sats in pool fee left over after generating coinbase outs! FIXME!", pf64);
-        if (pool_has_amt && pf64 < DUST_LIMIT_SATS)
-            LOGWARNING("%"PRId64" sats in pool fee is below dust limit (%d)! FIXME!", pf64, (int)DUST_LIMIT_SATS);
-        if (wb->payout) {
-            // tabulate this as "pool fee" in json
-            json_set_double(wb->payout, "fee", f64 / (double)SATOSHIS);
-            json_set_double(wb->payout, "net_fee", pf64 / (double)SATOSHIS);
-            json_set_double(wb->payout, "dev_donation", df64 / (double)SATOSHIS);
-        }
-    } else {
-        // payout directly to pool in this mode (asicseer-db mode)
-        pool_amt_pos = _add_txnbin(&cb1_buf, g64, sdata->txnbin, sdata->txnlen);
-        pool_has_amt = true;
-    }
-#undef SET_POOL_AMT
     /* OP_RETURN output at end, after all payouts */
     {
         // append OP_RETURN output (this leaves space for enonce1 and enonce2)
