@@ -774,7 +774,7 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, cb1_buffer_t 
             LOGINFO("User %s reward %1.8f", user->username, total_reward / (double)SATOSHIS);
 
 #define TEST_FILL_CB 0 /* leave as 0 unless testing large CB payouts */
-#if TEST_FILL_CB > 0
+#if TEST_FILL_CB > 1
         {
             // this is for testing large payout tx's.
             int N = TEST_FILL_CB;
