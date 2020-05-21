@@ -1039,8 +1039,6 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
         size_t endpos, cap;
         cb1_buffer_take(&cb1_buf, (void **)&wb->coinb1bin, &endpos, &cap);
         LOGDEBUG("Coinb1 taken, endpos: %lu cap: %lu", endpos, cap);
-        /*assert(endpos + wb->coinb1len + wb->enonce1varlen + wb->enonce2varlen <= MAX_COINBASE_TX_LEN
-               && "INTERNAL ERROR: coinbase tx length exceeded. FIXME!");*/
         wb->coinb1len = (int)endpos;
         assert(((size_t)wb->coinb1len) == endpos && wb->coinb1len > -1 && "INTERNAL ERROR: integer overflow");
         uint8_t *compact_size_buf = alloca(9);
