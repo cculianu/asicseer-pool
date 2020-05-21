@@ -312,16 +312,48 @@ can be used for comments. The options recognised are as follows:
     on a btcd.
 
 "btcd" :
-    This is an array of bitcoind(s) with the options url, auth and pass which
-    match the configured bitcoind. The optional boolean field "notify", if true,
-    tells asicseer-pool that this bitcoind is using the notifier (either the
-    standalone `notifier` program, or via the "zmqblock" mechanism), and does
+    This is an array of bitcoind(s) with the options: "url", "auth" and "pass"
+    which match the configured bitcoind. The optional boolean field "notify", if
+    true, tells asicseer-pool that this bitcoind is using the notifier, and does
     not need to be polled for block changes.
+
+    Additionally, the string option "zmq" : "tcp://ip.to.bitcoind:port" can be
+    specified per btcd in which case the software will subscribe to the
+    bitcoind's ZMQ pub "hashblock" notification to receive blockchain change
+    notifications. This requires bitcoind be configured with the same
+    -zmqpubhashblock= option. The option "zmq", if present, also implies
+    "notify" : true. It is highly recommended that pool operators use this zmq
+    facility to receive blockchain change notifications from bitcoind, since it
+    is the lowest-latency mechanism available, and it reduces overhead as
+    compared to polling.
 
     If no btcd is specified, asicseer-pool will look for one on localhost:8332
     with the username "user" and password "pass". The maintainers of this
-    software recommend BCHN as the bitcoind node implementation to use, since
-    it has the fastest JSON-RPC implementation.
+    software recommend BCHN as the bitcoind node implementation to use, since it
+    has the fastest JSON-RPC implementation.
+
+    Example:
+
+    "btcd" : [
+        {
+           "url" : "192.168.0.101:9332",
+           "auth" : "someuser1",
+           "pass" : "somepass1",
+           "zmq" : "tcp://192.168.0.101:29332"
+        },
+        {
+           "url" : "192.168.0.15:9332",
+           "auth" : "someuser2",
+           "pass" : "somepass2",
+           "zmq" : "tcp://192.168.0.15:29332"
+        },
+        {
+           "url" : "192.168.0.151:9332",
+           "auth" : "this_one_polls",
+           "pass" : "zzz",
+           "notify" : false
+        }
+    ]
 
 "fee_discounts":
     Offer discounts to specific users, keyed off their mining address. 1.0 =
@@ -419,18 +451,3 @@ can be used for comments. The options recognised are as follows:
     This is a mask of which bits in the version number it is valid for a client
     to alter and is expressed as an hex string. Eg "00fff000" Default is
     "1fffe000".
-
-"zmqblock" :
-    Optional endpoint to use for ZMQ pub hashblock notifications. Requires use
-    of a matched bitcoind -zmqpubhashblock option. Default: disabled.
-
-    This is the fastest, lowest-latency option for being notified of blockchain
-    updates and is recommended to be used with your primary bitcoind instance.
-
-    Limitations: At the present time, it is only possible to use ZMQ to be
-    notified of block hash changes from a single bitcoind. If you are using
-    multiple bitcoinds as fallbacks, please use either the 'notifier' mechanism
-    for those fallback instances, or be sure to set "notify" : "false" for those
-    instances so that the fallbacks will be polled by this software.
-
-    Example:   "zmqblock" : "tcp://127.0.0.1:28332"

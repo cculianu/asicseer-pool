@@ -130,7 +130,7 @@ struct server_instance {
     char *url;
     char *auth;
     char *pass;
-    atomic_bool notify;
+    atomic_bool notify; // this is true if either "notify": true in JSON or if this btcd has a zmq endpoint
     atomic_bool alive;
     connsock_t cs;
 };
@@ -217,9 +217,6 @@ struct pool_instance {
     volatile bool stratifier_ready; // TODO: use a real atomic value here
     volatile bool connector_ready; // TODO: use a real atomic value here
 
-    /* ZMQ URL used for ZMQ block notifications. ZMQ is not used if NULL. */
-    char *zmqblock;
-
     /* Threads of main process */
     pthread_t pth_listener;
     pthread_t pth_watchdog;
@@ -263,6 +260,9 @@ struct pool_instance {
     char **btcdauth;
     char **btcdpass;
     bool *btcdnotify;
+    char **btcdzmqblock; // per-btcd zmqpubhashblock endpoint (each entry in array may be NULL)
+    int n_zmq_btcds; // the count of the above btcds that have a non-NULL btcdzmqblock pointer
+    int n_notify_btcds; // the count of the above btcds that have notify set. This is always >= n_zmq_btcds.
     int blockpoll; // How frequently in ms to poll bitcoind for block updates
     int nonce1length; // Extranonce1 length
     int nonce2length; // Extranonce2 length

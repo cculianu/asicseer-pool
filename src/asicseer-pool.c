@@ -1304,17 +1304,26 @@ static void parse_btcds(pool_t *ckp, const json_t *arr_val, const int arr_size)
     json_t *val;
     int i;
 
+    assert(arr_size > 0);
     ckp->btcds = arr_size;
     ckp->btcdurl = ckzalloc(sizeof(char *) * arr_size);
     ckp->btcdauth = ckzalloc(sizeof(char *) * arr_size);
     ckp->btcdpass = ckzalloc(sizeof(char *) * arr_size);
     ckp->btcdnotify = ckzalloc(sizeof(bool *) * arr_size);
+    ckp->btcdzmqblock = ckzalloc(sizeof(char *) * arr_size);
     for (i = 0; i < arr_size; i++) {
         val = json_array_get(arr_val, i);
         json_get_string(&ckp->btcdurl[i], val, "url");
         json_get_string(&ckp->btcdauth[i], val, "auth");
         json_get_string(&ckp->btcdpass[i], val, "pass");
         json_get_bool(&ckp->btcdnotify[i], val, "notify");
+        char *zmq = NULL;
+        // "zmq", "zmqblock", or "zmqpubhashblock" are equivalent
+        if (json_get_string(&zmq, val, "zmq")
+                || json_get_string(&zmq, val, "zmqblock")
+                || json_get_string(&zmq, val, "zmqpubhashblock")) {
+            ckp->btcdzmqblock[i] = zmq;
+        }
     }
 }
 
@@ -1665,9 +1674,6 @@ static void parse_config(pool_t *ckp)
     if (arr_val)
         parse_redirecturls(ckp, arr_val);
 
-    /* Optional zmqblock config var. If not found, we won't start the zmq thread. */
-    json_get_string(&ckp->zmqblock, json_conf, "zmqblock");
-
     json_decref(json_conf);
 }
 
@@ -1995,6 +2001,7 @@ int main(int argc, char **argv)
         ckp.btcdauth = ckzalloc(sizeof(char *));
         ckp.btcdpass = ckzalloc(sizeof(char *));
         ckp.btcdnotify = ckzalloc(sizeof(bool));
+        ckp.btcdzmqblock = ckzalloc(sizeof(char *));
     }
     for (i = 0; i < ckp.btcds; i++) {
         if (!ckp.btcdurl[i])
@@ -2003,6 +2010,12 @@ int main(int argc, char **argv)
             ckp.btcdauth[i] = strdup("user");
         if (!ckp.btcdpass[i])
             ckp.btcdpass[i] = strdup("pass");
+        if (ckp.btcdzmqblock[i]) {
+            ckp.n_zmq_btcds++; // increment number of btcds using zmq
+            ckp.btcdnotify[i] = true;  // if zmq is not NULL -> force set the notify flag (so we don't poll this btcd)
+        }
+        if (ckp.btcdnotify[i])
+            ckp.n_notify_btcds++;
     }
 
     // set up donation addresses
