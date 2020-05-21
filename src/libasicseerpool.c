@@ -1992,9 +1992,14 @@ void ts_realtime(ts_t *ts)
 
 int64_t time_micros(void)
 {
+    int64_t ret;
     ts_t ts;
     ts_realtime(&ts);
-    return ts.tv_sec * 1000000L + ts.tv_nsec / 1000L;
+    // we do the below to prevent overflow on 32-bit
+    ret = ts.tv_sec;
+    ret *= (int64_t)1000000L; // seconds -> scaled to millions of microseconds
+    ret += (int64_t)(ts.tv_nsec / 1000L);  // nanoseconds -> to microseconds
+    return ret;
 }
 
 
