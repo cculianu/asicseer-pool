@@ -336,19 +336,19 @@ can be used for comments. The options recognised are as follows:
 
     "btcd" : [
         {
-           "url" : "192.168.0.101:9332",
+           "url" : "192.168.0.101:8332",
            "auth" : "someuser1",
            "pass" : "somepass1",
-           "zmq" : "tcp://192.168.0.101:29332"
+           "zmq" : "tcp://192.168.0.101:28332"
         },
         {
-           "url" : "192.168.0.15:9332",
+           "url" : "192.168.0.15:8332",
            "auth" : "someuser2",
            "pass" : "somepass2",
-           "zmq" : "tcp://192.168.0.15:29332"
+           "zmq" : "tcp://192.168.0.15:28332"
         },
         {
-           "url" : "192.168.0.151:9332",
+           "url" : "192.168.0.151:8332",
            "auth" : "this_one_polls",
            "pass" : "zzz",
            "notify" : false
