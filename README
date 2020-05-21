@@ -110,7 +110,7 @@ BUILDING:
 Building asicseer-pool standalone without asicseer-db has no dependencies
 outside of the basic build tools on any Linux installation.
 
-sudo apt-get install build-essential yasm
+sudo apt-get install build-essential yasm libzmq3-dev
 ./configure --without-asicseer-db
 make
 
@@ -131,7 +131,7 @@ N.B.: asicseer-db also requires libssl-dev but libpq-dev depends on it and
 
 Building from git also requires autoconf and automake
 
-sudo apt-get install build-essential yasm libpq-dev libgsl-dev autoconf automake libtool
+sudo apt-get install build-essential yasm libzmq3-dev libpq-dev libgsl-dev autoconf automake libtool
 ./autogen.sh
 ./configure
 make
@@ -313,12 +313,15 @@ can be used for comments. The options recognised are as follows:
 
 "btcd" :
     This is an array of bitcoind(s) with the options url, auth and pass which
-    match the configured bitcoind. The optional boolean field notify tells
-    asicseer-pool this btcd is using the notifier and does not need to be polled
-    for block changes. If no btcd is specified, asicseer-pool will look for one
-    on localhost:8332 with the username "user" and password "pass". This
-    maintainers of this software recommend BCHN as the bitcoind node
-    implementation to use, since it has the fasted JSON-RPC implementation.
+    match the configured bitcoind. The optional boolean field "notify", if true,
+    tells asicseer-pool that this bitcoind is using the notifier (either the
+    standalone `notifier` program, or via the "zmqblock" mechanism), and does
+    not need to be polled for block changes.
+
+    If no btcd is specified, asicseer-pool will look for one on localhost:8332
+    with the username "user" and password "pass". The maintainers of this
+    software recommend BCHN as the bitcoind node implementation to use, since
+    it has the fastest JSON-RPC implementation.
 
 "fee_discounts":
     Offer discounts to specific users, keyed off their mining address. 1.0 =
@@ -416,3 +419,18 @@ can be used for comments. The options recognised are as follows:
     This is a mask of which bits in the version number it is valid for a client
     to alter and is expressed as an hex string. Eg "00fff000" Default is
     "1fffe000".
+
+"zmqblock" :
+    Optional endpoint to use for ZMQ pub hashblock notifications. Requires use
+    of a matched bitcoind -zmqpubhashblock option. Default: disabled.
+
+    This is the fastest, lowest-latency option for being notified of blockchain
+    updates and is recommended to be used with your primary bitcoind instance.
+
+    Limitations: At the present time, it is only possible to use ZMQ to be
+    notified of block hash changes from a single bitcoind. If you are using
+    multiple bitcoinds as fallbacks, please use either the 'notifier' mechanism
+    for those fallback instances, or be sure to set "notify" : "false" for those
+    instances so that the fallbacks will be polled by this software.
+
+    Example:   "zmqblock" : "tcp://127.0.0.1:28332"

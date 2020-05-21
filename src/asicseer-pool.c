@@ -1,4 +1,6 @@
 /*
+ * Copyright (c) 2020 Calin Culianu <calin.culianu@gmail.com>
+ * Copyright (c) 2020 ASICshack LLC https://asicshack.com
  * Copyright 2014-2017 Con Kolivas
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -1662,6 +1664,9 @@ static void parse_config(pool_t *ckp)
     arr_val = json_object_get(json_conf, "redirecturl");
     if (arr_val)
         parse_redirecturls(ckp, arr_val);
+
+    /* Optional zmqblock config var. If not found, we won't start the zmq thread. */
+    json_get_string(&ckp->zmqblock, json_conf, "zmqblock");
 
     json_decref(json_conf);
 }

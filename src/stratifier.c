@@ -24,6 +24,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <libgen.h>
+#include <zmq.h>
 
 #include <strbuffer.h> // from jansson, for strbuffer_t
 
@@ -5279,6 +5280,77 @@ static void *blockupdate(void *arg)
     return NULL;
 }
 
+// this thread is only created if ckp->zmqblock is not NULL
+static void *zmqnotify(void *arg)
+{
+    pool_t *ckp = (pool_t *)arg;
+    sdata_t *sdata = ckp->sdata;
+    void *context, *notify;
+    int zero = 0, rc;
+    char *endpoint;
+
+    pthread_detach(pthread_self());
+    rename_proc("zmqnotify");
+
+    context = zmq_ctx_new();
+    notify = zmq_socket(context, ZMQ_SUB);
+    if (!notify)
+        quit(1, "zmq_socket failed with errno %d", errno);
+    rc = zmq_setsockopt(notify, ZMQ_SUBSCRIBE, "hashblock", 0);
+    if (rc < 0)
+        quit(1, "zmq_setsockopt failed with errno %d", errno);
+    rc = zmq_connect(notify, ckp->zmqblock);
+    if (rc < 0)
+        quit(1, "zmq_connect failed with errno %d", errno);
+    LOGNOTICE("ZMQ connected to %s", ckp->zmqblock);
+
+    while (1) {
+        bool more = false;
+        do {
+            zmq_msg_t message;
+
+            zmq_msg_init(&message);
+            rc = zmq_msg_recv(&message, notify, 0);
+
+            if (unlikely(rc < 0)) {
+                LOGWARNING("ZMQ: zmq_msg_recv failed with error %d", errno);
+                sleep(5);
+            } else {
+                int size = zmq_msg_size(&message);
+
+                switch (size) {
+                case 9:
+                    LOGDEBUG("ZMQ: hashblock message");
+                    break;
+                case 4:
+                    LOGDEBUG("ZMQ: sequence number");
+                    break;
+                case 32: {
+                    char hexhash[65] = {};
+                    update_base(sdata, GEN_PRIORITY);
+                    __bin2hex(hexhash, zmq_msg_data(&message), 32);
+                    LOGNOTICE("ZMQ: block hash %s", hexhash);
+                    break;
+                }
+                default:
+                    LOGWARNING("ZMQ: message size error, size = %d!", size);
+                    break;
+                }
+                more = zmq_msg_more(&message);
+            }
+
+            zmq_msg_close(&message);
+        } while (more);
+
+        LOGDEBUG("ZMQ: message complete");
+    }
+
+    zmq_close(notify);
+    zmq_ctx_destroy(context);
+
+    return NULL;
+}
+
 /* Enter holding workbase_lock and client a ref count. */
 static void __fill_enonce1data(const workbase_t *wb, stratum_instance_t *client)
 {
@@ -9738,7 +9810,7 @@ static bool get_chain_and_prefix(pool_t *ckp)
 void *stratifier(void *arg)
 {
     proc_instance_t *pi = (proc_instance_t *)arg;
-    pthread_t pth_blockupdate, pth_statsupdate, pth_heartbeat;
+    pthread_t pth_blockupdate, pth_statsupdate, pth_heartbeat, pth_zmqnotify;
     int threads, tvsec_diff = 0;
     pool_t *ckp = pi->ckp;
     int64_t randomiser;
@@ -9847,6 +9919,10 @@ void *stratifier(void *arg)
 
     mutex_init(&sdata->update_time_lock);
     mutex_init(&sdata->last_hash_lock);
+
+    if (ckp->zmqblock) {
+        create_pthread(&pth_zmqnotify, zmqnotify, ckp);
+    }
 
     ckp->stratifier_ready = true;
     LOGWARNING("%s stratifier ready", ckp->name);

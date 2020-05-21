@@ -217,6 +217,9 @@ struct pool_instance {
     volatile bool stratifier_ready; // TODO: use a real atomic value here
     volatile bool connector_ready; // TODO: use a real atomic value here
 
+    /* ZMQ URL used for ZMQ block notifications. ZMQ is not used if NULL. */
+    char *zmqblock;
+
     /* Threads of main process */
     pthread_t pth_listener;
     pthread_t pth_watchdog;

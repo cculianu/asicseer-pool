@@ -72,7 +72,7 @@ void rename_proc(const char *name)
 {
     char buf[16];
 
-    snprintf(buf, 15, "ckp@%s", name);
+    snprintf(buf, 15, "asp@%s", name);
     buf[15] = '\0';
     prctl(PR_SET_NAME, buf, 0, 0, 0);
 }

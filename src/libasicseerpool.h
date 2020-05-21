@@ -95,15 +95,18 @@ extern "C" {
 #define __maybe_unused __attribute__((unused))
 #define uninitialised_var(x) x = x
 
+#ifndef MAX
 #define MAX(a,b) \
     ({ __typeof__ (a) _a = (a); \
     __typeof__ (b) _b = (b); \
     _a > _b ? _a : _b; })
-
+#endif
+#ifndef MIN
 #define MIN(a,b) \
     ({ __typeof__ (a) _a = (a); \
     __typeof__ (b) _b = (b); \
     _a < _b ? _a : _b; })
+#endif
 
 typedef unsigned char uchar;
 
