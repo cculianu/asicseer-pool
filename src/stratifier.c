@@ -868,8 +868,6 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
         // ensure that what follows is <=100 bytes total for the scriptsig otherwise
         // block will be rejected as per BCH consensus rules.
         const int spaceLeft = MAX_COINBASE_SCRIPTSIG_LEN - len;
-        // Add user sig text. Note: we limit its size to what's left over after accounting for the
-        // prefix and suffix strings.
         if (ckp->bchsig && spaceLeft > 0) {
             const int n = MIN(ckp->bchsiglen, spaceLeft);
             strbuffer_append_bytes(strbuf, ckp->bchsig, n);
