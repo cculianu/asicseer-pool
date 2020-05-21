@@ -1847,7 +1847,7 @@ int address_to_txn(char *p2h, const char *addr, const bool script, const char *c
 }
 
 /*  For encoding nHeight into coinbase, return how many bytes were used */
-int ser_number(uchar *s, int32_t val)
+int ser_cbheight(uchar *s, int32_t val)
 {
     int32_t *i32 = (int32_t *)&s[1];
     int len;
@@ -1866,7 +1866,7 @@ int ser_number(uchar *s, int32_t val)
     return len;
 }
 
-int get_sernumber(uchar *s)
+int deser_cbheight(uchar *s)
 {
     int32_t val = 0;
     int len;

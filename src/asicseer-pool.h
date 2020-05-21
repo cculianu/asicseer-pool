@@ -285,6 +285,7 @@ struct pool_instance {
     char *bchaddress; // Address to mine to. In SPLNS mode this is used as a fallback address ok worker address failure, etc.
     bool script; // Address is a script address
     char *bchsig; // Optional signature to add to coinbase
+    int bchsiglen; // 0 or the length of bchsig
     struct {
         char *address;
         bool isscript;

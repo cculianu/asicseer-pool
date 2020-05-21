@@ -21,13 +21,9 @@ extern "C" {
 /* Max depth of the merkle tree. Increase this if blocks ever have more than 4 billion tx's. */
 #define GENWORK_MAX_MERKLE_DEPTH 32
 
-/* This is the hard-coded prefix for the coinbase tx.
-   Coinbase message ends up being "/PREFIX $bchsig SUFFIX/" */
-#define HARDCODED_COINBASE_PREFIX_STR ""
-#define HARDCODED_COINBASE_SUFFIX_STR "BCHN"
 /* The max length of user bchsig portion.  This may get truncated down below this value if the scriptsig
    gets too long. */
-#define MAX_USER_COINBASE_LEN 90
+#define MAX_USER_COINBASE_LEN 96
 
 #define MAX_USERNAME 127 /* The max length of a username. Used in internal struct user_instance_t */
 
@@ -117,9 +113,9 @@ char *stratifier_stats(pool_t *ckp, void *data);
 void _stratifier_add_recv(pool_t *ckp, json_t *val, const char *file, const char *func, const int line);
 #define stratifier_add_recv(ckp, val) _stratifier_add_recv(ckp, val, __FILE__, __func__, __LINE__)
 
-// Strips leading & trailing whitespace and strips any '/' characters from bchsig message.
-// Rewrites the string in-place.
-void normalize_bchsig(char *);
+// Limits the length of string str to MAX_USER_COINBASE_LEN (by inserting a NUL byte if the string is too long).
+// Postcondition: str is truncated to max MAX_USER_COINBASE_LEN bytes, and `str_len_out` is set to the length of `str`.
+void normalize_bchsig(char *str, int *str_len_out);
 
 void *stratifier(void *arg);
 

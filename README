@@ -303,6 +303,7 @@ can be used for comments. The options recognised are as follows:
 
 "bchsig" :
     This is optional text to put into the coinbase transaction of mined blocks.
+    It will be verbatim copied to the coinbase scriptsig (max 96 bytes).
 
 "blockpoll" :
     This is the frequency in milliseconds for how often to check for new network
@@ -415,4 +416,3 @@ can be used for comments. The options recognised are as follows:
     This is a mask of which bits in the version number it is valid for a client
     to alter and is expressed as an hex string. Eg "00fff000" Default is
     "1fffe000".
-
