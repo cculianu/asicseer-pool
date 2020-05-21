@@ -5305,12 +5305,14 @@ static void *zmqnotify(void *arg)
     LOGNOTICE("ZMQ connected to %s", ckp->zmqblock);
 
     while (1) {
-        bool more = false;
+        bool more;
         do {
             zmq_msg_t message;
 
             zmq_msg_init(&message);
             rc = zmq_msg_recv(&message, notify, 0);
+
+            more = false;
 
             if (unlikely(rc < 0)) {
                 LOGWARNING("ZMQ: zmq_msg_recv failed with error %d", errno);
@@ -5342,7 +5344,8 @@ static void *zmqnotify(void *arg)
             zmq_msg_close(&message);
         } while (more);
 
-        LOGDEBUG("ZMQ: message complete");
+        if (rc >= 0)
+            LOGDEBUG("ZMQ: message complete");
     }
 
     zmq_close(notify);
