@@ -305,7 +305,7 @@ can be used for comments. The options recognised are as follows:
     This is optional text to put into the coinbase transaction of mined blocks.
     It will be verbatim copied to the coinbase scriptsig (max 96 bytes).
 
-    You pay specify either a string or an array of strings here. If an array is
+    You may specify either a string or an array of strings here. If an array is
     specified, then a string will be randomly picked from the array each time
     a new coinbase transaction is generated.
 
