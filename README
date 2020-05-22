@@ -321,9 +321,9 @@ can be used for comments. The options recognised are as follows:
         ]
 
 "blockpoll" :
-    This is the frequency in milliseconds for how often to check for new network
-    blocks and is 100 by default. It is intended to be a backup only for when
-    the notifier is not set up and only polls if neither the "notify" nor "zmq"
+    The frequency in milliseconds for how often to check for new network blocks
+    (default: 100). This is intended to be a backup only for when the notifier
+    and/or zmq are not set up and only polls if neither the "notify" nor "zmq"
     fields are not set on a btcd.
 
 "btcd" :
