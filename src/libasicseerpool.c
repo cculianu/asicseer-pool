@@ -2282,3 +2282,29 @@ void gen_hash(uchar *data, uchar *hash, int len)
     sha256(data, len, hash1);
     sha256(hash1, 32, hash);
 }
+
+int random_threadsafe(int range)
+{
+    static pthread_mutex_t mut = PTHREAD_MUTEX_INITIALIZER;
+    static struct random_data buf = {};
+    static char state[256] = {};
+    static bool initted = false;
+
+    if (range <= 1)
+        return 0;
+    assert(range <= RAND_MAX);
+
+    pthread_mutex_lock(&mut);
+    if (!initted) {
+        if (initstate_r((unsigned int)(time_micros() % 1000000LL), state, sizeof(state), &buf)) {
+            quit(1, "Got error result from initstate_r with errno %d", errno);
+        }
+        initted = true;
+    }
+    int32_t result = 0;
+    if (random_r(&buf, &result)) {
+        quit(1, "Got error result from random_r with errno %d", errno);
+    }
+    pthread_mutex_unlock(&mut);
+    return result % range;
+}

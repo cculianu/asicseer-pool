@@ -1575,6 +1575,36 @@ double username_get_fee_discount(pool_t *ckp, const char *username)
     return discount;
 }
 
+static void parse_bchsigs(pool_t *ckp, json_t *obj)
+{
+    if (!obj)
+        return;
+    if (json_is_string(obj)) {
+        // single item string
+        ckp->n_bchsigs = 1;
+        ckp->bchsigs = ckzalloc(sizeof(*ckp->bchsigs));
+        const bool res = _json_get_string(&ckp->bchsigs[0].sig, obj, "bchsig");
+        assert(res);
+        normalize_bchsig(ckp->bchsigs[0].sig, &ckp->bchsigs[0].siglen); // modifies buffer in-place, noop if NULL
+    } else if (json_is_array(obj)) {
+        // array of strings (may be empty)
+        const int array_len = json_array_size(obj);
+        ckp->bchsigs = array_len ? ckzalloc(array_len * sizeof(*ckp->bchsigs)) : NULL;
+        for (int i = 0; i < array_len; ++i) {
+            char namebuf[24];
+            json_t *item = json_array_get(obj, i);
+            snprintf(namebuf, 24, "bchsig[%d]", i);
+            if (!_json_get_string(&ckp->bchsigs[i].sig, item, namebuf)) {
+                quit(1, "\"bchsig\" entry %d is invalid, expected string", i);
+            }
+            normalize_bchsig(ckp->bchsigs[i].sig, &ckp->bchsigs[i].siglen); // modifies buffer in-place, noop if NULL
+            ++ckp->n_bchsigs;
+        }
+    } else {
+        quit(1, "\"bchsig\" is invalid. Expected a single string or an array of strings.");
+    }
+}
+
 static void parse_config(pool_t *ckp)
 {
     json_t *json_conf, *arr_val;
@@ -1601,9 +1631,8 @@ static void parse_config(pool_t *ckp)
         quit(1, "\"btcsig\" key has been renamed to \"bchsig\". Please update your config file!");
     // /End obsolete key detection
     json_get_string(&ckp->bchaddress, json_conf, "bchaddress");
-    json_get_string(&ckp->bchsig, json_conf, "bchsig");
     // bchsig
-    normalize_bchsig(ckp->bchsig, &ckp->bchsiglen); // modifies buffer in-place, noop if NULL
+    parse_bchsigs(ckp, json_object_get(json_conf, "bchsig"));
     // pool_fee
     if (! json_get_double(&ckp->pool_fee, json_conf, "pool_fee") ) {
         ckp->pool_fee = 1.0; // default fee is 1%
@@ -2090,9 +2119,10 @@ int main(int argc, char **argv)
     LOGNOTICE("%s", banner_string()); // print banner to log so users know what version was running
 
     LOGNOTICE("Using pool fee: %1.3f%%", ckp.pool_fee);
-    if (ckp.bchsig && *ckp.bchsig)
-        LOGNOTICE("Using coinbase signature: %s", ckp.bchsig);
-
+    for (int i = 0; i < ckp.n_bchsigs; ++i) {
+        if (ckp.bchsigs[i].sig && *ckp.bchsigs[i].sig)
+            LOGNOTICE("Using coinbase signature #%d: %s", i+1, ckp.bchsigs[i].sig);
+    }
     ckp.main.ckp = &ckp;
     ckp.main.processname = strdup("main");
     ckp.main.sockname = strdup("listener");

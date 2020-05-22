@@ -285,10 +285,15 @@ struct pool_instance {
     bool not_mainnet; // if true, we are not on main net but rather on test net or regtest net
 
     /* Coinbase data */
-    char *bchaddress; // Address to mine to. In SPLNS mode this is used as a fallback address ok worker address failure, etc.
+    char *bchaddress; // Address to mine to. In SPLNS mode this is used as a fallback address ok worker address failure, etc, as well as the pool fee address.
     bool script; // Address is a script address
-    char *bchsig; // Optional signature to add to coinbase
-    int bchsiglen; // 0 or the length of bchsig
+    // optional coinbase scriptsig text. If more than 1 is specified, one is randomly picked each time.
+    struct {
+        char *sig; // Optional signature to add to coinbase
+        int siglen; // 0 or the length of bchsig (always >= 0)
+    } *bchsigs;
+    int n_bchsigs; // the number of bchsigs. May be 0 if bchsigs is NULL.
+
     struct {
         char *address;
         bool isscript;

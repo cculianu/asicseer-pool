@@ -305,6 +305,21 @@ can be used for comments. The options recognised are as follows:
     This is optional text to put into the coinbase transaction of mined blocks.
     It will be verbatim copied to the coinbase scriptsig (max 96 bytes).
 
+    You pay specify either a string or an array of strings here. If an array is
+    specified, then a string will be randomly picked from the array each time
+    a new coinbase transaction is generated.
+
+    Example 1:
+
+        "bchsig" : "/This is my pool's only sig - Use BCHN/
+
+    Example 2:
+
+        "bchsig" : [
+            "/This is a sig/",
+            "/This is another sig/"
+        ]
+
 "blockpoll" :
     This is the frequency in milliseconds for how often to check for new network
     blocks and is 100 by default. It is intended to be a backup only for when
@@ -334,26 +349,26 @@ can be used for comments. The options recognised are as follows:
 
     Example:
 
-    "btcd" : [
-        {
-           "url" : "192.168.0.101:8332",
-           "auth" : "someuser1",
-           "pass" : "somepass1",
-           "zmq" : "tcp://192.168.0.101:28332"
-        },
-        {
-           "url" : "192.168.0.15:8332",
-           "auth" : "someuser2",
-           "pass" : "somepass2",
-           "zmq" : "tcp://192.168.0.15:28332"
-        },
-        {
-           "url" : "192.168.0.151:8332",
-           "auth" : "this_one_polls",
-           "pass" : "zzz",
-           "notify" : false
-        }
-    ]
+        "btcd" : [
+            {
+               "url" : "192.168.0.101:8332",
+               "auth" : "someuser1",
+               "pass" : "somepass1",
+               "zmq" : "tcp://192.168.0.101:28332"
+            },
+            {
+               "url" : "192.168.0.15:8332",
+               "auth" : "someuser2",
+               "pass" : "somepass2",
+               "zmq" : "tcp://192.168.0.15:28332"
+            },
+            {
+               "url" : "192.168.0.151:8332",
+               "auth" : "this_one_polls",
+               "pass" : "zzz",
+               "notify" : false
+            }
+        ]
 
 "fee_discounts":
     Offer discounts to specific users, keyed off their mining address. 1.0 =
@@ -362,11 +377,11 @@ can be used for comments. The options recognised are as follows:
 
     Example:
 
-    "fee_discounts" : {
-       "address1" : 0.25,
-       "address2" : 0.33,
-       "address3" : 1.0
-    }
+        "fee_discounts" : {
+           "address1" : 0.25,
+           "address2" : 0.33,
+           "address3" : 1.0
+        }
 
 "logdir" :
     Which directory to store pool and client logs. Default "logs"
@@ -386,10 +401,10 @@ can be used for comments. The options recognised are as follows:
 
     Example:
 
-    "mindiff_overrides" : {
-        "nicehash" : 500000,
-        "foohash" : 750000
-    }
+        "mindiff_overrides" : {
+            "nicehash" : 500000,
+            "foohash" : 750000
+        }
 
     This is a mechanism to support a raised minimum difficulty for clients
     connecting to the pool based on their "useragent" string (that they normally

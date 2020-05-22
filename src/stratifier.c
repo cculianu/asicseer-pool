@@ -992,10 +992,17 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
         // ensure that what follows is <=100 bytes total for the scriptsig otherwise
         // block will be rejected as per BCH consensus rules.
         const int spaceLeft = MAX_COINBASE_SCRIPTSIG_LEN - len;
-        if (ckp->bchsig && spaceLeft > 0) {
-            const int n = MIN(ckp->bchsiglen, spaceLeft);
-            strbuffer_append_bytes(strbuf, ckp->bchsig, n);
-            LOGDEBUG("CB text: \"%.*s\"", n, ckp->bchsig);
+        if (ckp->n_bchsigs > 0) {
+            // pick a random coinbase text from the array of sigs defined in conf "bchsig"
+            // (this may be just 1 item or empty)
+            const int which = random_threadsafe(ckp->n_bchsigs);
+            __typeof__(ckp->bchsigs) sig = ckp->bchsigs + which;
+            if (sig->siglen > 0 && sig->sig && spaceLeft > 0) {
+                const int n = MIN(sig->siglen, spaceLeft);
+                const size_t pos = strbuf->length;
+                strbuffer_append_bytes(strbuf, sig->sig, n);
+                LOGDEBUG("CB text: \"%.*s\"", n, strbuf->value + pos);
+            }
         }
     }
 

@@ -661,6 +661,9 @@ void target_from_diff(uchar *target, double diff);
 
 void gen_hash(uchar *data, uchar *hash, int len);
 
+/// returns a number in the range [0, range)
+int random_threadsafe(int range);
+
 #ifdef  __cplusplus
 }
 #endif
