@@ -23,10 +23,16 @@ extern "C" {
 #define GETBEST_NOTIFY 0
 #define GETBEST_SUCCESS 1
 
+#define GENERATOR_MAX_CSCRIPT_LEN 48
+
 void generator_add_send(pool_t *ckp, json_t *val);
 struct genwork *generator_getbase(pool_t *ckp);
 int generator_getbest(pool_t *ckp, char *hash);
-bool generator_checkaddr(pool_t *ckp, const char *addr, bool *script);
+/// Returns the length of the CScript if `addr` is a valid address, and writes
+/// the CScript (scriptPubkey) bytes into the buffer `cscript_out` (which must
+/// have space for GENERATOR_MAX_CSCRIPT_LEN bytes).
+/// Returns 0 on failure.  (This always queries bitcoind.)
+int generator_checkaddr(pool_t *ckp, const char *addr, void *cscript_out);
 char *generator_get_txn(pool_t *ckp, const char *hash);
 bool generator_submitblock(pool_t *ckp, const char *buf);
 void generator_preciousblock(pool_t *ckp, const char *hash);

@@ -1776,7 +1776,7 @@ static const char *remove_any_cashaddr_prefix(const char *addr)
     return ret;
 }
 
-static int address_to_pubkeytxn(char *pkh, const char *addr, const char *cashaddr_prefix)
+static int p2pkh_address_to_script(uchar *pkh, const char *addr, const char *cashaddr_prefix)
 {
     char b58bin[25] = {};
     bool decoded_cashaddr = false;
@@ -1808,7 +1808,7 @@ static int address_to_pubkeytxn(char *pkh, const char *addr, const char *cashadd
     return 25;
 }
 
-static int address_to_scripttxn(char *psh, const char *addr, const char *cashaddr_prefix)
+static int p2sh_address_to_script(uchar *psh, const char *addr, const char *cashaddr_prefix)
 {
     char b58bin[25] = {};
     bool decoded_cashaddr = false;
@@ -1839,16 +1839,17 @@ static int address_to_scripttxn(char *psh, const char *addr, const char *cashadd
 }
 
 /* Convert an address to a transaction and return the length of the transaction */
-int address_to_txn(char *p2h, const char *addr, const bool script, const char *cashaddr_prefix)
+int address_to_script(uchar *p2h, const char *addr, bool is_p2sh, const char *cashaddr_prefix)
 {
-    if (script)
-        return address_to_scripttxn(p2h, addr, cashaddr_prefix);
-    return address_to_pubkeytxn(p2h, addr, cashaddr_prefix);
+    if (is_p2sh)
+        return p2sh_address_to_script(p2h, addr, cashaddr_prefix);
+    return p2pkh_address_to_script(p2h, addr, cashaddr_prefix);
 }
 
 /*  For encoding nHeight into coinbase, return how many bytes were used */
-int ser_cbheight(uchar *s, int32_t val)
+int ser_cbheight(void *outp, int32_t val)
 {
+    uchar *s = (uchar *)outp;
     int32_t *i32 = (int32_t *)&s[1];
     int len;
 
@@ -1866,8 +1867,9 @@ int ser_cbheight(uchar *s, int32_t val)
     return len;
 }
 
-int deser_cbheight(uchar *s)
+int deser_cbheight(const void *inp)
 {
+    const uchar *s = (uchar *)inp;
     int32_t val = 0;
     int len;
 

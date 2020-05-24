@@ -235,7 +235,8 @@ static bool server_alive(pool_t *ckp, server_instance_t *si, bool pinging)
         goto out;
     }
     clear_gbtbase(&gbt);
-    if (!ckp->node && !validate_address(cs, ckp->bchaddress, &ckp->script)) {
+    bool is_p2sh;
+    if (!ckp->node && !validate_address(cs, ckp->bchaddress, &is_p2sh, NULL, NULL)) {
         LOGWARNING("Invalid bchaddress: %s !", ckp->bchaddress);
         goto out;
     }
@@ -909,20 +910,22 @@ out:
     return ret;
 }
 
-bool generator_checkaddr(pool_t *ckp, const char *addr, bool *script)
+int generator_checkaddr(pool_t *ckp, const char *addr, void *cscript_out)
 {
     gdata_t *gdata = ckp->gdata;
     server_instance_t *si;
-    int ret = false;
+    int ret = 0, len = GENERATOR_MAX_CSCRIPT_LEN;
     connsock_t *cs;
 
+    assert(cscript_out);
     si = _get_current_si_threadsafe(gdata);
     if (unlikely(!si)) {
         LOGWARNING("No live current server in generator_checkaddr");
         goto out;
     }
     cs = &si->cs;
-    ret = validate_address(cs, addr, script);
+    if (validate_address(cs, addr, NULL, cscript_out, &len))
+        ret = len;
 out:
     return ret;
 }

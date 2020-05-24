@@ -21,7 +21,15 @@ extern "C" {
 
 typedef struct genwork gbtbase_t;
 
-bool validate_address(connsock_t *cs, const char *address, bool *script);
+/**
+ * Returns true if bitcoind reports address `address` as valid.
+ * If pointer `is_p2sh` is not NULL, writes *is_p2sh = true/false depending on whether the
+ * address is a P2SH address.
+ * If pointer `cscript_out` is not NULL, writes up to *cscript_len bytes of the scriptPubkey,
+ * modifying *cscript_len to contain the number of bytes written. If `cscript_out` is not
+ * NULL and the scriptPubkey does not fit into cscript_out, false will be returned.
+ * Returns true on success (and if the address is valid). */
+bool validate_address(connsock_t *cs, const char *address, bool *is_p2sh, void *cscript_out, int *cscript_len);
 bool gen_gbtbase(connsock_t *cs, gbtbase_t *gbt);
 void clear_gbtbase(gbtbase_t *gbt);
 int get_blockcount(connsock_t *cs);

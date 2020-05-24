@@ -178,10 +178,9 @@ struct user_instance {
     char username[MAX_USERNAME+1];
     int id;
     char *secondaryuserid;
-    bool bchaddress;
-    bool script;
-    char txnbin[48];
-    int txnlen;
+    bool bchaddress; // true iff the username is a valid bch address
+    uint8_t scriptbin[GENERATOR_MAX_CSCRIPT_LEN]; // address redeem script (scriptPubkey) (only if bchaddress is true)
+    int scriptlen; // length of above scriptbin
 
     /* A linked list of all connected instances of this user */
     stratum_instance_t *clients;
@@ -482,11 +481,11 @@ static const char *ckdb_seq_names[] = {
 struct stratifier_data {
     pool_t *ckp;
 
-    char txnbin[48];
-    int txnlen;
+    uint8_t scriptbin[GENERATOR_MAX_CSCRIPT_LEN]; // pool address redeem script (scriptPubkey)
+    int scriptlen; // length of above scriptbin
     struct {
-        char txnbin[48];
-        int txnlen;
+        uint8_t scriptbin[GENERATOR_MAX_CSCRIPT_LEN]; // donation address redeem script (scriptPubkey)
+        int scriptlen; // if valid donation address, length of above, otherwise 0
     } donation_data[DONATION_NUM_ADDRESSES];
     int n_good_donation; // the number of donation addresses above that were correctly parsed
 
@@ -666,26 +665,26 @@ static void cb1_buffer_take(cb1_buffer_t *t, void **bufptr, size_t *pos, size_t 
     *bufptr = strbuffer_steal_value(&t->buffer);
 }
 
-/// Add an amount[8 bytes],scriptbinlen[1 byte],scriptbin[txnlen bytes] to cb1_buffer_t `buf`.
+/// Add an amount[8 bytes],scriptbinlen[1 byte],scriptbin[scriptlen bytes] to cb1_buffer_t `buf`.
 /// Returns an index into the buffer where the amount data begins on success.
 /// On failure (which is unlikely) this function will call quit().  So this always returns on success.
-/// IMPORTANT: txnlen must be <253 bytes otherwise this will always fail.
-static size_t _add_txnbin(cb1_buffer_t *buf, uint64_t amount, const void *txnbin, size_t txnlen)
+/// IMPORTANT: scriptlen must be <253 bytes otherwise this will always fail.
+static size_t _add_output(cb1_buffer_t *buf, uint64_t amount, const void *scriptbin, size_t scriptlen)
 {
-    const size_t size = 8 + 1 + txnlen;
-    uint8_t *tmp = alloca(size);
-    const size_t ret = buf->buffer.length;
-    *(uint64_t *)tmp = htole64(amount); // this is guaranteed aligned access
-    if (unlikely(txnlen >= 253)) {
-        quit(1, "INTERNAL ERROR: %s: txnlen must be <253 bytes!", __FUNCTION__);
-        return 0; // not reached
+    if (unlikely(scriptlen >= 253)) {
+        quit(1, "INTERNAL ERROR: %s: scriptlen must be <253 bytes!", __FUNCTION__);
+        // not reached
     }
-    tmp[8] = (uint8_t)txnlen;
-    memcpy(tmp + 9, txnbin, txnlen);
-    if (unlikely(strbuffer_append_bytes(&buf->buffer, (const char *)tmp, size) != 0)) {
+    const size_t ret = buf->buffer.length;
+    amount = htole64(amount); // ensure little-endian
+    if (unlikely(
+            strbuffer_append_bytes(&buf->buffer, &amount, sizeof(amount)) != 0
+            || strbuffer_append_byte(&buf->buffer, (uint8_t)scriptlen) != 0
+            || strbuffer_append_bytes(&buf->buffer, scriptbin, scriptlen) != 0
+        )) {
         quit(1, "INTERNAL ERROR: %s: buffer size overflow, strbuffer is too large: %lu",
              __FUNCTION__, buf->buffer.size);
-        return 0; // not reached
+        // not reached
     }
     assert(++buf->num_outs && "INTERNAL ERROR: integer overflow for cb1_buffer_t::num_outs!");
     return ret;
@@ -787,13 +786,13 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, cb1_buffer_t 
             }
             for (int i = 0; i < N; ++i) {
                 const uint64_t rew = per_out + ( i+1 == N ? rem : 0 );
-                amt_pos = _add_txnbin(cb_buf, rew, user->txnbin, user->txnlen);
+                amt_pos = _add_output(cb_buf, rew, user->scriptbin, user->scriptlen);
                 LOGDEBUG("User %s outp %d reward %"PRIu64, user->username, 1 + i + payouts, rew);
             }
         }
 #else
         /* Add the user's coinbase reward, using the cached cscript */
-        amt_pos = _add_txnbin(cb_buf, total_reward, user->txnbin, user->txnlen);
+        amt_pos = _add_output(cb_buf, total_reward, user->scriptbin, user->scriptlen);
 #endif
 
         if (!pf64 && total_reward > max_payee.reward) {
@@ -852,7 +851,7 @@ static void add_coinbase_payouts(const pool_t *ckp, workbase_t *wb, cb1_buffer_t
         // payout to miners directly in SPLNS mode (also pay out hard-coded dev donations)
 
         // first, add pool fee, if any
-        if (likely(f64 >= DUST_LIMIT_SATS && sdata->txnlen)) {
+        if (likely(f64 >= DUST_LIMIT_SATS && sdata->scriptlen)) {
             df64 = DONATION_FRACTION > 0 ? (f64 / DONATION_FRACTION) * sdata->n_good_donation : 0;
             uint64_t don_each = sdata->n_good_donation ? df64 / sdata->n_good_donation : 0;
             if (unlikely(don_each < DUST_LIMIT_SATS || f64 - df64 < DUST_LIMIT_SATS)) {
@@ -863,7 +862,7 @@ static void add_coinbase_payouts(const pool_t *ckp, workbase_t *wb, cb1_buffer_t
             pf64 = f64 - df64;
 
             // add pool net fee
-            pool_amt_pos = _add_txnbin(cb1_buf, pf64, sdata->txnbin, sdata->txnlen);
+            pool_amt_pos = _add_output(cb1_buf, pf64, sdata->scriptbin, sdata->scriptlen);
             pool_has_amt = true;
             const double fee = pf64 / (double)SATOSHIS;
             LOGDEBUG("%1.8f pool fee to pool address: %s", fee, ckp->bchaddress);
@@ -871,9 +870,9 @@ static void add_coinbase_payouts(const pool_t *ckp, workbase_t *wb, cb1_buffer_t
             int64_t leftover = df64;
             if (df64 && don_each) {
                 for (int i = 0; i < DONATION_NUM_ADDRESSES && leftover > 0; ++i) {
-                    if (sdata->donation_data[i].txnlen && ckp->dev_donations[i].valid) {
+                    if (sdata->donation_data[i].scriptlen && ckp->dev_donations[i].valid) {
                         // good address
-                        _add_txnbin(cb1_buf, don_each, sdata->donation_data[i].txnbin, sdata->donation_data[i].txnlen);
+                        _add_output(cb1_buf, don_each, sdata->donation_data[i].scriptbin, sdata->donation_data[i].scriptlen);
                         leftover -= (int64_t)don_each;
                         const double d = don_each / (double)SATOSHIS;
                         LOGDEBUG("%f dev donation to address: %s", d, ckp->dev_donations[i].address);
@@ -909,12 +908,12 @@ static void add_coinbase_payouts(const pool_t *ckp, workbase_t *wb, cb1_buffer_t
         c64 = add_user_generation(sdata, wb, cb1_buf, g64 - f64, pf64); // add miner payouts, minus total fee
 
         /* Add any change left over from user gen to pool -- note c64 may be negative here if pool fee discounts occurred */
-        if ( c64 && (pool_has_amt || c64 >= DUST_LIMIT_SATS) && sdata->txnlen) {
+        if ( c64 && (pool_has_amt || c64 >= DUST_LIMIT_SATS) && sdata->scriptlen) {
             bool ok = false;
             pf64 = (uint64_t)(((int64_t)pf64) + c64); // add or deduct modifiction returned from add_user_generation
             if (!pool_has_amt && pf64 >= DUST_LIMIT_SATS) {
                 // pay extra change > dust limit back to pool, new output at end
-                pool_amt_pos = _add_txnbin(cb1_buf, pf64, sdata->txnbin, sdata->txnlen);
+                pool_amt_pos = _add_output(cb1_buf, pf64, sdata->scriptbin, sdata->scriptlen);
                 pool_has_amt = true;
                 ok = true;
             } else if (pool_has_amt && pf64 >= DUST_LIMIT_SATS) {
@@ -954,7 +953,7 @@ static void add_coinbase_payouts(const pool_t *ckp, workbase_t *wb, cb1_buffer_t
         }
     } else {
         // payout directly to pool in this mode (asicseer-db mode)
-        pool_amt_pos = _add_txnbin(cb1_buf, g64, sdata->txnbin, sdata->txnlen);
+        pool_amt_pos = _add_output(cb1_buf, g64, sdata->scriptbin, sdata->scriptlen);
         pool_has_amt = true;
     }
 #undef SET_POOL_AMT
@@ -982,8 +981,8 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 
     /* Put block height at start of scriptsig (consensus rule) */
     {
-        char buf[8];
-        len = ser_cbheight((uchar *)buf, wb->height);
+        uint8_t buf[8];
+        len = ser_cbheight(buf, wb->height);
         strbuffer_append_bytes(strbuf, buf, len);
     }
 
@@ -1025,7 +1024,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
     const int compact_size_pos = strbuf->length;
     static const int compact_size_reserved = 3;
     {
-        char *resv = alloca(compact_size_reserved);
+        uint8_t resv[compact_size_reserved];
         memset(resv, 0, compact_size_reserved);
         strbuffer_append_bytes(strbuf, resv, compact_size_reserved);
     }
@@ -1046,9 +1045,9 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
         int scriptlen = 1 + 1 + wb->enonce1varlen + wb->enonce2varlen + sizeof(t0);
         strbuffer_append_bytes(strbuf, amt0, 8); // amount
         assert(scriptlen < 223 && scriptlen > 2); // script should be > 2 bytes and less than max OP_RETURN size
-        strbuffer_append_byte(strbuf, (char)scriptlen); // push script length
-        strbuffer_append_byte(strbuf, (char)0x6a); // push OP_RETURN
-        strbuffer_append_byte(strbuf, (char)scriptlen - 2); // push OP_RETURN payload length
+        strbuffer_append_byte(strbuf, (uint8_t)scriptlen); // push script length
+        strbuffer_append_byte(strbuf, 0x6a); // push OP_RETURN
+        strbuffer_append_byte(strbuf, (uint8_t)(scriptlen - 2)); // push OP_RETURN payload length
         ++cb1_buf.num_outs; // increment output counter for this OP_RETURN output
     }
     /* Cb1 is done. Take the pointer, assign it to coinb1bin, write compact size before the outs. */
@@ -1568,7 +1567,7 @@ static void submit_transaction(pool_t *ckp, const char *hash)
 /* Build a hashlist of all transactions, allowing us to compare with the list of
  * existing transactions to determine which need to be propagated */
 static bool add_txn(pool_t *ckp, sdata_t *sdata, txntable_t **txns, const char *hash,
-            const char *data, bool local)
+                    const char *data, bool local)
 {
     bool found = false;
     txntable_t *txn;
@@ -2965,11 +2964,11 @@ static sdata_t *duplicate_sdata(const sdata_t *sdata)
     dsdata->ckp = sdata->ckp;
 
     /* Copy the transaction binaries for workbase creation */
-    memcpy(dsdata->txnbin, sdata->txnbin, 48);
-    dsdata->txnlen = sdata->txnlen;
+    memcpy(dsdata->scriptbin, sdata->scriptbin, GENERATOR_MAX_CSCRIPT_LEN);
+    dsdata->scriptlen = sdata->scriptlen;
     for (int i = 0; i < DONATION_NUM_ADDRESSES; ++i) {
-        memcpy(dsdata->donation_data[i].txnbin, sdata->donation_data[i].txnbin, 48);
-        dsdata->donation_data[i].txnlen = sdata->donation_data[i].txnlen;
+        memcpy(dsdata->donation_data[i].scriptbin, sdata->donation_data[i].scriptbin, GENERATOR_MAX_CSCRIPT_LEN);
+        dsdata->donation_data[i].scriptlen = sdata->donation_data[i].scriptlen;
     }
 
     /* Use the same work queues for all subproxies */
@@ -6024,25 +6023,6 @@ static user_instance_t *__create_user(sdata_t *sdata, const char *username)
     return user;
 }
 
-// Attempt to parse the address for the user based on username, if that fails, then
-// fall back to pool address.  In the unlikely case that also fails, quits immediately.
-static void cache_user_address_cscript(pool_t *ckp, user_instance_t *user, const char *username)
-{
-    user->txnlen = address_to_txn(user->txnbin, username, user->script, ckp->cashaddr_prefix);
-    if (!user->txnlen) {
-        if (ckp->bchaddress) {
-            user->txnlen = address_to_txn(user->txnbin, ckp->bchaddress, ckp->script, ckp->cashaddr_prefix);
-        }
-        if (user->txnlen) {
-            LOGWARNING("Failed to parse user address '%s', fell back to using pool address '%s'", username, ckp->bchaddress ? : "");
-        } else {
-            quit(1, "Failed to parse user address '%s', and fallback of pool address '%s' also failed to parse! FIXME!",
-                    username, ckp->bchaddress ? : "");
-        }
-    }
-
-}
-
 /* Find user by username or create one if it doesn't already exist */
 static user_instance_t *get_create_user(sdata_t *sdata, const char *username, bool *new_user)
 {
@@ -6065,11 +6045,8 @@ static user_instance_t *get_create_user(sdata_t *sdata, const char *username, bo
 
     /* Is this a bch address based username? */
     if (!ckp->proxy && (*new_user || !user->bchaddress)) {
-        user->bchaddress = generator_checkaddr(ckp, username, &user->script);
-        if (user->bchaddress) {
-            /* Cache the transaction for use in generation */
-            cache_user_address_cscript(ckp, user, username); //< may quit here if no valid pool address (ckp->bchaddress).
-        }
+        user->scriptlen = generator_checkaddr(ckp, username, user->scriptbin);
+        user->bchaddress = user->scriptlen != 0;
     }
 
     return user;
@@ -9902,30 +9879,21 @@ void *stratifier(void *arg)
             goto out;
         }
 
-        if (!generator_checkaddr(ckp, ckp->bchaddress, &ckp->script)) {
-            LOGEMERG("Fatal: bchaddress invalid according to bitcoind");
-            goto out;
-        }
-
         /* Store this for use elsewhere */
         hex2bin(scriptsig_header_bin, scriptsig_header, 41);
-        sdata->txnlen = address_to_txn(sdata->txnbin, ckp->bchaddress, ckp->script, ckp->cashaddr_prefix);
-        if (!sdata->txnlen) {
-            LOGEMERG("Failed to parse pool address '%s'. FIXME!", ckp->bchaddress);
+
+        if (!(sdata->scriptlen = generator_checkaddr(ckp, ckp->bchaddress, sdata->scriptbin))) {
+            LOGEMERG("Fatal: bchaddress \"%s\" invalid according to bitcoind", ckp->bchaddress);
             goto out;
         }
 
         for (int i = 0; i < DONATION_NUM_ADDRESSES; ++i) {
-            if (generator_checkaddr(ckp, ckp->dev_donations[i].address, &ckp->dev_donations[i].isscript)) {
-                ckp->dev_donations[i].valid = true;
+            __typeof__(*ckp->dev_donations) *don = ckp->dev_donations + i;
+            __typeof__(*sdata->donation_data) *dd = sdata->donation_data + i;
+            dd->scriptlen = generator_checkaddr(ckp, don->address, dd->scriptbin);
+            if (dd->scriptlen) {
+                don->valid = true;
                 sdata->n_good_donation++;
-                sdata->donation_data[i].txnlen =
-                    address_to_txn(sdata->donation_data[i].txnbin, ckp->dev_donations[i].address,
-                                   ckp->dev_donations[i].isscript, ckp->cashaddr_prefix);
-                if (!sdata->donation_data[i].txnlen) {
-                    LOGEMERG("Failed to parse donation address '%s'. FIXME!", ckp->dev_donations[i].address);
-                    goto out;
-                }
             }
         }
     }

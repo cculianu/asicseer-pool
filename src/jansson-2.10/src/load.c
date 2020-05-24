@@ -243,7 +243,7 @@ static int lex_get(lex_t *lex, json_error_t *error)
 
 static void lex_save(lex_t *lex, int c)
 {
-    strbuffer_append_byte(&lex->saved_text, c);
+    strbuffer_append_char(&lex->saved_text, c);
 }
 
 static int lex_get_save(lex_t *lex, json_error_t *error)

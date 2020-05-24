@@ -31,8 +31,9 @@ const char *strbuffer_value(const strbuffer_t *strbuff);
 /* Steal the value and close the strbuffer */
 char *strbuffer_steal_value(strbuffer_t *strbuff);
 
-int strbuffer_append_byte(strbuffer_t *strbuff, char byte);
-int strbuffer_append_bytes(strbuffer_t *strbuff, const char *data, size_t size);
+int strbuffer_append_char(strbuffer_t *strbuff, char ch);
+int strbuffer_append_byte(strbuffer_t *strbuff, uint8_t byte);
+int strbuffer_append_bytes(strbuffer_t *strbuff, const void *data, size_t size);
 
 char strbuffer_pop(strbuffer_t *strbuff);
 

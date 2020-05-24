@@ -64,12 +64,17 @@ char *strbuffer_steal_value(strbuffer_t *strbuff)
     return result;
 }
 
-int strbuffer_append_byte(strbuffer_t *strbuff, char byte)
+int strbuffer_append_char(strbuffer_t *strbuff, char ch)
+{
+    return strbuffer_append_bytes(strbuff, &ch, 1);
+}
+
+int strbuffer_append_byte(strbuffer_t *strbuff, uint8_t byte)
 {
     return strbuffer_append_bytes(strbuff, &byte, 1);
 }
 
-int strbuffer_append_bytes(strbuffer_t *strbuff, const char *data, size_t size)
+int strbuffer_append_bytes(strbuffer_t *strbuff, const void *data, size_t size)
 {
     /* Leave room for EOL and NULL bytes */
     if(size + 2 > strbuff->size - strbuff->length)

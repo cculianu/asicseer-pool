@@ -621,10 +621,10 @@ bool cmdmatch(const char *buf, const char *cmd);
 int write_compact_size(void *dest, size_t size_to_write);
 
 // returns 0 on address parse failure, otherwise returns length of generated CScript
-int address_to_txn(char *p2h, const char *addr, const bool script, const char *default_cashaddr_prefix);
+int address_to_script(uchar *script, const char *addr, bool is_p2sh, const char *default_cashaddr_prefix);
 
-int ser_cbheight(uchar *s, int32_t val);
-int deser_cbheight(uchar *s);
+int ser_cbheight(void *s, int32_t val);
+int deser_cbheight(const void *s);
 bool fulltest(const uchar *hash, const uchar *target);
 
 void copy_tv(tv_t *dest, const tv_t *src);

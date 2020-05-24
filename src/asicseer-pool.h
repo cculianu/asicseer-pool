@@ -286,7 +286,6 @@ struct pool_instance {
 
     /* Coinbase data */
     char *bchaddress; // Address to mine to. In SPLNS mode this is used as a fallback address ok worker address failure, etc, as well as the pool fee address.
-    bool script; // Address is a script address
     // optional coinbase scriptsig text. If more than 1 is specified, one is randomly picked each time.
     struct {
         char *sig; // Optional signature to add to coinbase
@@ -296,7 +295,6 @@ struct pool_instance {
 
     struct {
         char *address;
-        bool isscript;
         bool valid;
     } dev_donations[DONATION_NUM_ADDRESSES];  // [0] = calin, [1] = bchn -- see donation.h
 
