@@ -27,7 +27,7 @@ extern "C" {
 
 void generator_add_send(pool_t *ckp, json_t *val);
 struct genwork *generator_getbase(pool_t *ckp);
-int generator_getbest(pool_t *ckp, char *hash);
+int generator_getbest(pool_t *ckp, char *hash, bool force);
 /// Returns the length of the CScript if `addr` is a valid address, and writes
 /// the CScript (scriptPubkey) bytes into the buffer `cscript_out` (which must
 /// have space for GENERATOR_MAX_CSCRIPT_LEN bytes).

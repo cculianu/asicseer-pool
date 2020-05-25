@@ -449,11 +449,37 @@ void _cksem_destroy(sem_t *sem, const char *file, const char *func, const int li
         quitfrom(1, file, func, line, "Failed to sem_destroy errno=%d sem=0x%p", errno, sem);
 }
 
+bool extract_zmq_proto_port(const char *z, char **proto, char **port, char **middle)
+{
+    const char *slashes = strstr(z, "//");
+    if (!slashes)
+        return false;
+    const char *middle_start = slashes + 2;
+    const char *prt = strrchr(middle_start, ':');
+    if (!prt || prt - slashes <= 2 || !*++prt)
+        prt = ""; // return empty port if not ':'
+    int protolen = slashes - z;
+    if (protolen > 0 && z[protolen-1] == ':')
+        --protolen;
+    *proto = ckstrndup(z, protolen);
+    if (strcasecmp(*proto, "ipc") == 0)
+        prt = ""; // IPC never has a port.
+    *port = ckstrdup(prt);
+    if (middle) {
+        int middle_len = strlen(middle_start) - strlen(prt);
+        while (middle_len && middle_start[middle_len-1] == ':')
+            --middle_len; // trim trailing ':' character
+        *middle = ckstrndup(middle_start, middle_len);
+    }
+    //LOGDEBUG("PARSED PROTO \"%s\" PORT \"%s\" MIDDLE \"%s\" from \"%s\"", *proto, *port, middle ? *middle : "", z);
+    return true;
+}
+
 /* Extract just the url and port information from a url string, allocating
  * heap memory for sockaddr_url and sockaddr_port. */
-bool extract_sockaddr(char *url, char **sockaddr_url, char **sockaddr_port)
+bool extract_sockaddr(const char *url, char **sockaddr_url, char **sockaddr_port)
 {
-    char *url_begin, *url_end, *ipv6_begin, *ipv6_end, *port_start = NULL;
+    const char *url_begin, *url_end, *ipv6_begin, *ipv6_end, *port_start = NULL;
     char *url_address, *port, *tmp;
     int url_len, port_len = 0;
     size_t hlen;
@@ -1443,6 +1469,22 @@ void *json_ckalloc(size_t size)
     return ckalloc(size);
 }
 
+char *ckstrdup(const char *s)
+{
+    const int len = strlen(s);
+    return ckstrndup(s, len);
+}
+
+char *ckstrndup(const char *s, int len)
+{
+    if (len < 0)
+        return NULL;
+    char *ret = ckzalloc(len + 1);
+    strncpy(ret, s, len);
+    ret[len] = 0;
+    return ret;
+}
+
 void *_ckzrealloc(void *oldbuf, size_t len, bool zeromem, const char *file, const char *func, const int line)
 {
     int backoff = 1;
@@ -1992,18 +2034,22 @@ void ts_realtime(ts_t *ts)
     clock_gettime(CLOCK_REALTIME, ts);
 }
 
+void ts_monotonic(ts_t *ts)
+{
+    clock_gettime(CLOCK_MONOTONIC, ts);
+}
+
 int64_t time_micros(void)
 {
     int64_t ret;
     ts_t ts;
-    ts_realtime(&ts);
+    ts_monotonic(&ts);
     // we do the below to prevent overflow on 32-bit
     ret = ts.tv_sec;
     ret *= (int64_t)1000000L; // seconds -> scaled to millions of microseconds
     ret += (int64_t)(ts.tv_nsec / 1000L);  // nanoseconds -> to microseconds
     return ret;
 }
-
 
 void cksleep_prepare_r(ts_t *ts)
 {

@@ -43,6 +43,12 @@ char *get_txn(connsock_t *cs, const char *hash);
  * which should be at least 16 bytes long. */
 bool get_chain(connsock_t *cs, char *chain);
 
+/* Request getzmqnotifications and test that the response roughly matches
+ * the expected url. e.g. tcp://1.2.3.4:6789 would match any IP with proto "tcp" and port "6789".
+ * If it finds any "address" entries for "pubhashblock", *found will be set, pointing to a malloc'd string
+ * (this pointer is set on true or false return). */
+bool check_getzmqnotifications_roughly_matches(connsock_t *cs, const char *expected, char **found);
+
 #define DUST_LIMIT_SATS 546
 
 #ifdef  __cplusplus

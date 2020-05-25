@@ -532,14 +532,18 @@ struct stratifier_data {
     sem_t update_sem;
     /* Time we last sent out a stratum update */
     time_t update_time;
-    mutex_t update_time_lock; ///< guards update_time
+    /* Time we last saw a new block in block_update. Will be 0 initially. */
+    time_t last_newblock_time;
+    mutex_t update_time_lock; // guards update_time and last_newblock_time
 
     int64_t workbase_id;
     int64_t blockchange_id;
     int session_id;
+
+    mutex_t last_hash_lock; ///< guards lasthash, lastswaphash, lasthashbin, and lastswaphashbin
     char lasthash[68];
     char lastswaphash[68];
-    mutex_t last_hash_lock; ///< guards lasthash and lastswaphash
+    uint8_t lasthashbin[32], lastswaphashbin[32];
 
     ckmsgq_t *updateq;	// Generator base work updates
     ckmsgq_t *ssends;	// Stratum sends
@@ -1485,20 +1489,17 @@ static void add_base(pool_t *ckp, sdata_t *sdata, workbase_t *wb, bool *new_bloc
         wb->mapped_id = wb->id = sdata->workbase_id++;
     else
         sdata->workbase_id = wb->id;
+    mutex_lock(&sdata->last_hash_lock);
     if (strncmp(wb->prevhash, sdata->lasthash, 64)) {
-        char bin[32], swap[32];
-
         *new_block = true;
+        // now copy the bin data and hexify it
         memcpy(sdata->lasthash, wb->prevhash, 65);
-        hex2bin(bin, sdata->lasthash, 32);
-        swap_256(swap, bin);
-        {
-            mutex_lock(&sdata->last_hash_lock);
-            __bin2hex(sdata->lastswaphash, swap, 32);
-            mutex_unlock(&sdata->last_hash_lock);
-        }
+        hex2bin(sdata->lasthashbin, sdata->lasthash, 32);
+        swap_256(sdata->lastswaphashbin, sdata->lasthashbin);
+        __bin2hex(sdata->lastswaphash, sdata->lastswaphashbin, 32);
         sdata->blockchange_id = wb->id;
     }
+    mutex_unlock(&sdata->last_hash_lock);
     if (*new_block && ckp->logshares) {
         sprintf(wb->logdir, "%s%08x/", ckp->logdir, wb->height);
         ret = mkdir(wb->logdir, 0750);
@@ -1959,6 +1960,17 @@ static void check_unconfirmed(pool_t *ckp, sdata_t *sdata, const int height)
     dealloc(found);
 }
 
+static time_t _sdata_get_update_time_safe(sdata_t *sdata, time_t *last_newblock_time)
+{
+    time_t update_time;
+    mutex_lock(&sdata->update_time_lock);
+    update_time = sdata->update_time;
+    if (last_newblock_time)
+        *last_newblock_time = sdata->last_newblock_time;
+    mutex_unlock(&sdata->update_time_lock);
+    return update_time;
+}
+
 /* This function assumes it will only receive a valid json gbt base template
  * since checking should have been done earlier, and creates the base template
  * for generating work templates. This is a ckmsgq so all uses of this function
@@ -1972,13 +1984,7 @@ static void block_update(pool_t *ckp, int *prio)
     bool ret = false;
     txntable_t *txns;
     workbase_t *wb;
-    time_t update_time;
-
-    {
-        mutex_lock(&sdata->update_time_lock);
-        update_time = sdata->update_time;
-        mutex_unlock(&sdata->update_time_lock);
-    }
+    const time_t update_time = _sdata_get_update_time_safe(sdata, NULL);
 
     /* Skip update if we're getting stacked low priority updates too close
      * together. */
@@ -2019,7 +2025,7 @@ retry:
     if (new_block) {
 #define DECLARE_GET_LASTSWAPHASH_THREADSAFE(varname, sdata) \
         mutex_lock(&sdata->last_hash_lock); \
-        const char * const varname = strdupa(sdata->lastswaphash); \
+        const char * const varname = strdupa(sdata->lastswaphash ? : ""); \
         mutex_unlock(&sdata->last_hash_lock)
         DECLARE_GET_LASTSWAPHASH_THREADSAFE(lastswaphash, sdata);
         LOGNOTICE("Block hash changed to %s", lastswaphash);
@@ -2036,9 +2042,10 @@ retry:
      * forward the next notify in case of a new block. */
     mutex_lock(&sdata->update_time_lock);
     sdata->update_time = time(NULL);
-    if (new_block)
+    if (new_block) {
+        sdata->last_newblock_time = sdata->update_time;
         sdata->update_time -= ckp->update_interval / 2;
-    update_time = sdata->update_time;
+    }
     mutex_unlock(&sdata->update_time_lock);
 out:
 
@@ -4332,9 +4339,7 @@ static void block_solve(pool_t *ckp, json_t *val)
     int height = 0;
     ts_t ts_now;
 
-    if (!ckp->node && !ckp->n_notify_btcds) {
-        /* We only update_base if !node and if we are not using a notifier otherwise we rely on
-        the notifier to call update_base() for us and this call would be redundant. */
+    if (!ckp->node) {
         update_base(sdata, GEN_PRIORITY);
     }
 
@@ -5269,7 +5274,7 @@ static void *blockupdate(void *arg)
     while (42) {
         int ret;
 
-        ret = generator_getbest(ckp, hash);
+        ret = generator_getbest(ckp, hash, false);
         switch (ret) {
             case GETBEST_NOTIFY:
                 cksleep_ms(5000);
@@ -5289,128 +5294,260 @@ static void *blockupdate(void *arg)
     return NULL;
 }
 
+static bool _zmq_check_file_exists_if_ipc(const char *endpoint)
+{
+    bool ret = true;
+    char *proto = NULL, *port = NULL, *path = NULL;
+    if (extract_zmq_proto_port(endpoint, &proto, &port, &path)) {
+        if (strcasecmp(proto, "ipc") == 0 && path) {
+            struct stat stbuf;
+            if (stat(path, &stbuf)) {
+                LOGERR("ZMQ: stat error: %s", path);
+                ret = false;
+            } else if ((stbuf.st_mode & S_IFMT) != S_IFSOCK) {
+                LOGWARNING("ZMQ: not a socket: %s", path);
+                ret = false;
+            } else {
+                LOGDEBUG("ZMQ: ipc socket found ok on filesystem: %s", endpoint);
+            }
+        }
+        free(path);
+        free(proto);
+        free(port);
+    } else {
+        LOGWARNING("ZMQ: failed to parse ZMQ protocol for endpoint: %s", endpoint);
+    }
+    return ret;
+}
 
-// this thread is only created only if ckp->n_zmq_btcds > 0
+static void *_zmq_create_sub_socket_with_backoff(void *context, const char *endpoint, const char *topic, int num)
+{
+    void *zs = NULL;
+    int64_t start = time_micros();
+    static const int64_t timeout = 90 * 1000 * 1000; // we do this max for 90 seconds before quitting
+    useconds_t backoff = 512U * 1000U; // start off at 512ms
+    while (1) { // keep retrying to create the socket. We employ our backoff strategy.
+        zs = zmq_socket(context, ZMQ_SUB);
+        if (!zs) {
+            LOGWARNING("ZMQ: zmq_socket #%d failed with errno %d", num+1, errno);
+        } else {
+            int rc = zmq_setsockopt(zs, ZMQ_SUBSCRIBE, topic, 0);
+            if (rc < 0) {
+                LOGWARNING("ZMQ: zmq_setsockopt #%d failed with errno %d for \"%s\"", num+1, errno, topic);
+            } else {
+                rc = zmq_connect(zs, endpoint);
+                if (rc < 0)
+                    LOGWARNING("ZMQ: zmq_connect #%d to %s failed with errno %d", num+1, endpoint, errno);
+                else
+                    return zs; // success!
+            }
+        }
+        if (zs) {
+            zmq_close(zs);
+            zs = NULL;
+        }
+        if (time_micros() - start > timeout)
+            quit(1, "ZMQ: could not create a socket to %s for \"%s\" after %ld seconds", endpoint, topic, (long)(timeout / 1000000LL));
+        else
+            LOGERR("ZMQ: retrying for %s, sleeping %u useconds ...", endpoint, (unsigned)backoff);
+        usleep(backoff);
+        backoff *= 2U;
+    }
+
+}
+
+// ZMQ notify thread: created only if ckp->n_zmq_btcds > 0,
+// i.e. if at least 1 bitcoind is giving us ZMQ notifications.
 static void *zmqnotify(void *arg)
 {
     pthread_detach(pthread_self());
     rename_proc("zmqnotify");
-
     LOGINFO("ZMQ: thread started");
 
-    pool_t *ckp = (pool_t *)arg;
-    sdata_t *sdata = ckp->sdata;
+    /* This function listens for "hashblock" pub messages from bitcoind and
+    notifies the rest of the system about block hash changes, via update_base().
+
+    ZMQ is unreliable -- a socket may die with no way to know it is dead. As
+    such, we must employ a strategy to auto-detect whether we haven't heard from
+    ZMQ in some time.  We use the following rules:
+
+    1. If no ZMQ message has ever been received since thread creation, reset
+       and re-create the ZMQ sockets after 20 minutes of inactivity.
+    2. If we have received at least 1 ZMQ message since thread creation, then we
+       tolerate up to ~30 secs of delay between the time update_base() has last
+       seen a block hash change and when ZMQ receives the notification (usually
+       ZMQ sees it first, but it may not always do so).
+
+    In this way, dead ZMQ sockets eventually get reset and re-created.
+
+    Limitations of the above: Currently we don't detect whether a particular
+    socket is dead, only if all of them are.  So if using more than 1 bitcoind
+    with more thant 1 ZMQ socket, the above logic only resets all the sockets if
+    no ZMQ messages have arrived from any bitcoind in some time.  For now, the
+    above is an acceptable limitation to keep the below code simpler. */
+
+    static const char * const subtopic = "hashblock"; /* Note: this is hard-coded in bitcoind. However, some day you do change this string, you will need to modify the case 9: in the switch towards the end of this function */
+    pool_t * const ckp = (pool_t *)arg;
+    sdata_t * const sdata = ckp->sdata;
+    const int POLL_INTERVAL_MS = ckp->update_interval*1000; // poll timeout is stratum update interval
+    static const int MAX_FAILURES = 4; // print stern warnings to log if failure_ct exceeds this value
+    int failure_ct = 0;
+    static const time_t one_minute = 60; // used in detecting dead ZMQ
+    time_t last_seen_zmq_block = 0;
+
+    bool endpoints_initted = false;
     const int N = ckp->n_zmq_btcds; // the number of elements in the above arrays
     assert(N > 0); // this thread should only be created if it has at least 1 btcdzmqblock endpoint to monitor
+
+    void *context = zmq_ctx_new();
+    assert(context);
+
+    uint8_t last_hash_seen[32] = {};
 
     // allocate dynamic structures for each btcd endpoint we plan to poll
     const char *endpoints[N];
     zmq_pollitem_t poll_items[N];
     memset(endpoints, 0, N * sizeof(*endpoints));
-    memset(poll_items, 0, N * sizeof(*poll_items));
+    // poll_items[] will be zero-initted in for() loop below
 
-    void *context = zmq_ctx_new();
-    int rc;
+    do {
+        bool reset_sockets = false;
 
-    assert(context);
-    for (int i = 0, btcdidx = 0; i < N; ++i) {
-        const char *endpoint = NULL;
-        for ( ; !endpoint && btcdidx < ckp->btcds; ++btcdidx) {
-            // find the btcd corresponding to this zmq index i
-            endpoint = ckp->btcdzmqblock[btcdidx];
-        }
-        if (unlikely(!endpoint)) {
-            // this should never happen. It indicates a programming error if it does.
-            quit(1, "ZMQ: INTERNAL ERROR: Could not find the endpoint entry #%d in config!", i+1);
-        }
-        endpoints[i] = endpoint;
-        void *zs = zmq_socket(context, ZMQ_SUB);
-        if (!zs)
-            quit(1, "zmq_socket #%d failed with errno %d", i+1, errno);
-        rc = zmq_setsockopt(zs, ZMQ_SUBSCRIBE, "hashblock", 0);
-        if (rc < 0)
-            quit(1, "zmq_setsockopt #%d failed with errno %d", i+1, errno);
-        rc = zmq_connect(zs, endpoint);
-        if (rc < 0)
-            quit(1, "zmq_connect #%d to %s failed with errno %d", i+1, endpoint, errno);
-        LOGNOTICE("ZMQ: subscribed #%d to %s for \"hashblock\"", i+1, endpoint);
-        poll_items[i].socket = zs;
-        poll_items[i].events = ZMQ_POLLIN;
-    }
-
-    uint8_t last_hash_seen[32] = {};
-
-    while (1) {
-        int num_ready = zmq_poll(poll_items, N, -1);
-        if (num_ready < 0) {
-            LOGWARNING("ZMQ: got error return from zmq_poll with errno %d", errno);
-            sleep(5);
-            continue;
-        }
-        for (int i = 0; i < N && num_ready; ++i) {
-            if (poll_items[i].revents & ZMQ_POLLIN) {
-                --num_ready;
-                const char * const endpoint = endpoints[i];
-                LOGDEBUG("ZMQ: %s #%d was ready, num_ready now: %d", endpoint, i+1, num_ready);
-                // do stuff with sock
-                void *zs = poll_items[i].socket;
-                bool keeptrying;
-                do {
-                    zmq_msg_t message;
-
-                    zmq_msg_init(&message);
-                    rc = zmq_msg_recv(&message, zs, ZMQ_DONTWAIT);
-
-                    keeptrying = false;
-
-                    if (rc < 0) {
-                        if (likely(errno == EAGAIN)) {
-                            LOGDEBUG("ZMQ: zmq_msg_recv on %s #%d got EAGAIN ...", endpoint, i+1);
-                        } else {
-                            LOGWARNING("ZMQ: zmq_msg_recv on %s #%d failed with error %d", endpoint, i+1, errno);
-                            sleep(1);
-                        }
-                    } else {
-                        int size = zmq_msg_size(&message);
-
-                        keeptrying = true;
-
-                        switch (size) {
-                        case 9:
-                            LOGDEBUG("ZMQ: %s #%d hashblock message", endpoint, i+1);
-                            break;
-                        case 4:
-                            LOGDEBUG("ZMQ: %s #%d sequence number", endpoint, i+1);
-                            break;
-                        case 32: {
-                            char hexhash[65];
-                            const void *msg_data = zmq_msg_data(&message);
-                            const bool is_new = memcmp(last_hash_seen, msg_data, 32) != 0;
-                            memcpy(last_hash_seen, msg_data, 32);
-                            __bin2hex(hexhash, msg_data, 32);
-                            LOGNOTICE("ZMQ: %s #%d - block hash: %s - is_new: %s", endpoint, i+1, hexhash,
-                                      is_new ? "yes" : "no");
-                            if (is_new)
-                                update_base(sdata, GEN_PRIORITY);
-                            break;
-                        }
-                        default:
-                            LOGWARNING("ZMQ: %s #%d message size error, size = %d!", endpoint, i+1, size);
-                            break;
-                        }
-                        if (!zmq_msg_more(&message)) {
-                            LOGDEBUG("ZMQ: %s #%d message complete", endpoint, i+1);
-                        }
-                    }
-
-                    zmq_msg_close(&message);
-                } while (keeptrying);
+        for (int i = 0, btcdidx = 0; i < N; ++i) {
+            const char *endpoint = NULL;
+            if (!endpoints_initted) {
+                // first time running through this init code, set up the endpoints pointers
+                for ( ; !endpoint && btcdidx < ckp->btcds; ++btcdidx) {
+                    // find the btcd corresponding to this zmq index i
+                    endpoint = ckp->btcdzmqblock[btcdidx];
+                }
+                if (unlikely(!endpoint)) {
+                    // this should never happen. It indicates a programming error if it does.
+                    quit(1, "ZMQ: INTERNAL ERROR: Could not find the endpoint entry #%d in config!", i+1);
+                }
+                if (unlikely(!_zmq_check_file_exists_if_ipc(endpoint))) {
+                    // this is paranoia -- presumably if admin went to the trouble to set up ZMQ via IPC,
+                    // they care about reliability. So,we need to make sure that we can access it.
+                    quit(1, "ZMQ: IPC socket specified but failed to access it on the filesystem: %s", endpoint);
+                }
+                endpoints[i] = endpoint;
+            } else {
+                // subsequent times running through this init code, we already have the
+                // endpoints array set up, just grab the pointer
+                endpoint = endpoints[i];
             }
-            poll_items[i].revents = 0;
+            memset(&poll_items[i], 0, sizeof(poll_items[i]));
+            poll_items[i].socket = _zmq_create_sub_socket_with_backoff(context, endpoint, subtopic, i);
+            poll_items[i].events = ZMQ_POLLIN;
+            LOGNOTICE("ZMQ: socket #%d to %s for \"%s\" created", i+1, endpoint, subtopic);
         }
-    }
-    for (int i = 0; i < N; ++i)
-        zmq_close(poll_items[i].socket);
+        endpoints_initted = true;
+
+        while (!reset_sockets) {
+            int num_ready = zmq_poll(poll_items, N, POLL_INTERVAL_MS);
+            if (unlikely(failure_ct > MAX_FAILURES && num_ready < 1)) {
+                LOGWARNING("ZMQ: failure threshold hit (failure_ct=%d)", failure_ct);
+            }
+            if (unlikely(num_ready < 0)) {
+                reset_sockets = true;
+                LOGCRIT("ZMQ: got error return from zmq_poll");
+                sleep(5);
+                ++failure_ct;
+                break;
+            } else if (num_ready == 0) {
+                time_t last_newblock = 0, what = 0;
+                _sdata_get_update_time_safe(sdata, &last_newblock);
+                if ((last_seen_zmq_block && (what=abs(last_newblock - last_seen_zmq_block)) > one_minute/2)
+                    || (!last_seen_zmq_block && (what = time(NULL) - last_newblock) > 20 * one_minute)) {
+                    LOGWARNING("ZMQ: zmq socket(s) no activity after %1.1f mins, recreating connection(s)", what/60.0);
+                    reset_sockets = true;
+                    ++failure_ct;
+                } else {
+                    LOGDEBUG("ZMQ: no new blocks after %1.1f secs, waiting ...", POLL_INTERVAL_MS/1e3);
+                }
+                continue;
+            }
+            for (int i = 0; i < N && num_ready > 0; ++i) {
+                if (poll_items[i].revents & ZMQ_POLLIN) {
+                    --num_ready;
+                    const char * const endpoint = endpoints[i];
+                    LOGDEBUG("ZMQ: %s #%d was ready, num_ready now: %d", endpoint, i+1, num_ready);
+                    // do stuff with sock
+                    void *zs = poll_items[i].socket;
+                    bool keeptrying;
+                    do {
+                        zmq_msg_t message;
+
+                        zmq_msg_init(&message);
+                        int rc = zmq_msg_recv(&message, zs, ZMQ_DONTWAIT);
+
+                        keeptrying = false;
+
+                        if (rc < 0) {
+                            if (likely(errno == EAGAIN)) {
+                                LOGDEBUG("ZMQ: zmq_msg_recv on %s #%d got EAGAIN ...", endpoint, i+1);
+                            } else {
+                                LOGCRIT("ZMQ: zmq_msg_recv on %s #%d failed", endpoint, i+1);
+                                sleep(1);
+                            }
+                            ++failure_ct;
+                        } else {
+                            const int size = zmq_msg_size(&message);
+                            const void * const msg_data = size > 0 ? zmq_msg_data(&message) : NULL;
+
+                            keeptrying = true;
+                            failure_ct = 0;
+
+                            switch (size) {
+                            case 9:
+                                LOGDEBUG("ZMQ: %s #%d message: %.*s", endpoint, i+1, 9, (const char *)msg_data);
+                                break;
+                            case 4: {
+                                int32_t num;
+                                memcpy(&num, msg_data, 4);
+                                LOGDEBUG("ZMQ: %s #%d sequence number: %d", endpoint, i+1, (int)num);
+                                break;
+                            }
+                            case 32: {
+                                uint8_t lastswaphashbin[32];
+                                {
+                                    mutex_lock(&sdata->last_hash_lock);
+                                    memcpy(lastswaphashbin, sdata->lastswaphashbin, 32);
+                                    mutex_unlock(&sdata->last_hash_lock);
+                                }
+                                const bool is_new = memcmp(last_hash_seen, msg_data, 32) != 0;
+                                const bool need_update = memcmp(lastswaphashbin, msg_data, 32) != 0;
+                                if (is_new)
+                                    memcpy(last_hash_seen, msg_data, 32);
+                                char hexhash[65];
+                                __bin2hex(hexhash, msg_data, 32);
+                                LOGNOTICE("ZMQ: %s #%d - block hash: %s - is_new: %s need_update: %s", endpoint, i+1, hexhash,
+                                          is_new ? "yes" : "no", need_update ? "yes" : "no");
+                                if (need_update)
+                                    update_base(sdata, GEN_PRIORITY);
+                                last_seen_zmq_block = time(NULL);
+                                break;
+                            }
+                            default:
+                                LOGWARNING("ZMQ: %s #%d message size error, size = %d!", endpoint, i+1, size);
+                                break;
+                            }
+                            if (!zmq_msg_more(&message)) {
+                                LOGDEBUG("ZMQ: %s #%d message complete", endpoint, i+1);
+                            }
+                        }
+
+                        zmq_msg_close(&message);
+                    } while (keeptrying);
+                }
+                poll_items[i].revents = 0;
+            }
+        } // while(!reset_sockets)
+        for (int i = 0; i < N; ++i) {
+            zmq_close(poll_items[i].socket);
+            poll_items[i].socket = NULL;
+        }
+    } while (1);
     zmq_ctx_destroy(context);
 
     return NULL;

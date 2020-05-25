@@ -127,9 +127,10 @@ struct server_instance {
     UT_hash_handle hh;
     int id;
 
-    char *url;
-    char *auth;
-    char *pass;
+    const char *url;
+    const char *auth;
+    const char *pass;
+    const char *zmqendpoint; // May be NULL. If not NULL, points to the corresponding string in the pool_instance_t btcdzmqblock, signifying this btcd uses zmq.
     atomic_bool notify; // this is true if either "notify": true in JSON or if this btcd has a zmq endpoint
     atomic_bool alive;
     connsock_t cs;

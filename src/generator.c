@@ -229,8 +229,7 @@ static bool server_alive(pool_t *ckp, server_instance_t *si, bool pinging)
     /* Test we can connect, authorize and get a block template */
     if (!gen_gbtbase(cs, &gbt)) {
         if (!pinging) {
-            LOGINFO("Failed to get test block template from %s:%s!",
-                cs->url, cs->port);
+            LOGINFO("Failed to get test block template from %s:%s!", cs->url, cs->port);
         }
         goto out;
     }
@@ -240,6 +239,13 @@ static bool server_alive(pool_t *ckp, server_instance_t *si, bool pinging)
         LOGWARNING("Invalid bchaddress: %s !", ckp->bchaddress);
         goto out;
     }
+    char *what_bitcoind_has = NULL;
+    if (!ckp->node && si->zmqendpoint && !check_getzmqnotifications_roughly_matches(cs, si->zmqendpoint, &what_bitcoind_has)) {
+        LOGWARNING("bitcoind %s does not have any ZMQ \"pubhashblock\""
+                   " entries that match the configured value of \"%s\", instead it reports \"%s\"",
+                   si->url, si->zmqendpoint, what_bitcoind_has ? : "");
+    }
+    free(what_bitcoind_has);
     si->alive = cs->alive = ret = true;
     LOGNOTICE("Server alive: %s:%s", cs->url, cs->port);
 out:
@@ -866,7 +872,7 @@ out:
     return gbt;
 }
 
-int generator_getbest(pool_t *ckp, char *hash)
+int generator_getbest(pool_t *ckp, char *hash, bool force)
 {
     gdata_t *gdata = ckp->gdata;
     int ret = GETBEST_FAILED;
@@ -878,7 +884,7 @@ int generator_getbest(pool_t *ckp, char *hash)
         LOGWARNING("No live current server in generator_getbest");
         goto out;
     }
-    if (si->notify) {
+    if (si->notify && !force) {
         ret = GETBEST_NOTIFY;
         goto out;
     }
@@ -3186,6 +3192,7 @@ static void setup_servers(pool_t *ckp)
         si->auth = ckp->btcdauth[i];
         si->pass = ckp->btcdpass[i];
         si->notify = ckp->btcdnotify[i];
+        si->zmqendpoint = ckp->btcdzmqblock[i];
         si->id = i;
         cs = &si->cs;
         cs->ckp = ckp;

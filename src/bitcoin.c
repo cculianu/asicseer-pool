@@ -455,3 +455,80 @@ char *get_txn(connsock_t *cs, const char *hash)
 out:
     return ret;
 }
+
+
+static bool check_bitcoind_getzmqnotifications_matches_proto_and_port(const json_t *array,
+                                                                      const char *type, const char *url,
+                                                                      const char **any)
+{
+    if (!array || !type || !url) {
+        LOGWARNING("%s: bad args", __FUNCTION__);
+        return false;
+    }
+    if (!json_is_array(array)) {
+        LOGWARNING("%s: response is not an array", __FUNCTION__);
+        return false;
+    }
+    char *proto = NULL, *port = NULL;
+    if (!extract_zmq_proto_port(url, &proto, &port, NULL)) {
+        LOGWARNING("%s: unable to parse %s", __FUNCTION__, url);
+        return false;
+    }
+    if (any) *any = NULL;
+    bool ret = false;
+    const size_t asize = json_array_size(array);
+    for (size_t i = 0; i < asize; ++i) {
+        const json_t *obj = json_array_get(array, i);
+        if (!json_is_object(obj)) {
+            LOGWARNING("%s: expected object at position %lu", __FUNCTION__, i);
+            break;
+        }
+        const json_t *val = json_object_get(obj, "type");
+        if (!val || !json_is_string(val) || strcasecmp(json_string_value(val), type) != 0)
+            // skip, not the type we are looking for
+            continue;
+        val = json_object_get(obj, "address");
+        if (!val || !json_is_string(val))
+            // hmm. unexpected missing value. silently skip.
+            continue;
+        const char *address = json_string_value(val);
+        if (any) *any = address;
+        char *parsed_proto = NULL, *parsed_port = NULL;
+        if (extract_zmq_proto_port(address, &parsed_proto, &parsed_port, NULL)) {
+            const bool match = strcasecmp(parsed_proto, proto) == 0 && strcasecmp(parsed_port, port) == 0;
+            free(parsed_proto);
+            free(parsed_port);
+            if (match) {
+                ret = true;
+                break;
+            }
+        } else {
+            LOGDEBUG("%s: unable to parse item %lu \"address\": %s", __FUNCTION__, i, address);
+        }
+    }
+    free(proto);
+    free(port);
+    return ret;
+}
+
+bool check_getzmqnotifications_roughly_matches(connsock_t *cs, const char *expected, char **found)
+{
+    if (found) *found = NULL;
+    json_t *resp = json_rpc_response(cs, "{\"method\":\"getzmqnotifications\",\"params\":[]}\n");
+    if (!resp) {
+        LOGDEBUG("%s: getzmqnotifications failed", __FUNCTION__);
+        return false;
+    }
+    json_t *result = json_object_get(resp, "result");
+    bool ret = false;
+    if (!result)
+        LOGWARNING("%s: getzmqnotifications no result", __FUNCTION__);
+    else {
+        const char *any = NULL;
+        ret = check_bitcoind_getzmqnotifications_matches_proto_and_port(result, "pubhashblock", expected, &any);
+        if (any && found)
+            *found = ckstrdup(any);
+    }
+    json_decref(resp);
+    return ret;
+}
