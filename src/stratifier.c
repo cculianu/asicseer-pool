@@ -5390,7 +5390,7 @@ static void *zmqnotify(void *arg)
     pool_t * const ckp = (pool_t *)arg;
     sdata_t * const sdata = ckp->sdata;
     const int POLL_INTERVAL_MS = ckp->update_interval*1000; // poll timeout is stratum update interval
-    static const int MAX_FAILURES = 4; // print stern warnings to log if failure_ct exceeds this value
+    static const int MAX_FAILURES = 10; // print stern warnings to log if failure_ct exceeds this value
     int failure_ct = 0;
     static const time_t one_minute = 60; // used in detecting dead ZMQ
     time_t last_seen_zmq_block = 0;
@@ -5457,13 +5457,13 @@ static void *zmqnotify(void *arg)
             } else if (num_ready == 0) {
                 time_t last_newblock = 0, what = 0;
                 _sdata_get_update_time_safe(sdata, &last_newblock);
-                if ((last_seen_zmq_block && (what=abs(last_newblock - last_seen_zmq_block)) > one_minute/2)
+                if ((last_seen_zmq_block && (what=abs(last_newblock - last_seen_zmq_block)) > one_minute)
                     || (!last_seen_zmq_block && (what = time(NULL) - last_newblock) > 20 * one_minute)) {
                     LOGWARNING("ZMQ: zmq socket(s) no activity after %1.1f mins, recreating connection(s)", what/60.0);
                     reset_sockets = true;
                     ++failure_ct;
                 } else {
-                    LOGDEBUG("ZMQ: no new blocks after %1.1f secs, waiting ...", POLL_INTERVAL_MS/1e3);
+                    //LOGDEBUG("ZMQ: no new blocks after %1.1f secs, waiting ...", POLL_INTERVAL_MS/1e3);
                 }
                 continue;
             }
