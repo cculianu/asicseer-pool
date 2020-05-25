@@ -5396,7 +5396,7 @@ static void *zmqnotify(void *arg)
     static const int MAX_FAILURES = 10; // print stern warnings to log if failure_ct exceeds this value
     int failure_ct = 0;
     static const time_t one_minute = 60; // used in detecting dead ZMQ
-    time_t last_seen_zmq_block = 0;
+    time_t last_seen_zmq_block = 0, last_reset = 0;
 
     bool endpoints_initted = false;
     const int N = ckp->n_zmq_btcds; // the number of elements in the above arrays
@@ -5444,6 +5444,7 @@ static void *zmqnotify(void *arg)
             poll_items[i].events = ZMQ_POLLIN;
             LOGNOTICE("ZMQ: socket #%d to %s for \"%s\" created", i+1, endpoint, subtopic);
         }
+        last_reset = time(NULL);
         endpoints_initted = true;
 
         while (!reset_sockets) {
@@ -5458,11 +5459,12 @@ static void *zmqnotify(void *arg)
                 ++failure_ct;
                 break;
             } else if (num_ready == 0) {
-                time_t last_newblock = 0, what = 0;
+                time_t last_newblock = 0;
                 _sdata_get_update_time_safe(sdata, &last_newblock);
-                if ((last_seen_zmq_block && (what=abs(last_newblock - last_seen_zmq_block)) > one_minute)
-                    || (!last_seen_zmq_block && (what = time(NULL) - last_newblock) > 20 * one_minute)) {
-                    LOGWARNING("ZMQ: zmq socket(s) no activity after %1.1f mins, recreating connection(s)", what/60.0);
+                if ( ( (last_seen_zmq_block && abs(last_newblock - last_seen_zmq_block) > one_minute)
+                       || (!last_seen_zmq_block && abs(time(NULL) - last_newblock) > 20 * one_minute))
+                     && abs(time(NULL) - last_reset) > 2 * one_minute ) {
+                    LOGWARNING("ZMQ: zmq socket(s) idle, recreating them to enure they are still valid");
                     reset_sockets = true;
                     ++failure_ct;
                 } else {
