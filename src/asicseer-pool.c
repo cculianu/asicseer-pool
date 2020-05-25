@@ -842,7 +842,8 @@ static json_t *_json_rpc_call(connsock_t *cs, const char *rpc_req, const bool in
         ASPRINTF(&warning, "Zero length rpc_req passed to %s", __func__);
         goto out;
     }
-    http_req = ckalloc(len + 256); // Leave room for headers
+    const int len2 = strlen(cs->auth) + strlen(cs->url) + strlen(cs->port);
+    http_req = ckalloc(len + 256 + len2); // Leave room for headers
     sprintf(http_req,
          "POST / HTTP/1.1\n"
          "Authorization: Basic %s\n"
@@ -858,7 +859,7 @@ static json_t *_json_rpc_call(connsock_t *cs, const char *rpc_req, const bool in
         tv_time(&fin_tv);
         elapsed = tvdiff(&fin_tv, &stt_tv);
         ASPRINTF(&warning, "Failed to write to socket in %s (%.10s...) %.3fs",
-             __func__, rpc_method(rpc_req), elapsed);
+                 __func__, rpc_method(rpc_req), elapsed);
         goto out_empty;
     }
     ret = read_socket_line(cs, &timeout);

@@ -676,7 +676,7 @@ static void cb1_buffer_take(cb1_buffer_t *t, void **bufptr, size_t *pos, size_t 
 static size_t _add_output(cb1_buffer_t *buf, uint64_t amount, const void *scriptbin, size_t scriptlen)
 {
     if (unlikely(scriptlen >= 253)) {
-        quit(1, "INTERNAL ERROR: %s: scriptlen must be <253 bytes!", __FUNCTION__);
+        quit(1, "INTERNAL ERROR: %s: scriptlen must be <253 bytes!", __func__);
         // not reached
     }
     const size_t ret = buf->buffer.length;
@@ -687,7 +687,7 @@ static size_t _add_output(cb1_buffer_t *buf, uint64_t amount, const void *script
             || strbuffer_append_bytes(&buf->buffer, scriptbin, scriptlen) != 0
         )) {
         quit(1, "INTERNAL ERROR: %s: buffer size overflow, strbuffer is too large: %lu",
-             __FUNCTION__, buf->buffer.size);
+             __func__, buf->buffer.size);
         // not reached
     }
     assert(++buf->num_outs && "INTERNAL ERROR: integer overflow for cb1_buffer_t::num_outs!");
@@ -1115,7 +1115,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
              workpadding);
     LOGDEBUG("Header: %s", header);
     hex2bin(wb->headerbin, header, 112);
-    LOGDEBUG("%s: took %0.6f secs", __FUNCTION__, (time_micros()-t0)/1e6);
+    LOGDEBUG("%s: took %0.6f secs", __func__, (time_micros()-t0)/1e6);
 }
 
 static void stratum_broadcast_update(sdata_t *sdata, const workbase_t *wb, bool clean);
@@ -4340,7 +4340,10 @@ static void block_solve(pool_t *ckp, json_t *val)
     ts_t ts_now;
 
     if (!ckp->node) {
-        update_base(sdata, GEN_PRIORITY);
+        // if we have notifiers, request an update_base at lower priority since
+        // presumably the notifier will also request an update_base at GEN_PRIORITY
+        // around this time, and we don't want to spam update_base().
+        update_base(sdata, ckp->n_notify_btcds ? GEN_NORMAL : GEN_PRIORITY);
     }
 
     ts_realtime(&ts_now);

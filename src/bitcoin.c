@@ -462,16 +462,16 @@ static bool check_bitcoind_getzmqnotifications_matches_proto_and_port(const json
                                                                       const char **any)
 {
     if (!array || !type || !url) {
-        LOGWARNING("%s: bad args", __FUNCTION__);
+        LOGWARNING("%s: bad args", __func__);
         return false;
     }
     if (!json_is_array(array)) {
-        LOGWARNING("%s: response is not an array", __FUNCTION__);
+        LOGWARNING("%s: response is not an array", __func__);
         return false;
     }
     char *proto = NULL, *port = NULL;
     if (!extract_zmq_proto_port(url, &proto, &port, NULL)) {
-        LOGWARNING("%s: unable to parse %s", __FUNCTION__, url);
+        LOGWARNING("%s: unable to parse %s", __func__, url);
         return false;
     }
     if (any) *any = NULL;
@@ -480,7 +480,7 @@ static bool check_bitcoind_getzmqnotifications_matches_proto_and_port(const json
     for (size_t i = 0; i < asize; ++i) {
         const json_t *obj = json_array_get(array, i);
         if (!json_is_object(obj)) {
-            LOGWARNING("%s: expected object at position %lu", __FUNCTION__, i);
+            LOGWARNING("%s: expected object at position %lu", __func__, i);
             break;
         }
         const json_t *val = json_object_get(obj, "type");
@@ -503,7 +503,7 @@ static bool check_bitcoind_getzmqnotifications_matches_proto_and_port(const json
                 break;
             }
         } else {
-            LOGDEBUG("%s: unable to parse item %lu \"address\": %s", __FUNCTION__, i, address);
+            LOGDEBUG("%s: unable to parse item %lu \"address\": %s", __func__, i, address);
         }
     }
     free(proto);
@@ -516,13 +516,13 @@ bool check_getzmqnotifications_roughly_matches(connsock_t *cs, const char *expec
     if (found) *found = NULL;
     json_t *resp = json_rpc_response(cs, "{\"method\":\"getzmqnotifications\",\"params\":[]}\n");
     if (!resp) {
-        LOGDEBUG("%s: getzmqnotifications failed", __FUNCTION__);
+        LOGDEBUG("%s: getzmqnotifications failed", __func__);
         return false;
     }
     json_t *result = json_object_get(resp, "result");
     bool ret = false;
     if (!result)
-        LOGWARNING("%s: getzmqnotifications no result", __FUNCTION__);
+        LOGWARNING("%s: getzmqnotifications no result", __func__);
     else {
         const char *any = NULL;
         ret = check_bitcoind_getzmqnotifications_matches_proto_and_port(result, "pubhashblock", expected, &any);

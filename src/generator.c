@@ -203,7 +203,10 @@ static bool server_alive(pool_t *ckp, server_instance_t *si, bool pinging)
 
     if (si->alive)
         return true;
+
     cs = &si->cs;
+
+    // FIXME: the below call is not thread safe since it may modify the cs->url and cs->port pointers -Calin
     if (!extract_sockaddr(si->url, &cs->url, &cs->port)) {
         LOGWARNING("Failed to extract address from %s", si->url);
         return ret;
