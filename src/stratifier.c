@@ -10097,7 +10097,7 @@ void *stratifier(void *arg)
     mutex_init(&sdata->update_time_lock);
     mutex_init(&sdata->last_hash_lock);
 
-    if (ckp->n_zmq_btcds > 0) {
+    if (ckp->n_zmq_btcds > 0 && !ckp->proxy) {
         create_pthread(&pth_zmqnotify, zmqnotify, ckp);
     }
 
