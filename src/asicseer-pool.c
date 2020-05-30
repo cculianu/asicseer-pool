@@ -596,13 +596,15 @@ static void add_buflen(pool_t *ckp, connsock_t *cs, const char *readbuf, const i
 
 /* Receive as much data is currently available without blocking into a connsock
  * buffer. Returns total length of data read. */
-static int recv_available(pool_t *ckp, connsock_t *cs)
+static int recv_available(pool_t *ckp, connsock_t *cs, size_t pagesize)
 {
-    char readbuf[PAGESIZE];
+    if (!pagesize)
+        return 0;
+    char readbuf[pagesize];
     int len = 0, ret;
 
     do {
-        ret = recv(cs->fd, readbuf, PAGESIZE - 4, MSG_DONTWAIT);
+        ret = recv(cs->fd, readbuf, pagesize, MSG_DONTWAIT);
         if (ret > 0) {
             add_buflen(ckp, cs, readbuf, ret);
             len += ret;
@@ -610,6 +612,95 @@ static int recv_available(pool_t *ckp, connsock_t *cs)
     } while (ret > 0);
 
     return len;
+}
+
+
+/* Like read_socket_line except it doesn't read lines. Designed to be used with
+ * http response content. Read from a socket into cs->buf up to contentlen bytes.
+ */
+int read_socket_contentlen(connsock_t *cs, int contentlen, float *timeout)
+{
+    tv_t start, now;
+    pool_t *ckp;
+    int ret = -1;
+    bool quiet;
+    float diff;
+    int nread = 0;
+
+    if (unlikely(!cs)) {
+        LOGNOTICE("Invalidated connsock sent to %s", __func__);
+        return ret;
+    }
+
+    ckp = cs->ckp;
+    quiet = ckp->proxy | ckp->remote;
+
+    clear_bufline(cs);
+    nread = cs->bufofs;
+    tv_time(&start);
+
+    //LOGDEBUG("nread: %d contentlen: %d", nread, contentlen);
+    while (nread < contentlen) {
+        if (unlikely(cs->fd < 0)) {
+            ret = -1;
+            goto out;
+        }
+
+        if (*timeout < 0) {
+            if (quiet)
+                LOGINFO("Timed out in %s", __func__);
+            else
+                LOGERR("Timed out in %s", __func__);
+            ret = 0;
+            goto out;
+        }
+        ret = wait_read_select(cs->fd, *timeout);
+        if (ret < 1) {
+            if (quiet)
+                LOGINFO("Select %s in %s", !ret ? "timed out" : "failed", __func__);
+            else
+                LOGERR("Select %s in %s", !ret ? "timed out" : "failed", __func__);
+            goto out;
+        }
+        ret = recv_available(ckp, cs, MIN(contentlen - nread, PAGESIZE-4));
+        if (ret < 1) {
+            /* If we have done wait_read_select there should be
+             * something to read and if we get nothing it means the
+             * socket is closed. */
+            if (quiet)
+                LOGINFO("Failed to recv in %s", __func__);
+            else
+                LOGERR("Failed to recv in %s", __func__);
+            ret = -1;
+            goto out;
+        } else {
+            //LOGDEBUG("read: %d", ret);
+            nread += ret;
+        }
+        tv_time(&now);
+        diff = tvdiff(&now, &start);
+        copy_tv(&start, &now);
+        *timeout -= diff;
+    }
+    if (nread && contentlen > 0) {
+        cs->buflen = cs->bufofs - contentlen - 1;
+        if (cs->buflen > 0)
+            cs->bufofs = nread + 1;
+        else {
+            cs->buflen = 0;
+            cs->bufofs = 0;
+        }
+        cs->buf[contentlen] = '\0'; // is this redundant?
+        ret = contentlen;
+        //LOGDEBUG("%s: contentlen: %d nread: %d buflen: %d bufofs: %d bufsize: %d content: \"%s\"", __func__,
+        //         contentlen, nread, cs->buflen, cs->bufofs, cs->bufsize, cs->buf);
+    }
+out:
+    if (ret < 0) {
+        empty_buffer(cs);
+        dealloc(cs->buf);
+    }
+    return ret;
 }
 
 /* Read from a socket into cs->buf till we get an '\n', converting it to '\0'
@@ -635,7 +726,7 @@ int read_socket_line(connsock_t *cs, float *timeout)
     quiet = ckp->proxy | ckp->remote;
 
     clear_bufline(cs);
-    recv_available(ckp, cs); // Intentionally ignore return value
+    recv_available(ckp, cs, PAGESIZE-4); // Intentionally ignore return value
     eom = memchr(cs->buf, '\n', cs->bufofs);
 
     tv_time(&start);
@@ -662,7 +753,7 @@ int read_socket_line(connsock_t *cs, float *timeout)
                 LOGERR("Select %s in read_socket_line", !ret ? "timed out" : "failed");
             goto out;
         }
-        ret = recv_available(ckp, cs);
+        ret = recv_available(ckp, cs, PAGESIZE-4);
         if (ret < 1) {
             /* If we have done wait_read_select there should be
              * something to read and if we get nothing it means the
@@ -889,7 +980,8 @@ static json_t *_json_rpc_call(connsock_t *cs, const char *rpc_req, const bool in
         }
         goto out_empty;
     }
-    do {
+    int contentlen = -1;
+    while (contentlen < 0) {
         ret = read_socket_line(cs, &timeout);
         if (ret < 1) {
             tv_time(&fin_tv);
@@ -898,18 +990,47 @@ static json_t *_json_rpc_call(connsock_t *cs, const char *rpc_req, const bool in
                  __func__, rpc_method(rpc_req), elapsed);
             goto out_empty;
         }
-    } while (strncmp(cs->buf, "{", 1));
+        if (0 == strncasecmp("Content-Length: ", cs->buf, 16)) {
+            // parse content-length: header line
+            if (1 != sscanf(cs->buf + 16, "%d", &contentlen) || contentlen < 0) {
+                // parse error
+                ASPRINTF(&warning, "Failed to read content-length lines in %s (%.10s...) %.3fs",
+                         __func__, rpc_method(rpc_req), elapsed);
+                goto out_empty;
+            }
+            // read blank line
+            if ((ret = read_socket_line(cs, &timeout)) != 1) {
+                tv_time(&fin_tv);
+                elapsed = tvdiff(&fin_tv, &stt_tv);
+                ASPRINTF(&warning, "Failed to read a blank line after content-length: %d in %s (%.10s...) %.3fs, got ret: %d",
+                         contentlen, __func__, rpc_method(rpc_req), elapsed, ret);
+                ret = -1;
+                goto out_empty;
+            }
+            // at this point we parsed the content length and we break out of this loop
+        }
+    }
+    // read exactly contentlen bytes
+    ret = read_socket_contentlen(cs, contentlen, &timeout);
+    if (ret != contentlen) {
+        tv_time(&fin_tv);
+        elapsed = tvdiff(&fin_tv, &stt_tv);
+        ASPRINTF(&warning, "Failed to read content of length %d in %s (%.10s...) %.3fs",
+                 contentlen, __func__, rpc_method(rpc_req), elapsed);
+        ret = -1;
+        goto out_empty;
+    }
     tv_time(&fin_tv);
     elapsed = tvdiff(&fin_tv, &stt_tv);
     if (elapsed > 5.0) {
         ASPRINTF(&warning, "HTTP socket read+write took %.3fs in %s (%.10s...)",
-             elapsed, __func__, rpc_method(rpc_req));
+                 elapsed, __func__, rpc_method(rpc_req));
     }
 
     val = json_loads(cs->buf, 0, &err_val);
     if (!val) {
         ASPRINTF(&warning, "JSON decode (%.10s...) failed(%d): %s",
-             rpc_method(rpc_req), err_val.line, err_val.text);
+                 rpc_method(rpc_req), err_val.line, err_val.text);
     }
 out_empty:
     empty_socket(cs->fd);
