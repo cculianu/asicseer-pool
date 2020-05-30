@@ -949,7 +949,7 @@ static json_t *_json_rpc_call(connsock_t *cs, const char *rpc_req, const bool in
     if (ret != len) {
         tv_time(&fin_tv);
         elapsed = tvdiff(&fin_tv, &stt_tv);
-        ASPRINTF(&warning, "Failed to write to socket in %s (%.10s...) %.3fs",
+        ASPRINTF(&warning, "Failed to write to socket in %s (%.20s...) %.3fs",
                  __func__, rpc_method(rpc_req), elapsed);
         goto out_empty;
     }
@@ -957,14 +957,14 @@ static json_t *_json_rpc_call(connsock_t *cs, const char *rpc_req, const bool in
     if (ret < 1) {
         tv_time(&fin_tv);
         elapsed = tvdiff(&fin_tv, &stt_tv);
-        ASPRINTF(&warning, "Failed to read socket line in %s (%.10s...) %.3fs",
+        ASPRINTF(&warning, "Failed to read socket line in %s (%.20s...) %.3fs",
              __func__, rpc_method(rpc_req), elapsed);
         goto out_empty;
     }
     if (strncasecmp(cs->buf, "HTTP/1.1 200 OK", 15)) {
         tv_time(&fin_tv);
         elapsed = tvdiff(&fin_tv, &stt_tv);
-        ASPRINTF(&warning, "HTTP response to (%.10s...) %.3fs not ok: %s",
+        ASPRINTF(&warning, "HTTP response to (%.20s...) %.3fs not ok: %s",
              rpc_method(rpc_req), elapsed, cs->buf);
         timeout = 0;
         /* Look for a json response if there is one */
@@ -974,7 +974,7 @@ static json_t *_json_rpc_call(connsock_t *cs, const char *rpc_req, const bool in
                 continue;
             free(warning);
             /* Replace the warning with the json response */
-            ASPRINTF(&warning, "JSON response to (%.10s...) %.3fs not ok: %s",
+            ASPRINTF(&warning, "JSON response to (%.20s...) %.3fs not ok: %s",
                  rpc_method(rpc_req), elapsed, cs->buf);
             break;
         }
@@ -986,7 +986,7 @@ static json_t *_json_rpc_call(connsock_t *cs, const char *rpc_req, const bool in
         if (ret < 1) {
             tv_time(&fin_tv);
             elapsed = tvdiff(&fin_tv, &stt_tv);
-            ASPRINTF(&warning, "Failed to read http socket lines in %s (%.10s...) %.3fs",
+            ASPRINTF(&warning, "Failed to read http socket lines in %s (%.20s...) %.3fs",
                  __func__, rpc_method(rpc_req), elapsed);
             goto out_empty;
         }
@@ -994,7 +994,7 @@ static json_t *_json_rpc_call(connsock_t *cs, const char *rpc_req, const bool in
             // parse content-length: header line
             if (1 != sscanf(cs->buf + 16, "%d", &contentlen) || contentlen < 0) {
                 // parse error
-                ASPRINTF(&warning, "Failed to read content-length lines in %s (%.10s...) %.3fs",
+                ASPRINTF(&warning, "Failed to read content-length lines in %s (%.20s...) %.3fs",
                          __func__, rpc_method(rpc_req), elapsed);
                 goto out_empty;
             }
@@ -1002,7 +1002,7 @@ static json_t *_json_rpc_call(connsock_t *cs, const char *rpc_req, const bool in
             if ((ret = read_socket_line(cs, &timeout)) != 1) {
                 tv_time(&fin_tv);
                 elapsed = tvdiff(&fin_tv, &stt_tv);
-                ASPRINTF(&warning, "Failed to read a blank line after content-length: %d in %s (%.10s...) %.3fs, got ret: %d",
+                ASPRINTF(&warning, "Failed to read a blank line after content-length: %d in %s (%.20s...) %.3fs, got ret: %d",
                          contentlen, __func__, rpc_method(rpc_req), elapsed, ret);
                 ret = -1;
                 goto out_empty;
@@ -1015,7 +1015,7 @@ static json_t *_json_rpc_call(connsock_t *cs, const char *rpc_req, const bool in
     if (ret != contentlen) {
         tv_time(&fin_tv);
         elapsed = tvdiff(&fin_tv, &stt_tv);
-        ASPRINTF(&warning, "Failed to read content of length %d in %s (%.10s...) %.3fs",
+        ASPRINTF(&warning, "Failed to read content of length %d in %s (%.20s...) %.3fs",
                  contentlen, __func__, rpc_method(rpc_req), elapsed);
         ret = -1;
         goto out_empty;
@@ -1023,13 +1023,20 @@ static json_t *_json_rpc_call(connsock_t *cs, const char *rpc_req, const bool in
     tv_time(&fin_tv);
     elapsed = tvdiff(&fin_tv, &stt_tv);
     if (elapsed > 5.0) {
-        ASPRINTF(&warning, "HTTP socket read+write took %.3fs in %s (%.10s...)",
+        ASPRINTF(&warning, "HTTP socket read+write took %.3fs in %s (%.20s...)",
                  elapsed, __func__, rpc_method(rpc_req));
     }
-
-    val = json_loads(cs->buf, 0, &err_val);
+    {
+        // parse json, if it takes longer than 0.1 seconds to parse, print to debug log
+        const int64_t t0 = time_micros();
+        val = json_loads(cs->buf, 0, &err_val);
+        const double elapsed = (time_micros() - t0) / 1e6;
+        if (elapsed >= 0.1)
+            LOGDEBUG("%s: json_loads (%.20s...) took %1.6f secs", __func__,
+                     rpc_method(rpc_req), elapsed);
+    }
     if (!val) {
-        ASPRINTF(&warning, "JSON decode (%.10s...) failed(%d): %s",
+        ASPRINTF(&warning, "JSON decode (%.20s...) failed(%d): %s",
                  rpc_method(rpc_req), err_val.line, err_val.text);
     }
 out_empty:

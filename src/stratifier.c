@@ -1754,6 +1754,7 @@ static txntable_t *wb_merkle_bin_txns(pool_t *ckp, sdata_t *sdata, workbase_t *w
     txntable_t *txns = NULL;
     json_t *arr_val;
     uchar *hashbin;
+    const int64_t t0 = time_micros();
 
     wb->txns = json_array_size(txn_array);
     wb->merkles = 0;
@@ -1761,9 +1762,10 @@ static txntable_t *wb_merkle_bin_txns(pool_t *ckp, sdata_t *sdata, workbase_t *w
     hashbin = alloca(binlen + 32L);
     memset(hashbin, 0, 32);
     binleft = binlen / 32L;
-    if (wb->txns) {
+    if (wb->txns > 0) {
         int len = 1, ofs = 0, length, max_len;
         const char *txn;
+        int hex_lengths[wb->txns];
 
         for (i = 0; i < wb->txns; i++) {
             arr_val = json_array_get(txn_array, i);
@@ -1772,9 +1774,8 @@ static txntable_t *wb_merkle_bin_txns(pool_t *ckp, sdata_t *sdata, workbase_t *w
                 LOGWARNING("json_string_value fail - cannot find transaction data");
                 goto out;
             }
-            length = strlen(txn);
+            hex_lengths[i] = length = strlen(txn);
             len += length;
-            json_set_int(arr_val, "length", length);
         }
         max_len = len;
 
@@ -1792,7 +1793,7 @@ static txntable_t *wb_merkle_bin_txns(pool_t *ckp, sdata_t *sdata, workbase_t *w
             // Post-segwit, txid returns the tx hash without witness data
             txid = json_string_value(json_object_get(arr_val, "txid"));
             hash = json_string_value(json_object_get(arr_val, "hash"));
-            length = json_integer_value(json_object_get(arr_val, "length"));
+            length = hex_lengths[i];
             len += length;
             if (!txid)
                 txid = hash;
@@ -1838,6 +1839,7 @@ static txntable_t *wb_merkle_bin_txns(pool_t *ckp, sdata_t *sdata, workbase_t *w
     LOGNOTICE("Stored %s workbase with %d transactions", local ? "local" : "remote",
               wb->txns);
 out:
+    LOGDEBUG("%s: took %1.6f secs", __func__, (time_micros()-t0) / 1e6);
     return txns;
 }
 
@@ -1985,6 +1987,7 @@ static void block_update(pool_t *ckp, int *prio)
     txntable_t *txns;
     workbase_t *wb;
     const time_t update_time = _sdata_get_update_time_safe(sdata, NULL);
+    const int64_t t0 = time_micros();
 
     /* Skip update if we're getting stacked low priority updates too close
      * together. */
@@ -2048,6 +2051,8 @@ retry:
     }
     mutex_unlock(&sdata->update_time_lock);
 out:
+
+    LOGDEBUG("%s: took %1.6f secs", __func__, (time_micros() - t0)/1e6);
 
     cksem_post(&sdata->update_sem);
 
