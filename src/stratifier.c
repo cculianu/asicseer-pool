@@ -1326,14 +1326,15 @@ static void upstream_msgtype(pool_t *ckp, const json_t *val, const int msg_type)
     json_decref(json_msg);
 }
 
-static void send_node_workinfo(pool_t *ckp, sdata_t *sdata, const workbase_t *wb)
+/// we use this function to only bother to build the potentially-heavy workinfo json
+/// object if the DL_FOREACH2 loop in send_node_workinfo actually iterates
+static void __lazy_init_node_workinfo(json_t **wb_val_in, const workbase_t *wb)
 {
-    stratum_instance_t *client;
-    ckmsg_t *bulk_send = NULL;
-    int messages = 0;
-    json_t *wb_val;
+    json_t *wb_val = *wb_val_in;
+    if (wb_val)
+        return;
 
-    wb_val = json_object();
+    *wb_val_in = wb_val = json_object();
 
     json_set_int(wb_val, "jobid", wb->mapped_id);
     json_set_string(wb_val, "target", wb->target);
@@ -1357,9 +1358,18 @@ static void send_node_workinfo(pool_t *ckp, sdata_t *sdata, const workbase_t *wb
     json_set_int(wb_val, "coinb1len", wb->coinb1len);
     json_set_int(wb_val, "coinb2len", wb->coinb2len);
     json_set_string(wb_val, "coinb2", wb->coinb2);
+}
+
+static void send_node_workinfo(pool_t *ckp, sdata_t *sdata, const workbase_t *wb)
+{
+    stratum_instance_t *client;
+    ckmsg_t *bulk_send = NULL;
+    int messages = 0;
+    json_t *wb_val = NULL;
 
     ck_rlock(&sdata->instance_lock);
     DL_FOREACH2(sdata->node_instances, client, node_next) {
+        __lazy_init_node_workinfo(&wb_val, wb);
         ckmsg_t *client_msg;
         smsg_t *msg;
         json_t *json_msg = json_deep_copy(wb_val);
@@ -1374,6 +1384,7 @@ static void send_node_workinfo(pool_t *ckp, sdata_t *sdata, const workbase_t *wb
         messages++;
     }
     DL_FOREACH2(sdata->remote_instances, client, remote_next) {
+        __lazy_init_node_workinfo(&wb_val, wb);
         ckmsg_t *client_msg;
         smsg_t *msg;
         json_t *json_msg = json_deep_copy(wb_val);
@@ -1389,10 +1400,12 @@ static void send_node_workinfo(pool_t *ckp, sdata_t *sdata, const workbase_t *wb
     }
     ck_runlock(&sdata->instance_lock);
 
-    if (ckp->remote)
+    if (ckp->remote) {
+        __lazy_init_node_workinfo(&wb_val, wb);
         upstream_msgtype(ckp, wb_val, SM_WORKINFO);
+    }
 
-    json_decref(wb_val);
+    json_decref(wb_val); // NULL is noop
 
     if (bulk_send) {
         LOGINFO("Sending workinfo to mining nodes");
