@@ -5079,15 +5079,26 @@ static void get_poolstats(sdata_t *sdata, int *sockd)
     json_t *val;
 
     mutex_lock(&sdata->stats_lock);
-    JSON_CPACK(val, "{si,si,si,si,si,sI,sf,sf,sf,sf,sI,sI,sf,sf,sf,sf,sf,sf,sf}",
-           "start", stats->start_time.tv_sec, "update", stats->last_update.tv_sec,
-        "workers", stats->workers + stats->remote_workers, "users", stats->users + stats->remote_users,
-        "disconnected", stats->disconnected,
-        "shares", stats->accounted_shares, "sps1", stats->sps1, "sps5", stats->sps5,
-        "sps15", stats->sps15, "sps60", stats->sps60, "accepted", stats->accounted_diff_shares,
-        "rejected", stats->accounted_rejects, "dsps1", stats->dsps1, "dsps5", stats->dsps5,
-        "dsps15", stats->dsps15, "dsps60", stats->dsps60, "dsps360", stats->dsps360,
-        "dsps1440", stats->dsps1440, "dsps10080", stats->dsps10080);
+    JSON_CPACK(val, "{sI,sI,si,si,si,sI,sf,sf,sf,sf,sI,sI,sf,sf,sf,sf,sf,sf,sf}",
+               "start", (json_int_t)stats->start_time.tv_sec,
+               "update", (json_int_t)stats->last_update.tv_sec,
+               "workers", stats->workers + stats->remote_workers,
+               "users", stats->users + stats->remote_users,
+               "disconnected", stats->disconnected,
+               "shares", (json_int_t)stats->accounted_shares,
+               "sps1", stats->sps1,
+               "sps5", stats->sps5,
+               "sps15", stats->sps15,
+               "sps60", stats->sps60,
+               "accepted", stats->accounted_diff_shares,
+               "rejected", stats->accounted_rejects,
+               "dsps1", stats->dsps1,
+               "dsps5", stats->dsps5,
+               "dsps15", stats->dsps15,
+               "dsps60", stats->dsps60,
+               "dsps360", stats->dsps360,
+               "dsps1440", stats->dsps1440,
+               "dsps10080", stats->dsps10080);
     mutex_unlock(&sdata->stats_lock);
 
     send_api_response(val, *sockd);
