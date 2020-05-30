@@ -193,7 +193,8 @@ struct user_instance {
 
     mutex_t stats_lock; /* Protects all user and worker stats */
 
-    double best_diff; /* Best share found by this user */
+    double best_diff; /* Best share found by this user (this is reset on block solve) */
+    double best_diff_alltime; /* Best share found by this user (persistent) */
 
     double herp; /* Rolling HERP value */
     double ua_herp; /* Unaccounted HERP */
@@ -253,7 +254,8 @@ struct worker_instance {
     double lns; /* Rolling LNS */
     double ua_lns; /* Unaccounted LNS */
 
-    double best_diff; /* Best share found by this worker */
+    double best_diff; /* Best share found by this worker (this is reset on block solve) */
+    double best_diff_alltime; /* Best share found by this worker (persistent) */
     int mindiff; /* User chosen mindiff */
 
     bool idle;
@@ -349,7 +351,8 @@ struct stratum_instance {
     time_t disconnected_time; /* Time this instance disconnected */
 
     int64_t suggest_diff; /* Stratum client suggested diff  - note this may also come from mindiff_overrides */
-    double best_diff; /* Best share found by this instance */
+    double best_diff; /* Best share found by this instance (this is reset on block solve) */
+    double best_diff_alltime; /* Best share found by this instance (persistent) */
 
     sdata_t *sdata; /* Which sdata this client is bound to */
     proxy_t *proxy; /* Proxy this is bound to in proxy mode */
@@ -1476,7 +1479,7 @@ static void add_base(pool_t *ckp, sdata_t *sdata, workbase_t *wb, bool *new_bloc
     int len, ret;
 
     ts_realtime(&wb->gentime);
-    wb->network_diff = diff_from_nbits(wb->headerbin + 72);
+    wb->network_diff = diff_from_nbits((uchar *)(wb->headerbin + 72));
     LOGDEBUG("gbt network diff: %1.3lf", wb->network_diff);
     if (!ckp->proxy) {
         pool_stats_t *stats = &ckp_sdata->stats;
@@ -1772,7 +1775,7 @@ static txntable_t *wb_merkle_bin_txns(pool_t *ckp, sdata_t *sdata, workbase_t *w
     wb->txns = json_array_size(txn_array);
     wb->merkles = 0;
     binlen = (long)wb->txns * 32L + 32L;
-    hashbin = alloca(binlen + 32L);
+    hashbin = ckalloc(binlen + 32L);
     memset(hashbin, 0, 32);
     binleft = binlen / 32L;
     if (wb->txns > 0) {
@@ -1852,6 +1855,7 @@ static txntable_t *wb_merkle_bin_txns(pool_t *ckp, sdata_t *sdata, workbase_t *w
     LOGNOTICE("Stored %s workbase with %d transactions", local ? "local" : "remote",
               wb->txns);
 out:
+    free(hashbin);
     LOGDEBUG("%s: took %1.6f secs", __func__, (time_micros()-t0) / 1e6);
     return txns;
 }
@@ -2487,7 +2491,6 @@ share_diff(char *coinbase, const uchar *enonce1bin, const workbase_t *wb, const 
 {
     unsigned char merkle_root[32], merkle_sha[64];
     uint32_t *data32, *swap32, benonce32;
-    uchar hash1[32];
     char data[80];
     int i;
 
@@ -2500,9 +2503,9 @@ share_diff(char *coinbase, const uchar *enonce1bin, const workbase_t *wb, const 
     memcpy(coinbase + *cblen, wb->coinb2bin, wb->coinb2len);
     *cblen += wb->coinb2len;
 
-    gen_hash((uchar *)coinbase, merkle_root, *cblen);
+    gen_hash((const uchar *)coinbase, merkle_root, *cblen);
     memcpy(merkle_sha, merkle_root, 32);
-    for (i = 0; i < wb->merkles && i < GENWORK_MAX_MERKLE_DEPTH; i++) {
+    for (i = 0; i < wb->merkles && i < GENWORK_MAX_MERKLE_DEPTH; ++i) {
         memcpy(merkle_sha + 32, &wb->merklebin[i], 32);
         gen_hash(merkle_sha, merkle_root, 64);
         memcpy(merkle_sha, merkle_root, 32);
@@ -2535,8 +2538,7 @@ share_diff(char *coinbase, const uchar *enonce1bin, const workbase_t *wb, const 
     data32 = (uint32_t *)data;
     swap32 = (uint32_t *)swap;
     flip_80(swap32, data32);
-    sha256(swap, 80, hash1);
-    sha256(hash1, 32, hash);
+    gen_hash(swap, hash, 80);
 
     /* Calculate the diff of the share here */
     return diff_from_target(hash);
@@ -4588,11 +4590,12 @@ static json_t *userinfo(const user_instance_t *user)
 {
     json_t *val;
 
-    JSON_CPACK(val, "{ss,si,si,sf,sf,sf,sf,sf,sf,si}",
-           "user", user->username, "id", user->id, "workers", user->workers,
-        "bestdiff", user->best_diff, "dsps1", user->dsps1, "dsps5", user->dsps5,
-        "dsps60", user->dsps60, "dsps1440", user->dsps1440, "dsps10080", user->dsps10080,
-        "lastshare", user->last_share.tv_sec);
+    JSON_CPACK(val, "{ss,si,si,sf,sf,sf,sf,sf,sf,sf,si}",
+               "user", user->username, "id", user->id, "workers", user->workers,
+               "bestdiff", user->best_diff,  "bestdiff_alltime", user->best_diff_alltime,
+               "dsps1", user->dsps1, "dsps5", user->dsps5, "dsps60", user->dsps60,
+               "dsps1440", user->dsps1440, "dsps10080", user->dsps10080,
+               "lastshare", user->last_share.tv_sec);
     return val;
 }
 
@@ -4709,11 +4712,12 @@ static json_t *workerinfo(const user_instance_t *user, const worker_instance_t *
 {
     json_t *val;
 
-    JSON_CPACK(val, "{ss,ss,si,sf,sf,sf,sf,si,sf,si,sb}",
-           "user", user->username, "worker", worker->workername, "id", user->id,
-        "dsps1", worker->dsps1, "dsps5", worker->dsps5, "dsps60", worker->dsps60,
-        "dsps1440", worker->dsps1440, "lastshare", worker->last_share.tv_sec,
-        "bestdiff", worker->best_diff, "mindiff", worker->mindiff, "idle", worker->idle);
+    JSON_CPACK(val, "{ss,ss,si,sf,sf,sf,sf,si,sf,sf,si,sb}",
+               "user", user->username, "worker", worker->workername, "id", user->id,
+               "dsps1", worker->dsps1, "dsps5", worker->dsps5, "dsps60", worker->dsps60,
+               "dsps1440", worker->dsps1440, "lastshare", worker->last_share.tv_sec,
+               "bestdiff", worker->best_diff, "bestdiff_alltime", worker->best_diff_alltime,
+               "mindiff", worker->mindiff, "idle", worker->idle);
     return val;
 }
 
@@ -4813,6 +4817,7 @@ static json_t *clientinfo(const stratum_instance_t *client)
     json_set_int(val, "userid", client->user_id);
     json_set_int(val, "server", client->server);
     json_set_double(val, "bestdiff", client->best_diff);
+    json_set_double(val, "bestdiff_alltime", client->best_diff_alltime);
     json_set_int(val, "proxyid", client->proxyid);
     json_set_int(val, "subproxyid", client->subproxyid);
 
@@ -6103,13 +6108,20 @@ static void read_userstats(pool_t *ckp, sdata_t *sdata, int tvsec_diff)
         user->last_share.tv_sec = lastshare;
         json_get_int64(&user->shares, val, "shares");
         json_get_double(&user->best_diff, val, "bestshare");
+        json_get_double(&user->best_diff_alltime, val, "bestshare_alltime");
         json_get_double(&user->accumulated, val, "accumulated");
         json_get_int(&user->postponed, val, "postponed");
         json_get_double(&user->herp, val, "herp");
         json_get_double(&user->lns, val, "lns");
-        LOGDEBUG("Successfully read user %s stats %f %f %f %f %f %f %f %f", username,
-            user->dsps1, user->dsps5, user->dsps60, user->dsps1440,
-            user->dsps10080, user->best_diff, user->herp, user->lns);
+        if (user->best_diff > user->best_diff_alltime) {
+            // bestshare_alltime was added later, so old data files may not have this
+            // so ensure that this field is at least >= bestshare
+            user->best_diff_alltime = user->best_diff;
+        }
+        LOGDEBUG("Successfully read user %s stats %f %f %f %f %f %f %f %f %f", username,
+                 user->dsps1, user->dsps5, user->dsps60, user->dsps1440,
+                 user->dsps10080, user->best_diff, user->best_diff_alltime,
+                 user->herp, user->lns);
         if (tvsec_diff > 60)
             decay_user(user, 0, &now);
 
@@ -6139,12 +6151,18 @@ static void read_userstats(pool_t *ckp, sdata_t *sdata, int tvsec_diff)
             json_get_int(&lastshare, arr_val, "lastshare");
             worker->last_share.tv_sec = lastshare;
             json_get_double(&worker->best_diff, arr_val, "bestshare");
+            json_get_double(&worker->best_diff_alltime, arr_val, "bestshare_alltime");
             json_get_int64(&worker->shares, arr_val, "shares");
             json_get_double(&worker->herp, arr_val, "herp");
             json_get_double(&worker->lns, arr_val, "lns");
-            LOGDEBUG("Successfully read worker %s stats %f %f %f %f %f %f %f",
-                 worker->workername, worker->dsps1, worker->dsps5, worker->dsps60,
-                     worker->dsps1440, worker->best_diff, worker->herp, worker->lns);
+            if (worker->best_diff > worker->best_diff_alltime) {
+                // migrate
+                worker->best_diff_alltime = worker->best_diff;
+            }
+            LOGDEBUG("Successfully read worker %s stats %f %f %f %f %f %f %f %f",
+                     worker->workername, worker->dsps1, worker->dsps5, worker->dsps60,
+                     worker->dsps1440, worker->best_diff, worker->best_diff_alltime,
+                     worker->herp, worker->lns);
             if (tvsec_diff > 60)
                 decay_worker(worker, 0, &now);
         }
@@ -7054,10 +7072,14 @@ static void check_best_diff(pool_t *ckp, sdata_t *sdata, user_instance_t *user,
 
     if (sdiff > worker->best_diff) {
         worker->best_diff = floor(sdiff);
+        if (worker->best_diff > worker->best_diff_alltime)
+            worker->best_diff_alltime = worker->best_diff;
         best_worker = true;
     }
     if (sdiff > user->best_diff) {
         user->best_diff = floor(sdiff);
+        if (user->best_diff > user->best_diff_alltime)
+            user->best_diff_alltime = user->best_diff;
         best_user = true;
     }
     if (likely(!CKP_STANDALONE(ckp) || (!best_user && !best_worker) || !client))
@@ -7194,8 +7216,10 @@ static json_t *parse_submit(stratum_instance_t *client, json_t *json_msg,
         worker_instance_t *worker = client->worker_instance;
 
         client->best_diff = floor(sdiff);
+        if (client->best_diff > client->best_diff_alltime)
+            client->best_diff_alltime = client->best_diff;
         LOGINFO("User %s worker %s client %s new best diff %lf", user->username,
-            worker->workername, client->identity, sdiff);
+                worker->workername, client->identity, sdiff);
         check_best_diff(ckp, sdata, user, worker, sdiff, client);
     }
     bswap_256(sharehash, hash);
@@ -9484,19 +9508,20 @@ static void *statsupdate(void *arg)
                 LOGDEBUG("Storing worker %s", worker->workername);
 
                 percent = round(worker->herp / worker->lns * 100) / 100;
-                JSON_CPACK(val, "{ss,ss,ss,ss,ss,ss,sI,sI,sf,sf,sf,sf}",
-                        "workername", worker->workername,
-                        "hashrate1m", suffix1,
-                        "hashrate5m", suffix5,
-                        "hashrate1hr", suffix60,
-                        "hashrate1d", suffix1440,
-                        "hashrate7d", suffix10080,
-                        "lastshare", (json_int_t)worker->last_share.tv_sec,
-                        "shares", (json_int_t)worker->shares,
-                        "bestshare", worker->best_diff,
-                        "lns", worker->lns,
-                        "luck", percent,
-                        "herp", worker->herp);
+                JSON_CPACK(val, "{ss,ss,ss,ss,ss,ss,sI,sI,sf,sf,sf,sf,sf}",
+                           "workername", worker->workername,
+                           "hashrate1m", suffix1,
+                           "hashrate5m", suffix5,
+                           "hashrate1hr", suffix60,
+                           "hashrate1d", suffix1440,
+                           "hashrate7d", suffix10080,
+                           "lastshare", (json_int_t)worker->last_share.tv_sec,
+                           "shares", (json_int_t)worker->shares,
+                           "bestshare", worker->best_diff,
+                           "bestshare_alltime", worker->best_diff_alltime,
+                           "lns", worker->lns,
+                           "luck", percent,
+                           "herp", worker->herp);
                 json_array_append_new(user_array, val);
                 val = NULL;
             }
@@ -9544,24 +9569,25 @@ static void *statsupdate(void *arg)
             derp /= SATOSHIS;
 
             percent = round(user->herp / user->lns * 100) / 100;
-            JSON_CPACK(val, "{ss,ss,ss,ss,ss,sI,si,sI,sf,sf,sf,sf,si,sf,sf,sI}",
-                    "hashrate1m", suffix1,
-                    "hashrate5m", suffix5,
-                    "hashrate1hr", suffix60,
-                    "hashrate1d", suffix1440,
-                    "hashrate7d", suffix10080,
-                    "lastshare", (json_int_t)user->last_share.tv_sec,
-                    "workers", user->workers + user->remote_workers,
-                    "shares", (json_int_t)user->shares,
-                    "bestshare", user->best_diff,
-                    "lns", user->lns,
-                    "luck", percent,
-                    "accumulated", user->accumulated,
-                    "postponed", user->postponed,
-                    "herp", user->herp,
-                    "derp", derp,
-                    // add timestamp for reference
-                    "time", (json_int_t)now.tv_sec);
+            JSON_CPACK(val, "{ss,ss,ss,ss,ss,sI,si,sI,sf,sf,sf,sf,sf,si,sf,sf,sI}",
+                       "hashrate1m", suffix1,
+                       "hashrate5m", suffix5,
+                       "hashrate1hr", suffix60,
+                       "hashrate1d", suffix1440,
+                       "hashrate7d", suffix10080,
+                       "lastshare", (json_int_t)user->last_share.tv_sec,
+                       "workers", user->workers + user->remote_workers,
+                       "shares", (json_int_t)user->shares,
+                       "bestshare", user->best_diff,
+                       "bestshare_alltime", user->best_diff_alltime,
+                       "lns", user->lns,
+                       "luck", percent,
+                       "accumulated", user->accumulated,
+                       "postponed", user->postponed,
+                       "herp", user->herp,
+                       "derp", derp,
+                       // add timestamp for reference
+                       "time", (json_int_t)now.tv_sec);
 
             if (user->remote_workers) {
                 remote_workers += user->remote_workers;

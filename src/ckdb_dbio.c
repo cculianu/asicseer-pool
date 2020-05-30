@@ -3624,7 +3624,7 @@ unparam:
 
         row->height = coinbase1height(row);
         hex2bin(ndiffbin, row->in_bits, 4);
-        row->diff_target = current_ndiff = diff_from_nbits(ndiffbin);
+        row->diff_target = current_ndiff = diff_from_nbits((uchar *)ndiffbin);
 
         add_to_ktree(workinfo_root, item);
         k_add_head(workinfo_store, item);
@@ -3827,7 +3827,7 @@ bool workinfo_fill(PGconn *conn)
 
             row->height = coinbase1height(row);
             hex2bin(ndiffbin, row->in_bits, 4);
-            row->diff_target = diff_from_nbits(ndiffbin);
+            row->diff_target = diff_from_nbits((uchar *)ndiffbin);
 
             add_to_ktree(workinfo_root, item);
             if (!confirm_sharesummary)

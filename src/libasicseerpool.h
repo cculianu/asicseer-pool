@@ -666,11 +666,11 @@ double sane_tdiff(tv_t *end, tv_t *start);
 void suffix_string(double val, char *buf, size_t bufsiz, int sigdigits);
 
 double le256todouble(const uchar *target);
-double diff_from_target(uchar *target);
-double diff_from_nbits(char *nbits);
+double diff_from_target(const uchar *target);
+double diff_from_nbits(const uchar *nbits);
 void target_from_diff(uchar *target, double diff);
 
-void gen_hash(uchar *data, uchar *hash, int len);
+void gen_hash(const uchar *data, uchar *hash, int len);
 
 /// returns a number in the range [0, range)
 int random_threadsafe(int range);

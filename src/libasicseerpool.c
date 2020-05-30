@@ -2250,7 +2250,7 @@ double le256todouble(const uchar *target)
 }
 
 /* Return a difficulty from a binary target */
-double diff_from_target(uchar *target)
+double diff_from_target(const uchar *target)
 {
     double d64, dcut64;
 
@@ -2263,7 +2263,7 @@ double diff_from_target(uchar *target)
 
 /* Return the network difficulty from the block header which is in packed form,
  * as a double. */
-double diff_from_nbits(char *nbits)
+double diff_from_nbits(const uchar *nbits)
 {
     double numerator;
     uint32_t diff32;
@@ -2272,10 +2272,13 @@ double diff_from_nbits(char *nbits)
 
     pow = nbits[0];
     powdiff = (8 * (0x1d - 3)) - (8 * (pow - 3));
-    if (powdiff < 0) // testnet only
+    if (unlikely(powdiff < 0)) // testnet only
         powdiff = 0;
     diff32 = be32toh(*((uint32_t *)nbits)) & 0x00FFFFFF;
     numerator = 0xFFFFULL << powdiff;
+    if (unlikely(diff32 == 0))
+        // this should never happen, but prevent floating point exceptions
+        diff32 = 1;
 
     return numerator / (double)diff32;
 }
@@ -2323,9 +2326,11 @@ void target_from_diff(uchar *target, double diff)
     *data64 = htole64(h64);
 }
 
-void gen_hash(uchar *data, uchar *hash, int len)
+void gen_hash(const uchar *data, uchar *hash, int len)
 {
     uchar hash1[32];
+
+    assert(len > 0);
 
     sha256(data, len, hash1);
     sha256(hash1, 32, hash);
