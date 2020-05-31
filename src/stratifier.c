@@ -6916,8 +6916,8 @@ test_blocksolve(const stratum_instance_t *client, const workbase_t *wb, const uc
     if (likely(diff < sdata->current_workbase->network_diff * 0.999))
         return;
 
-    LOGWARNING("Possible %sblock solve diff %lf (network diff: %lf) !", stale ? "stale share " : "", diff,
-               sdata->current_workbase->network_diff);
+    LOGWARNING("Possible %sblock solve diff %lf (network diff: %lf) !", stale ? "stale share " : "",
+               diff, sdata->current_workbase->network_diff);
     /* Can't submit a block in proxy mode without the transactions */
     if (!ckp->node && wb->proxy)
         return;
@@ -6975,7 +6975,7 @@ test_blocksolve(const stratum_instance_t *client, const workbase_t *wb, const uc
         FILE *fp;
 
         blockval = json_copy(wb->payout);
-        json_set_string(blockval, "solvedby", client->user_instance->username);
+        json_set_string(blockval, "solvedby", client->workername ? : client->user_instance->username);
         get_timestamp(stamp);
         json_set_string(blockval, "date", stamp);
         swap_256(swap256, flip32);
@@ -6987,6 +6987,8 @@ test_blocksolve(const stratum_instance_t *client, const workbase_t *wb, const uc
         json_set_int64(blockval, "shares", shares);
         percent = round(shares * 1000 / wb->network_diff) / 10;
         json_set_double(blockval, "diff", percent);
+        json_set_double(blockval, "network_difficulty", sdata->current_workbase->network_diff);
+        json_set_double(blockval, "solution_difficulty", diff);
         blocksolve->val = json_copy(blockval);
         DL_APPEND(sdata->stats.unconfirmed, blocksolve);
         mutex_unlock(&sdata->stats_lock);
@@ -6998,7 +7000,7 @@ test_blocksolve(const stratum_instance_t *client, const workbase_t *wb, const uc
             LOGERR("Failed to fopen %s", fname);
         } else {
             s = json_dumps(blockval, JSON_NO_UTF8 | JSON_PRESERVE_ORDER |
-                JSON_REAL_PRECISION(12) | JSON_INDENT(1) | JSON_EOL);
+                                     JSON_REAL_PRECISION(12) | JSON_INDENT(2) | JSON_EOL);
             fprintf(fp, "%s", s);
             free(s);
             fclose(fp);
@@ -9612,7 +9614,7 @@ static void *statsupdate(void *arg)
 
             if (!inactive) {
                 s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER |
-                    JSON_COMPACT | JSON_REAL_PRECISION(16));
+                                    JSON_COMPACT | JSON_REAL_PRECISION(16));
                 if (!idle) {
                     /* It's convenient to see the biggest hashers last
                      * when tail'ing the log as it's being written. */
@@ -9626,7 +9628,7 @@ static void *statsupdate(void *arg)
             json_object_set_new_nocheck(val, "worker", user_array);
             ASPRINTF(&fname, "%s/users/%s", ckp->logdir, user->username);
             s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER | JSON_EOL |
-                 JSON_REAL_PRECISION(16) | JSON_INDENT(1));
+                                JSON_REAL_PRECISION(16) | JSON_INDENT(2));
             add_log_entry(&log_entries, &fname, &s);
             json_decref(val);
             if (ckp->remote)
@@ -9745,7 +9747,7 @@ static void *statsupdate(void *arg)
                 LOGERR("Failed to fopen %s", fname);
             } else {
                 s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER |
-                    JSON_REAL_PRECISION(12) | JSON_INDENT(1) | JSON_EOL);
+                                    JSON_REAL_PRECISION(12) | JSON_INDENT(2) | JSON_EOL);
                 fprintf(fp, "%s", s);
                 dealloc(s);
                 fclose(fp);

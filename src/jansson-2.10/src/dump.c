@@ -448,9 +448,9 @@ char *json_dumps(const json_t *json, size_t flags)
     if(json_dump_callback(json, dump_to_strbuffer, (void *)&strbuff, flags))
         result = NULL;
     else if (flags & JSON_EOL)
-	result = jsonp_eolstrsteal(&strbuff);
+        result = jsonp_eolstrsteal(&strbuff);
     else
-	result = jsonp_strsteal(&strbuff);
+        result = jsonp_strsteal(&strbuff);
 
     return result;
 }
