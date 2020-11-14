@@ -9533,7 +9533,10 @@ static void *statsupdate(void *arg)
 
                 LOGDEBUG("Storing worker %s", worker->workername);
 
-                percent = round(worker->herp / worker->lns * 100) / 100;
+                if (fabs(worker->lns) > 0.) // guard against crashes due to FPE exception
+                    percent = round(worker->herp / worker->lns * 100) / 100;
+                else
+                    percent = 1.0;
                 JSON_CPACK(val, "{ss,ss,ss,ss,ss,ss,sI,sI,sf,sf,sf,sf,sf}",
                            "workername", worker->workername,
                            "hashrate1m", suffix1,
@@ -9594,7 +9597,10 @@ static void *statsupdate(void *arg)
                 cbspace += CBGENLEN;
             derp /= SATOSHIS;
 
-            percent = round(user->herp / user->lns * 100) / 100;
+            if (fabs(user->lns) > 0) // guard against potential SIGFPE
+                percent = round(user->herp / user->lns * 100) / 100;
+            else
+                percent = 1.0;
             JSON_CPACK(val, "{ss,ss,ss,ss,ss,sI,si,sI,sf,sf,sf,sf,sf,si,sf,sf,sI}",
                        "hashrate1m", suffix1,
                        "hashrate5m", suffix5,
