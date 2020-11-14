@@ -1828,6 +1828,7 @@ static txntable_t *wb_merkle_bin_txns(pool_t *ckp, sdata_t *sdata, workbase_t *w
             memcpy(wb->txn_hashes + i * 65L, txid, 64);
             bswap_256(hashbin + 32L + 32L * i, binswap);
         }
+        wb->txn_data_len = ofs;
     } else
         wb->txn_hashes = ckzalloc(1);
     wb->merkle_array = json_array();
@@ -2626,45 +2627,54 @@ static void send_node_block(pool_t *ckp, sdata_t *sdata, const char *enonce1, co
  * workbase readcount */
 static char *
 process_block(const workbase_t *wb, const char *coinbase, const int cblen,
-          const uchar *data, const uchar *hash, uchar *flip32, char *blockhash)
+          const uchar *data, const uchar *hash, uchar *flip32, char *blockhash,
+          size_t *gbt_block_len)
 {
-    char *hexcoinbase, *gbt_block, varint[12];
+    char *gbt_block;
     int txns = wb->txns + 1;
+    size_t gbt_block_offset = 0;
 
     flip_32(flip32, hash);
     __bin2hex(blockhash, flip32, 32);
 
     /* Message format: "data" */
-    gbt_block = ckzalloc(256);
-    __bin2hex(gbt_block, data, 80);
+    gbt_block = ckzalloc(
+        160              + /* data */
+        10               + /* max varint */
+        (cblen * 2)      + /* cb */
+        wb->txn_data_len + /* tx data */
+        1                  /* zero termination */
+        );
+    gbt_block_offset += __bin2hex(gbt_block + gbt_block_offset, data, 80);
+
     if (txns < 0xfd) {
         uint8_t val8 = txns;
-
-        __bin2hex(varint, (const unsigned char *)&val8, 1);
+        gbt_block_offset += __bin2hex(gbt_block + gbt_block_offset, (const unsigned char *)&val8, 1);
     } else if (txns <= 0xffff) {
         uint16_t val16 = htole16(txns);
-
-        strcat(gbt_block, "fd");
-        __bin2hex(varint, (const unsigned char *)&val16, 2);
+        strcpy(gbt_block + gbt_block_offset, "fd"); gbt_block_offset += 2;
+        gbt_block_offset += __bin2hex(gbt_block + gbt_block_offset, (const unsigned char *)&val16, 2);
     } else {
         uint32_t val32 = htole32(txns);
-
-        strcat(gbt_block, "fe");
-        __bin2hex(varint, (const unsigned char *)&val32, 4);
+        strcpy(gbt_block + gbt_block_offset, "fe"); gbt_block_offset += 2;
+        gbt_block_offset += __bin2hex(gbt_block + gbt_block_offset, (const unsigned char *)&val32, 4);
     }
-    strcat(gbt_block, varint);
-    hexcoinbase = bin2hex(coinbase, cblen);
-    realloc_strcat(&gbt_block, hexcoinbase);
-    free(hexcoinbase);
+
+    gbt_block_offset += __bin2hex(gbt_block + gbt_block_offset, coinbase, cblen);
+
     if (likely(wb->txns))
-        realloc_strcat(&gbt_block, wb->txn_data);
+        strcpy(gbt_block + gbt_block_offset, wb->txn_data);
+
+    if (gbt_block_len != NULL)
+        *gbt_block_len = gbt_block_offset + wb->txn_data_len;
+
     return gbt_block;
 }
 
 /* Submit block data locally, absorbing and freeing gbt_block */
-static bool local_block_submit(pool_t *ckp, char *gbt_block, const uchar *flip32, int height)
+static bool local_block_submit(pool_t *ckp, char *gbt_block, const size_t gbt_block_len, const uchar *flip32, int height)
 {
-    bool ret = generator_submitblock(ckp, gbt_block);
+    bool ret = generator_submitblock(ckp, gbt_block, gbt_block_len);
     char heighthash[68] = {}, rhash[68] = {};
     uchar swap256[32];
 
@@ -2740,6 +2750,7 @@ static void submit_node_block(pool_t *ckp, sdata_t *sdata, json_t *val)
 {
     char *coinbase = NULL, *enonce1 = NULL, *nonce = NULL, *nonce2 = NULL, *gbt_block,
         *coinbasehex, *swaphex;
+    size_t gbt_block_len;
     uchar *enonce1bin = NULL, hash[32], swap[80], flip32[32];
     uint32_t ntime32, version_mask = 0;
     char blockhash[68], cdfield[64];
@@ -2818,8 +2829,8 @@ static void submit_node_block(pool_t *ckp, sdata_t *sdata, json_t *val)
     // TODO: Enforce 32MB block size limit here?
 
     /* Now we have enough to assemble a block */
-    gbt_block = process_block(wb, coinbase, cblen, swap, hash, flip32, blockhash);
-    ret = local_block_submit(ckp, gbt_block, flip32, wb->height);
+    gbt_block = process_block(wb, coinbase, cblen, swap, hash, flip32, blockhash, &gbt_block_len);
+    ret = local_block_submit(ckp, gbt_block, gbt_block_len, flip32, wb->height);
 
     JSON_CPACK(bval, "{si,ss,ss,sI,ss,ss,si,ss,sI,sf,ss,ss,ss,ss}",
              "height", wb->height,
@@ -6905,6 +6916,7 @@ test_blocksolve(const stratum_instance_t *client, const workbase_t *wb, const uc
                 const bool stale)
 {
     char blockhash[68], cdfield[64], *gbt_block;
+    size_t gbt_block_len;
     sdata_t *sdata = client->sdata;
     json_t *val = NULL, *val_copy;
     pool_t *ckp = wb->ckp;
@@ -6925,7 +6937,7 @@ test_blocksolve(const stratum_instance_t *client, const workbase_t *wb, const uc
     ts_realtime(&ts_now);
     sprintf(cdfield, "%lu,%lu", ts_now.tv_sec, ts_now.tv_nsec);
 
-    gbt_block = process_block(wb, coinbase, cblen, data, hash, flip32, blockhash);
+    gbt_block = process_block(wb, coinbase, cblen, data, hash, flip32, blockhash, &gbt_block_len);
     send_node_block(ckp, sdata, client->enonce1, nonce, nonce2, ntime32, version_mask,
             wb->id, diff, client->id, coinbase, cblen, data);
 
@@ -6964,7 +6976,7 @@ test_blocksolve(const stratum_instance_t *client, const workbase_t *wb, const uc
 
     /* Submit block locally after sending it to remote locations avoiding
      * the delay of local verification */
-    ret = local_block_submit(ckp, gbt_block, flip32, wb->height);
+    ret = local_block_submit(ckp, gbt_block, gbt_block_len, flip32, wb->height);
     if (ret) {
         json_entry_t *blocksolve = ckzalloc(sizeof(json_entry_t));
         char *fname, stamp[128], *s, rhash[68] = {};
@@ -8216,6 +8228,7 @@ static void parse_remote_block(pool_t *ckp, sdata_t *sdata, json_t *val, const c
     else {
         uchar swap[80], hash[32], hash1[32], flip32[32];
         char *coinbase = alloca(cblen), *gbt_block;
+        size_t gbt_block_len;
         char blockhash[68];
 
         LOGWARNING("Possible remote block solve diff %lf !", diff);
@@ -8223,14 +8236,14 @@ static void parse_remote_block(pool_t *ckp, sdata_t *sdata, json_t *val, const c
         hex2bin(swap, swaphex, 80);
         sha256(swap, 80, hash1);
         sha256(hash1, 32, hash);
-        gbt_block = process_block(wb, coinbase, cblen, swap, hash, flip32, blockhash);
+        gbt_block = process_block(wb, coinbase, cblen, swap, hash, flip32, blockhash, &gbt_block_len);
         /* Note nodes use jobid of the mapped_id instead of workinfoid */
         json_set_int64(val, "jobid", wb->mapped_id);
         send_nodes_block(sdata, val, client_id);
         /* We rely on the remote server to give us the ID_BLOCK
          * responses, so only use this response to determine if we
          * should reset the best shares. */
-        if (local_block_submit(ckp, gbt_block, flip32, wb->height))
+        if (local_block_submit(ckp, gbt_block, gbt_block_len, flip32, wb->height))
             reset_bestshares(sdata);
         put_remote_workbase(sdata, wb);
     }

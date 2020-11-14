@@ -35,7 +35,7 @@ void clear_gbtbase(gbtbase_t *gbt);
 int get_blockcount(connsock_t *cs);
 bool get_blockhash(connsock_t *cs, int height, char *hash);
 bool get_bestblockhash(connsock_t *cs, char *hash);
-bool submit_block(connsock_t *cs, const char *params);
+bool submit_block(connsock_t *cs, const char *params, size_t param_len);
 void precious_block(connsock_t *cs, const char *params);
 void submit_txn(connsock_t *cs, const char *params);
 char *get_txn(connsock_t *cs, const char *hash);

@@ -565,25 +565,54 @@ static void clear_bufline(connsock_t *cs)
     }
 }
 
-static void add_buflen(pool_t *ckp, connsock_t *cs, const char *readbuf, const int len)
+static void ensure_buf_size(connsock_t *cs, const size_t reqalloc, const size_t maxinc_mb)
 {
     int backoff = 1;
-    int buflen;
+    size_t newalloc;
+    void *newmem;
+    const size_t max_realloc_increase = maxinc_mb * 1024 * 1024;
+    static const size_t initial_alloc = 16 * 1024;
 
-    buflen = round_up_page(cs->bufofs + len + 1);
-    while (cs->bufsize < buflen) {
-        char *newbuf = realloc(cs->buf, buflen);
-
-        if (likely(newbuf)) {
-            cs->bufsize = buflen;
-            cs->buf = newbuf;
-            break;
+    while (reqalloc > cs->bufsize) {
+        if (cs->bufsize > 0) {
+            newalloc = cs->bufsize * 2;
+        } else {
+            newalloc = initial_alloc;
         }
-        if (backoff == 1)
-            fprintf(stderr, "Failed to realloc %d in read_socket_line, retrying\n", (int)buflen);
-        cksleep_ms(backoff);
-        backoff <<= 1;
+
+        if (max_realloc_increase > 0) {
+            /* limit the maximum buffer increase */
+            if (newalloc - cs->bufsize > max_realloc_increase)
+                newalloc = cs->bufsize + max_realloc_increase;
+        }
+
+        /* ensure we have a big enough allocation */
+        if (reqalloc > newalloc)
+            newalloc = reqalloc;
+
+        newalloc = round_up_page(newalloc);
+
+        newmem = realloc(cs->buf, newalloc);
+        if (unlikely(!newmem)) {
+            if (backoff == 1)
+                fprintf(stderr, "Failed to realloc %d in read_socket_line, retrying\n", (int)newalloc);
+            cksleep_ms(backoff);
+            backoff <<= 1;
+            continue;
+        }
+
+        cs->buf = newmem;
+        cs->bufsize = newalloc;
+        break;
     }
+}
+
+static void add_buflen(pool_t *ckp, connsock_t *cs, const char *readbuf, const int len)
+{
+    int buflen = cs->bufofs + len + 1;
+
+    ensure_buf_size(cs, buflen, 8);
+
     /* Increase receive buffer if possible to larger than the largest
      * message we're likely to buffer */
     if (unlikely(!ckp->rmem_warn && buflen > cs->rcvbufsiz))
@@ -636,10 +665,10 @@ int read_socket_contentlen(connsock_t *cs, int contentlen, float *timeout)
     quiet = ckp->proxy | ckp->remote;
 
     clear_bufline(cs);
+    ensure_buf_size(cs, contentlen, 0);
     nread = cs->bufofs;
     tv_time(&start);
 
-    //LOGDEBUG("nread: %d contentlen: %d", nread, contentlen);
     while (nread < contentlen) {
         if (unlikely(cs->fd < 0)) {
             ret = -1;
@@ -662,7 +691,7 @@ int read_socket_contentlen(connsock_t *cs, int contentlen, float *timeout)
                 LOGERR("Select %s in %s", !ret ? "timed out" : "failed", __func__);
             goto out;
         }
-        ret = recv_available(ckp, cs, MIN(contentlen - nread, PAGESIZE-4));
+        ret = recv_available(ckp, cs, MIN(contentlen - nread, PAGESIZE * 4));
         if (ret < 1) {
             /* If we have done wait_read_select there should be
              * something to read and if we get nothing it means the
@@ -755,6 +784,8 @@ int read_socket_line(connsock_t *cs, float *timeout)
         }
         ret = recv_available(ckp, cs, PAGESIZE-4);
         if (ret < 1) {
+            if (errno == EINTR || errno == EAGAIN)
+                continue;
             /* If we have done wait_read_select there should be
              * something to read and if we get nothing it means the
              * socket is closed. */
@@ -894,7 +925,7 @@ static const char *rpc_method(const char *rpc_req)
 
 /* All of these calls are made to bitcoind which prefers open/close instead
  * of persistent connections so cs->fd is always invalid. */
-static json_t *_json_rpc_call(connsock_t *cs, const char *rpc_req, const bool info_only)
+static json_t *_json_rpc_call(connsock_t *cs, const struct rpc_req_part *rpc_req, const bool info_only)
 {
     float timeout = RPC_TIMEOUT;
     char *http_req = NULL;
@@ -904,6 +935,7 @@ static json_t *_json_rpc_call(connsock_t *cs, const char *rpc_req, const bool in
     tv_t stt_tv, fin_tv;
     double elapsed;
     int len, ret;
+    const struct rpc_req_part *cur;
 
     /* Serialise all calls in case we use cs from multiple threads */
     cksem_wait(&cs->sem);
@@ -928,44 +960,62 @@ static json_t *_json_rpc_call(connsock_t *cs, const char *rpc_req, const bool in
         ASPRINTF(&warning, "Null rpc_req passed to %s", __func__);
         goto out;
     }
-    len = strlen(rpc_req);
-    if (unlikely(!len)) {
+    if (unlikely(rpc_req[0].length == 0)) {
         ASPRINTF(&warning, "Zero length rpc_req passed to %s", __func__);
         goto out;
     }
     const int len2 = strlen(cs->auth) + strlen(cs->url) + strlen(cs->port);
-    http_req = ckalloc(len + 256 + len2); // Leave room for headers
+    http_req = ckalloc(256 + len2); // Leave room for headers
+    len = 0;
+    for (cur = rpc_req; cur->string != NULL; cur++) {
+        //assert(strlen(cur->string) == cur->length);
+        len += cur->length;
+    }
     sprintf(http_req,
          "POST / HTTP/1.1\n"
          "Authorization: Basic %s\n"
          "Host: %s:%s\n"
          "Content-type: application/json\n"
-         "Content-Length: %d\n\n%s",
-         cs->auth, cs->url, cs->port, len, rpc_req);
+         "Content-Length: %d\n\n",
+         cs->auth, cs->url, cs->port, len);
 
     len = strlen(http_req);
+
     tv_time(&stt_tv);
     ret = write_socket(cs->fd, http_req, len);
     if (ret != len) {
         tv_time(&fin_tv);
         elapsed = tvdiff(&fin_tv, &stt_tv);
         ASPRINTF(&warning, "Failed to write to socket in %s (%.20s...) %.3fs",
-                 __func__, rpc_method(rpc_req), elapsed);
+                 __func__, rpc_method(rpc_req[0].string), elapsed);
         goto out_empty;
     }
+
+    tv_time(&stt_tv);
+    for (cur = rpc_req; cur->string != NULL; cur++) {
+        ret = write_socket(cs->fd, cur->string, cur->length);
+        if (ret != cur->length) {
+            tv_time(&fin_tv);
+            elapsed = tvdiff(&fin_tv, &stt_tv);
+            ASPRINTF(&warning, "Failed to write to socket in %s (%.20s...) %.3fs",
+                    __func__, rpc_method(rpc_req[0].string), elapsed);
+            goto out_empty;
+        }
+    }
+
     ret = read_socket_line(cs, &timeout);
     if (ret < 1) {
         tv_time(&fin_tv);
         elapsed = tvdiff(&fin_tv, &stt_tv);
         ASPRINTF(&warning, "Failed to read socket line in %s (%.20s...) %.3fs",
-             __func__, rpc_method(rpc_req), elapsed);
+             __func__, rpc_method(rpc_req[0].string), elapsed);
         goto out_empty;
     }
     if (strncasecmp(cs->buf, "HTTP/1.1 200 OK", 15)) {
         tv_time(&fin_tv);
         elapsed = tvdiff(&fin_tv, &stt_tv);
         ASPRINTF(&warning, "HTTP response to (%.20s...) %.3fs not ok: %s",
-             rpc_method(rpc_req), elapsed, cs->buf);
+             rpc_method(rpc_req[0].string), elapsed, cs->buf);
         timeout = 0;
         /* Look for a json response if there is one */
         while (read_socket_line(cs, &timeout) > 0) {
@@ -975,7 +1025,7 @@ static json_t *_json_rpc_call(connsock_t *cs, const char *rpc_req, const bool in
             free(warning);
             /* Replace the warning with the json response */
             ASPRINTF(&warning, "JSON response to (%.20s...) %.3fs not ok: %s",
-                 rpc_method(rpc_req), elapsed, cs->buf);
+                 rpc_method(rpc_req[0].string), elapsed, cs->buf);
             break;
         }
         goto out_empty;
@@ -987,7 +1037,7 @@ static json_t *_json_rpc_call(connsock_t *cs, const char *rpc_req, const bool in
             tv_time(&fin_tv);
             elapsed = tvdiff(&fin_tv, &stt_tv);
             ASPRINTF(&warning, "Failed to read http socket lines in %s (%.20s...) %.3fs",
-                 __func__, rpc_method(rpc_req), elapsed);
+                 __func__, rpc_method(rpc_req[0].string), elapsed);
             goto out_empty;
         }
         if (0 == strncasecmp("Content-Length: ", cs->buf, 16)) {
@@ -995,7 +1045,7 @@ static json_t *_json_rpc_call(connsock_t *cs, const char *rpc_req, const bool in
             if (1 != sscanf(cs->buf + 16, "%d", &contentlen) || contentlen < 0) {
                 // parse error
                 ASPRINTF(&warning, "Failed to read content-length lines in %s (%.20s...) %.3fs",
-                         __func__, rpc_method(rpc_req), elapsed);
+                         __func__, rpc_method(rpc_req[0].string), elapsed);
                 goto out_empty;
             }
             // read blank line
@@ -1003,7 +1053,7 @@ static json_t *_json_rpc_call(connsock_t *cs, const char *rpc_req, const bool in
                 tv_time(&fin_tv);
                 elapsed = tvdiff(&fin_tv, &stt_tv);
                 ASPRINTF(&warning, "Failed to read a blank line after content-length: %d in %s (%.20s...) %.3fs, got ret: %d",
-                         contentlen, __func__, rpc_method(rpc_req), elapsed, ret);
+                         contentlen, __func__, rpc_method(rpc_req[0].string), elapsed, ret);
                 ret = -1;
                 goto out_empty;
             }
@@ -1015,8 +1065,8 @@ static json_t *_json_rpc_call(connsock_t *cs, const char *rpc_req, const bool in
     if (ret != contentlen) {
         tv_time(&fin_tv);
         elapsed = tvdiff(&fin_tv, &stt_tv);
-        ASPRINTF(&warning, "Failed to read content of length %d in %s (%.20s...) %.3fs",
-                 contentlen, __func__, rpc_method(rpc_req), elapsed);
+        ASPRINTF(&warning, "Failed to read content of length %d (got %d) in %s (%.20s...) %.3fs",
+                 contentlen, ret, __func__, rpc_method(rpc_req[0].string), elapsed);
         ret = -1;
         goto out_empty;
     }
@@ -1024,7 +1074,7 @@ static json_t *_json_rpc_call(connsock_t *cs, const char *rpc_req, const bool in
     elapsed = tvdiff(&fin_tv, &stt_tv);
     if (elapsed > 5.0) {
         ASPRINTF(&warning, "HTTP socket read+write took %.3fs in %s (%.20s...)",
-                 elapsed, __func__, rpc_method(rpc_req));
+                 elapsed, __func__, rpc_method(rpc_req[0].string));
     }
     {
         // parse json, if it takes longer than 0.1 seconds to parse, print to debug log
@@ -1033,11 +1083,11 @@ static json_t *_json_rpc_call(connsock_t *cs, const char *rpc_req, const bool in
         const double elapsed = (time_micros() - t0) / 1e6;
         if (elapsed >= 0.1)
             LOGDEBUG("%s: json_loads (%.20s...) took %1.6f secs", __func__,
-                     rpc_method(rpc_req), elapsed);
+                     rpc_method(rpc_req[0].string), elapsed);
     }
     if (!val) {
         ASPRINTF(&warning, "JSON decode (%.20s...) failed(%d): %s",
-                 rpc_method(rpc_req), err_val.line, err_val.text);
+                 rpc_method(rpc_req[0].string), err_val.line, err_val.text);
     }
 out_empty:
     empty_socket(cs->fd);
@@ -1057,21 +1107,38 @@ out:
     return val;
 }
 
-json_t *json_rpc_call(connsock_t *cs, const char *rpc_req)
+json_t *json_rpc_call_parts(connsock_t *cs, const struct rpc_req_part *rpc_req)
 {
     return _json_rpc_call(cs, rpc_req, false);
 }
 
+json_t *json_rpc_call(connsock_t *cs, const char *rpc_req)
+{
+    struct rpc_req_part parts[] = {
+        { rpc_req, strlen(rpc_req) },
+        { NULL, 0 }
+    };
+    return _json_rpc_call(cs, parts, false);
+}
+
 json_t *json_rpc_response(connsock_t *cs, const char *rpc_req)
 {
-    return _json_rpc_call(cs, rpc_req, true);
+    struct rpc_req_part parts[] = {
+        { rpc_req, strlen(rpc_req) },
+        { NULL, 0 }
+    };
+    return _json_rpc_call(cs, parts, true);
 }
 
 /* For when we are submitting information that is not important and don't care
  * about the response. */
 void json_rpc_msg(connsock_t *cs, const char *rpc_req)
 {
-    json_t *val = _json_rpc_call(cs, rpc_req, true);
+    struct rpc_req_part parts[] = {
+        { rpc_req, strlen(rpc_req) },
+        { NULL, 0 }
+    };
+    json_t *val = _json_rpc_call(cs, parts, true);
 
     /* We don't care about the result */
     json_decref(val);
@@ -1875,49 +1942,49 @@ static void prepare_child(pool_t *ckp, proc_instance_t *pi, void *process, char 
 
 #ifdef USE_ASICSEER_DB
 static struct option long_options[] = {
-    {"standalone",	no_argument,		0,	'A'},
-    {"config",	required_argument,	0,	'c'},
-    {"daemonise",	no_argument,		0,	'D'},
-    {"db-name",	required_argument,	0,	'd'},
-    {"group",	required_argument,	0,	'g'},
-    {"handover",	no_argument,		0,	'H'},
-    {"help",	no_argument,		0,	'h'},
-    {"killold",	no_argument,		0,	'k'},
-    {"log-shares",	no_argument,		0,	'L'},
-    {"loglevel",	required_argument,	0,	'l'},
-    {"name",	required_argument,	0,	'n'},
-    {"node",	no_argument,		0,	'N'},
-    {"passthrough",	no_argument,		0,	'P'},
-    {"proxy",	no_argument,		0,	'p'},
-    {"quiet",	no_argument,		0,	'q'},
-    {"redirector",	no_argument,		0,	'R'},
-    {"asicseer-db-sockdir", required_argument,	0,	'S'},
-    {"sockdir",	required_argument,	0,	's'},
-    {"trusted",	no_argument,		0,	't'},
-    {"userproxy",	no_argument,		0,	'u'},
-    {"version",	no_argument,		0,	'v'},
+    {"standalone",          no_argument,        0,    'A'},
+    {"config",              required_argument,  0,    'c'},
+    {"daemonise",           no_argument,        0,    'D'},
+    {"db-name",             required_argument,  0,    'd'},
+    {"group",               required_argument,  0,    'g'},
+    {"handover",            no_argument,        0,    'H'},
+    {"help",                no_argument,        0,    'h'},
+    {"killold",             no_argument,        0,    'k'},
+    {"log-shares",          no_argument,        0,    'L'},
+    {"loglevel",            required_argument,  0,    'l'},
+    {"name",                required_argument,  0,    'n'},
+    {"node",                no_argument,        0,    'N'},
+    {"passthrough",         no_argument,        0,    'P'},
+    {"proxy",               no_argument,        0,    'p'},
+    {"quiet",               no_argument,        0,    'q'},
+    {"redirector",          no_argument,        0,    'R'},
+    {"asicseer-db-sockdir", required_argument,  0,    'S'},
+    {"sockdir",             required_argument,  0,    's'},
+    {"trusted",             no_argument,        0,    't'},
+    {"userproxy",           no_argument,        0,    'u'},
+    {"version",             no_argument,        0,    'v'},
     {0, 0, 0, 0}
 };
 #else
 static struct option long_options[] = {
-    {"config",	required_argument,	0,	'c'},
-    {"daemonise",	no_argument,		0,	'D'},
-    {"group",	required_argument,	0,	'g'},
-    {"handover",	no_argument,		0,	'H'},
-    {"help",	no_argument,		0,	'h'},
-    {"killold",	no_argument,		0,	'k'},
-    {"log-shares",	no_argument,		0,	'L'},
-    {"loglevel",	required_argument,	0,	'l'},
-    {"name",	required_argument,	0,	'n'},
-    {"node",	no_argument,		0,	'N'},
-    {"passthrough",	no_argument,		0,	'P'},
-    {"proxy",	no_argument,		0,	'p'},
-    {"quiet",	no_argument,		0,	'q'},
-    {"redirector",	no_argument,		0,	'R'},
-    {"sockdir",	required_argument,	0,	's'},
-    {"trusted",	no_argument,		0,	't'},
-    {"userproxy",	no_argument,		0,	'u'},
-    {"version",	no_argument,		0,	'v'},
+    {"config",      required_argument, 0,    'c'},
+    {"daemonise",   no_argument,       0,    'D'},
+    {"group",       required_argument, 0,    'g'},
+    {"handover",    no_argument,       0,    'H'},
+    {"help",        no_argument,       0,    'h'},
+    {"killold",     no_argument,       0,    'k'},
+    {"log-shares",  no_argument,       0,    'L'},
+    {"loglevel",    required_argument, 0,    'l'},
+    {"name",        required_argument, 0,    'n'},
+    {"node",        no_argument,       0,    'N'},
+    {"passthrough", no_argument,       0,    'P'},
+    {"proxy",       no_argument,       0,    'p'},
+    {"quiet",       no_argument,       0,    'q'},
+    {"redirector",  no_argument,       0,    'R'},
+    {"sockdir",     required_argument, 0,    's'},
+    {"trusted",     no_argument,       0,    't'},
+    {"userproxy",   no_argument,       0,    'u'},
+    {"version",     no_argument,       0,    'v'},
     {0, 0, 0, 0}
 };
 #endif

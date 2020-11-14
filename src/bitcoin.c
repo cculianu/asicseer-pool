@@ -346,20 +346,28 @@ out:
     return ret;
 }
 
-bool submit_block(connsock_t *cs, const char *params)
+#define _SUBMITBLOCK_RPC_P1 "{\"method\": \"submitblock\", \"params\": [\""
+#define _SUBMITBLOCK_RPC_P2 "\"]}\n"
+
+bool submit_block(connsock_t *cs, const char *params, size_t param_len)
 {
     json_t *val, *res_val;
     int len, retries = 0;
     const char *res_ret;
     bool ret = false;
-    char *rpc_req;
 
-    len = strlen(params) + 64;
+    if (param_len == 0)
+        param_len = strlen(params);
+
+    struct rpc_req_part rpc_parts[] = {
+        { _SUBMITBLOCK_RPC_P1, strlen(_SUBMITBLOCK_RPC_P1) },
+        { params, param_len },
+        { _SUBMITBLOCK_RPC_P2, strlen(_SUBMITBLOCK_RPC_P2) },
+        { NULL, 0 }
+    };
+
 retry:
-    rpc_req = ckalloc(len);
-    sprintf(rpc_req, "{\"method\": \"submitblock\", \"params\": [\"%s\"]}\n", params);
-    val = json_rpc_call(cs, rpc_req);
-    dealloc(rpc_req);
+    val = json_rpc_call_parts(cs, rpc_parts);
     if (!val) {
         LOGWARNING("%s:%s Failed to get valid json response to submitblock", cs->url, cs->port);
         if (++retries < 5)

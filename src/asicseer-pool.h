@@ -423,6 +423,11 @@ char *_ckdb_msg_call(const pool_t *ckp, const char *msg,  const char *file, cons
              const int line);
 #define ckdb_msg_call(ckp, msg) _ckdb_msg_call(ckp, msg, __FILE__, __func__, __LINE__)
 
+struct rpc_req_part {
+    const char *string;
+    const size_t length;
+};
+json_t *json_rpc_call_parts(connsock_t *cs, const struct rpc_req_part *rpc_req);
 json_t *json_rpc_call(connsock_t *cs, const char *rpc_req);
 json_t *json_rpc_response(connsock_t *cs, const char *rpc_req);
 void json_rpc_msg(connsock_t *cs, const char *rpc_req);

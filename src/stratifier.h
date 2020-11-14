@@ -66,6 +66,7 @@ struct genwork {
     char *flags;
     int txns;
     char *txn_data;
+    size_t txn_data_len;
     char *txn_hashes;
     int merkles;
     char merklehash[GENWORK_MAX_MERKLE_DEPTH][68];

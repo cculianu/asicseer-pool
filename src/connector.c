@@ -722,6 +722,8 @@ static void *receiver(void *arg)
         ret = epoll_wait(epfd, event, 1, 1000);
         if (unlikely(ret < 1)) {
             if (unlikely(ret == -1)) {
+                if (errno == EINTR)
+                    continue;
                 LOGEMERG("FATAL: Failed to epoll_wait in receiver");
                 break;
             }

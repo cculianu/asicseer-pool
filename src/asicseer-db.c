@@ -6005,6 +6005,8 @@ static void *replier(void *arg)
         if (ret == 0)
             fails = 0;
         else if (ret < 0) {
+            if (errno == EINTR)
+                continue;
             int e = errno;
             fails++;
             fails_tot++;

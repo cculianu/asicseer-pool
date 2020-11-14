@@ -334,7 +334,7 @@ static server_instance_t * _get_current_si_threadsafe(gdata_t *gdata)
     return ret;
 }
 
-bool generator_submitblock(pool_t *ckp, const char *buf)
+bool generator_submitblock(pool_t *ckp, const char *buf, const size_t len)
 {
     gdata_t *gdata = ckp->gdata;
     server_instance_t *si;
@@ -349,7 +349,7 @@ bool generator_submitblock(pool_t *ckp, const char *buf)
     }
     cs = &si->cs;
     LOGNOTICE("Submitting block data!");
-    return submit_block(cs, buf);
+    return submit_block(cs, buf, len);
 }
 
 void generator_preciousblock(pool_t *ckp, const char *hash)
@@ -471,7 +471,7 @@ retry:
         bool ret;
 
         LOGNOTICE("Submitting block data!");
-        ret = submit_block(cs, buf + 12 + 64 + 1);
+        ret = submit_block(cs, buf + 12 + 64 + 1, 0);
         memset(buf + 12 + 64, 0, 1);
         sprintf(blockmsg, "%sblock:%s", ret ? "" : "no", buf + 12);
         send_proc(ckp->stratifier, blockmsg);
@@ -3119,7 +3119,7 @@ retry:
         bool ret;
 
         LOGNOTICE("Submitting likely block solve share from upstream pool");
-        ret = submit_block(cs, buf + 12 + 64 + 1);
+        ret = submit_block(cs, buf + 12 + 64 + 1, 0);
         memset(buf + 12 + 64, 0, 1);
         sprintf(blockmsg, "%sblock:%s", ret ? "" : "no", buf + 12);
         send_proc(ckp->stratifier, blockmsg);

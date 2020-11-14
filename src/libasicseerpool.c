@@ -1048,7 +1048,12 @@ int wait_read_select(int sockd, float timeout)
     event.events = EPOLLIN | EPOLLRDHUP;
     epoll_ctl(epfd, EPOLL_CTL_ADD, sockd, &event);
     timeout *= 1000;
-    ret = epoll_wait(epfd, &event, 1, timeout);
+    for(;;) {
+        ret = epoll_wait(epfd, &event, 1, timeout);
+        if (unlikely(ret == -1 && errno == EINTR))
+            continue;
+        break;
+    }
     close(epfd);
     return ret;
 }
@@ -1130,7 +1135,12 @@ int wait_write_select(int sockd, float timeout)
     event.events = EPOLLOUT | EPOLLRDHUP ;
     epoll_ctl(epfd, EPOLL_CTL_ADD, sockd, &event);
     timeout *= 1000;
-    ret = epoll_wait(epfd, &event, 1, timeout);
+    for(;;) {
+        ret = epoll_wait(epfd, &event, 1, timeout);
+        if (unlikely(ret == -1 && errno == EINTR))
+            continue;
+        break;
+    }
     close(epfd);
     return ret;
 }
@@ -1153,6 +1163,8 @@ int _write_length(int sockd, const void *buf, int len, const char *file, const c
     while (len) {
         ret = write(sockd, buf + ofs, len);
         if (unlikely(ret < 0)) {
+            if (errno == EINTR || errno == EAGAIN)
+                continue;
             ern = errno;
             LOGERR("Failed to write %d bytes in write_length (%d) from %s %s:%d",
                    len, ern, file, func, line);
@@ -1525,7 +1537,7 @@ size_t round_up_page(size_t len)
 
 
 /* Adequate size s==len*2 + 1 must be alloced to use this variant */
-void __bin2hex(void *vs, const void *vp, size_t len)
+size_t __bin2hex(void *vs, const void *vp, size_t len)
 {
     static const char hex[16] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
     const uchar *p = vp;
@@ -1537,6 +1549,7 @@ void __bin2hex(void *vs, const void *vp, size_t len)
         *s++ = hex[p[i] & 0xF];
     }
     *s++ = '\0';
+    return len * 2;
 }
 
 /* Returns a malloced array string of a binary value of arbitrary length. The

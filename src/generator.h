@@ -34,7 +34,7 @@ int generator_getbest(pool_t *ckp, char *hash, bool force);
 /// Returns 0 on failure.  (This always queries bitcoind.)
 int generator_checkaddr(pool_t *ckp, const char *addr, void *cscript_out);
 char *generator_get_txn(pool_t *ckp, const char *hash);
-bool generator_submitblock(pool_t *ckp, const char *buf);
+bool generator_submitblock(pool_t *ckp, const char *buf, const size_t len);
 void generator_preciousblock(pool_t *ckp, const char *hash);
 bool generator_get_blockhash(pool_t *ckp, int height, char *hash);
 void *generator(void *arg);

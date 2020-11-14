@@ -609,7 +609,7 @@ void *_ckzrealloc(void *old, size_t len, bool zeromem, const char *file, const c
 size_t round_up_page(size_t len);
 
 extern const int hex2bin_tbl[];
-void __bin2hex(void *vs, const void *vp, size_t len);
+size_t __bin2hex(void *vs, const void *vp, size_t len);
 void *bin2hex(const void *vp, size_t len);
 bool _validhex(const char *buf, const char *file, const char *func, const int line);
 #define validhex(buf) _validhex(buf, __FILE__, __func__, __LINE__)
