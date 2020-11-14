@@ -1,3 +1,5 @@
+AC_PREREQ([2.68])
+
 AC_INIT(asicseer-pool, 1.4.11, https://github.com/cculianu/asicseer-pool)
 
 AC_CANONICAL_SYSTEM
@@ -17,6 +19,7 @@ AM_MAINTAINER_MODE
 
 dnl Checks for programs
 AC_PROG_CC
+AC_PROG_CXX
 # gl_EARLY - maybe later
 AC_PROG_GCC_TRADITIONAL
 AM_PROG_CC_C_O
@@ -110,6 +113,7 @@ echo "Compilation............: make (or gmake)"
 echo "  YASM (Intel ASM).....: $YASM"
 echo "  CPPFLAGS.............: $CPPFLAGS"
 echo "  CFLAGS...............: $CFLAGS"
+echo "  CXXFLAGS.............: $CXXFLAGS"
 echo "  LDFLAGS..............: $LDFLAGS"
 echo "  LDADD................: $LIBS $JANSSON_LIBS"
 echo "  asicseer-db          : $asicseer_db"

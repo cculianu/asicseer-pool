@@ -1888,6 +1888,7 @@ int address_to_script(uchar *p2h, const char *addr, bool is_p2sh, const char *ca
     return p2pkh_address_to_script(p2h, addr, cashaddr_prefix);
 }
 
+#if 0 // the below is wrong.  We instead use the BCHN sources as a guide. See libasicseerpool_cxx.cpp
 /*  For encoding nHeight into coinbase, return how many bytes were used */
 int ser_cbheight(void *outp, int32_t val)
 {
@@ -1921,6 +1922,7 @@ int deser_cbheight(const void *inp)
     memcpy(&val, &s[1], len);
     return le32toh(val);
 }
+#endif
 
 int write_compact_size(void *dest, size_t nSize)
 {

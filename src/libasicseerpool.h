@@ -116,8 +116,8 @@ typedef struct timespec ts_t;
 __maybe_unused
 static inline void swap_256(void *dest_p, const void *src_p)
 {
-    uint32_t *dest = dest_p;
-    const uint32_t *src = src_p;
+    uint32_t *dest = (uint32_t *)dest_p;
+    const uint32_t *src = (uint32_t *)src_p;
 
     dest[0] = src[7];
     dest[1] = src[6];
@@ -132,8 +132,8 @@ static inline void swap_256(void *dest_p, const void *src_p)
 __maybe_unused
 static inline void bswap_256(void *dest_p, const void *src_p)
 {
-    uint32_t *dest = dest_p;
-    const uint32_t *src = src_p;
+    uint32_t *dest = (uint32_t *)dest_p;
+    const uint32_t *src = (uint32_t *)src_p;
 
     dest[0] = bswap_32(src[7]);
     dest[1] = bswap_32(src[6]);
@@ -148,8 +148,8 @@ static inline void bswap_256(void *dest_p, const void *src_p)
 __maybe_unused
 static inline void flip_32(void *dest_p, const void *src_p)
 {
-    uint32_t *dest = dest_p;
-    const uint32_t *src = src_p;
+    uint32_t *dest = (uint32_t *)dest_p;
+    const uint32_t *src = (uint32_t *)src_p;
     int i;
 
     for (i = 0; i < 8; i++)
@@ -159,8 +159,8 @@ static inline void flip_32(void *dest_p, const void *src_p)
 __maybe_unused
 static inline void flip_80(void *dest_p, const void *src_p)
 {
-    uint32_t *dest = dest_p;
-    const uint32_t *src = src_p;
+    uint32_t *dest = (uint32_t *)dest_p;
+    const uint32_t *src = (uint32_t *)src_p;
     int i;
 
     for (i = 0; i < 20; i++)
