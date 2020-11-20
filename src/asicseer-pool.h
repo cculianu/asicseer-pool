@@ -401,7 +401,7 @@ bool _ckmsgq_add(ckmsgq_t *ckmsgq, void *data, const char *file, const char *fun
 bool ckmsgq_empty(ckmsgq_t *ckmsgq);
 unix_msg_t *get_unix_msg(proc_instance_t *pi);
 
-pool_t *global_ckp;
+extern pool_t *global_ckp;
 
 bool ping_main(pool_t *ckp);
 void empty_buffer(connsock_t *cs);
