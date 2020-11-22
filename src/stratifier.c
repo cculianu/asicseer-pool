@@ -6707,8 +6707,8 @@ static json_t *parse_authorize(stratum_instance_t *client, const json_t *params_
             ret = sdata && sdata->single_payout_override_scriptlen > 0 && ckp->single_payout_override;
             if (ret) {
                 // New! allow invalid address in single payout mode
-                LOGINFO("Client %s %s worker %s has invalid bchaddress -- payouts for this worker will go to: %s",
-                        client->identity, client->address, buf, ckp->single_payout_override);
+                LOGINFO("Client %s %s worker %s has invalid bchaddress, allowing anyway (single_payout_override mode)",
+                        client->identity, client->address, buf);
             } else {
                 LOGINFO("Client %s %s worker %s has invalid bchaddress -- use \"single_payout_override\" in config to support this",
                         client->identity, client->address, buf);
