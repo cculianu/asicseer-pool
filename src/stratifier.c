@@ -6632,6 +6632,7 @@ static json_t *parse_authorize(stratum_instance_t *client, const json_t *params_
 {
     user_instance_t *user;
     pool_t *ckp = client->ckp;
+    sdata_t *sdata = (sdata_t *)ckp->sdata;
     const char *buf, *pass;
     bool ret = false;
     int arr_size;
@@ -6700,9 +6701,20 @@ static json_t *parse_authorize(stratum_instance_t *client, const json_t *params_
             goto out;
         }
     }
-    if (CKP_STANDALONE(ckp))
+    if (CKP_STANDALONE(ckp)) {
         ret = user->bchaddress;
-    else {
+        if (!ret) {
+            ret = sdata && sdata->single_payout_override_scriptlen > 0 && ckp->single_payout_override;
+            if (ret) {
+                // New! allow invalid address in single payout mode
+                LOGINFO("Client %s %s worker %s has invalid bchaddress -- payouts for this worker will go to: %s",
+                        client->identity, client->address, buf, ckp->single_payout_override);
+            } else {
+                LOGINFO("Client %s %s worker %s has invalid bchaddress -- use \"single_payout_override\" in config to support this",
+                        client->identity, client->address, buf);
+            }
+        }
+    } else {
         /* Preauth workers for the first 10 minutes after the user is
          * first authorized by asicseer-db to avoid floods of worker auths.
          * *errnum is implied zero already so ret will be set true */
