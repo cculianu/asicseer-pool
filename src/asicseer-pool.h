@@ -286,7 +286,8 @@ struct pool_instance {
     bool not_mainnet; // if true, we are not on main net but rather on test net or regtest net
 
     /* Coinbase data */
-    char *bchaddress; // Address to mine to. In SPLNS mode this is used as a fallback address ok worker address failure, etc, as well as the pool fee address.
+    char *bchaddress; // Address to mine to. In SPLNS mode this is used as a fallback address on worker address failure, etc, as well as the pool fee address.
+    char *single_payout_override; // Override all payouts to a single address.  This is for private pools that use T17s which crash when there are too may outputs in coinbase.
     // optional coinbase scriptsig text. If more than 1 is specified, one is randomly picked each time.
     struct {
         char *sig; // Optional signature to add to coinbase
@@ -300,6 +301,8 @@ struct pool_instance {
     } dev_donations[DONATION_NUM_ADDRESSES];  // [0] = calin, [1] = bchn -- see donation.h
 
     double pool_fee; // comes from "pool_fee" in config, as a percentage. Defaults to 1.0 if unspecified. SPLNS mode only.
+
+    bool disable_dev_donation; // comes from "disable_dev_donation" top level key. Defaults to false if unspecified.
 
     /* Stratum options */
     server_instance_t **servers;

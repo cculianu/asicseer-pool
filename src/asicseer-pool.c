@@ -1827,6 +1827,7 @@ static void parse_config(pool_t *ckp)
         quit(1, "\"btcsig\" key has been renamed to \"bchsig\". Please update your config file!");
     // /End obsolete key detection
     json_get_string(&ckp->bchaddress, json_conf, "bchaddress");
+    json_get_string(&ckp->single_payout_override, json_conf, "single_payout_override");
     // bchsig
     parse_bchsigs(ckp, json_object_get(json_conf, "bchsig"));
     // pool_fee
@@ -1898,6 +1899,8 @@ static void parse_config(pool_t *ckp)
     arr_val = json_object_get(json_conf, "redirecturl");
     if (arr_val)
         parse_redirecturls(ckp, arr_val);
+
+    json_get_bool(&ckp->disable_dev_donation, json_conf, "disable_dev_donation");
 
     json_decref(json_conf);
 }
@@ -2249,7 +2252,7 @@ int main(int argc, char **argv)
         ckp.dev_donations[1].address = (char *) DONATION_ADDRESS_BCHN;
     }
     if (!ckp.bchaddress)
-        ckp.bchaddress = ckp.dev_donations[0].address;
+        quit(0, "Please specify a bchaddress in the configuration file");
     if (!ckp.blockpoll)
         ckp.blockpoll = 100;
     if (!ckp.nonce1length)

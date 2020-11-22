@@ -486,6 +486,8 @@ struct stratifier_data {
 
     uint8_t scriptbin[GENERATOR_MAX_CSCRIPT_LEN]; // pool address redeem script (scriptPubkey)
     int scriptlen; // length of above scriptbin
+    uint8_t single_payout_override_scriptbin[GENERATOR_MAX_CSCRIPT_LEN];
+    int single_payout_override_scriptlen; // length of above script (usually 0 unless single_payout_override = "someaddress..." was in conf file top level)
     struct {
         uint8_t scriptbin[GENERATOR_MAX_CSCRIPT_LEN]; // donation address redeem script (scriptPubkey)
         int scriptlen; // if valid donation address, length of above, otherwise 0
@@ -740,6 +742,15 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, cb1_buffer_t 
     // add a timestamp for file writer
     json_set_int64(payout, "time", (int64_t)time(NULL));
 
+    if (sdata->single_payout_override_scriptlen > 0) {
+        // single payout override mode -- just add g64 (total) as a single output and skip the json generation
+        // and the per-user payouts altogether
+        amt_pos = _add_output(cb_buf, g64, sdata->single_payout_override_scriptbin, sdata->single_payout_override_scriptlen);
+        LOGDEBUG("Single payout override: entire reward of %"PRId64" will go to the override address", g64);
+        total = 0;
+        goto skip; // and bail to function exit.
+    }
+
     if (unlikely(total_herp <= 0.)) { // paranoia -- should always be false
         LOGWARNING("total_herp is %0.9f!", total_herp);
         goto skip;
@@ -849,7 +860,7 @@ static void add_coinbase_payouts(const pool_t *ckp, workbase_t *wb, cb1_buffer_t
 
     // Generation value
     g64 = wb->coinbasevalue; // generation (reward)
-    f64 = round(g64 * (ckp->pool_fee/100.0)); // pool fee gross (including dev donation)
+    f64 = ceil(g64 * (ckp->pool_fee/100.0)); // pool fee gross (including dev donation)
     pf64 = f64; // pool fee net (minus dev donation), starts off as f64 initially but may be decreased below
     df64 = 0; // total dev donations (10% of f64 * num_devs), 0 initially, may be increased below
     c64 = 0; // leftover change/dust, 0 initially, may increase below, or go below 0 if pool fee was credited back to pool discount users (see add_user_generation)
@@ -859,9 +870,11 @@ static void add_coinbase_payouts(const pool_t *ckp, workbase_t *wb, cb1_buffer_t
 
         // first, add pool fee, if any
         if (likely(f64 >= DUST_LIMIT_SATS && sdata->scriptlen)) {
-            df64 = DONATION_FRACTION > 0 ? (f64 / DONATION_FRACTION) * sdata->n_good_donation : 0;
-            uint64_t don_each = sdata->n_good_donation ? df64 / sdata->n_good_donation : 0;
-            if (unlikely(don_each < DUST_LIMIT_SATS || f64 - df64 < DUST_LIMIT_SATS)) {
+            df64 = DONATION_FRACTION > 0 && !ckp->disable_dev_donation
+                    ? (f64 / DONATION_FRACTION) * sdata->n_good_donation
+                    : 0;
+            uint64_t don_each = sdata->n_good_donation && !ckp->disable_dev_donation ? df64 / sdata->n_good_donation : 0;
+            if (don_each < DUST_LIMIT_SATS || f64 - df64 < DUST_LIMIT_SATS) {
                 // can't make the outputs -- one of them would end up below dust limit. Don't pay out devs here.
                 df64 = 0;
                 don_each = 0;
@@ -10104,15 +10117,29 @@ void *stratifier(void *arg)
             LOGEMERG("Fatal: bchaddress \"%s\" invalid according to bitcoind", ckp->bchaddress);
             goto out;
         }
-
-        for (int i = 0; i < DONATION_NUM_ADDRESSES; ++i) {
-            __typeof__(*ckp->dev_donations) *don = ckp->dev_donations + i;
-            __typeof__(*sdata->donation_data) *dd = sdata->donation_data + i;
-            dd->scriptlen = generator_checkaddr(ckp, don->address, dd->scriptbin);
-            if (dd->scriptlen) {
-                don->valid = true;
-                sdata->n_good_donation++;
+        if (ckp->single_payout_override) {
+            if (!(sdata->single_payout_override_scriptlen = generator_checkaddr(ckp, ckp->single_payout_override,
+                                                                                sdata->single_payout_override_scriptbin))) {
+                LOGEMERG("Fatal: single_payout_override \"%s\" invalid according to bitcoind", ckp->single_payout_override);
+                goto out;
             }
+        }
+
+        if (!ckp->disable_dev_donation) {
+            for (int i = 0; i < DONATION_NUM_ADDRESSES; ++i) {
+                __typeof__(*ckp->dev_donations) *don = ckp->dev_donations + i;
+                __typeof__(*sdata->donation_data) *dd = sdata->donation_data + i;
+                dd->scriptlen = generator_checkaddr(ckp, don->address, dd->scriptbin);
+                if (dd->scriptlen) {
+                    don->valid = true;
+                    sdata->n_good_donation++;
+                }
+            }
+        } else {
+            for (int i = 0; i < DONATION_NUM_ADDRESSES; ++i)
+                ckp->dev_donations[i].valid = false; // ensure cleared
+            sdata->n_good_donation = 0; // ensure cleared
+            LOGINFO("Dev donations disabled due to conf file setting \"disable_dev_donation\"");
         }
     }
 

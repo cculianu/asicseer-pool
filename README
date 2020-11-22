@@ -374,6 +374,9 @@ can be used for comments. The options recognised are as follows:
             }
         ]
 
+"disable_dev_donation":
+    Defaults false. If true, disable dev donations specified in donation.h.
+
 "fee_discounts":
     Offer discounts to specific users, keyed off their mining address. 1.0 =
     full fee discount, 0.0 = no fee discount. All users default to 0.0 (no
@@ -457,6 +460,17 @@ can be used for comments. The options recognised are as follows:
     and 3334 in proxy mode. Multiple entries can be specified as an array by
     either IP or resolvable domain name but the executable must be able to bind
     to all of them and ports up to 1024 usually require privileged access.
+
+"single_payout_override":
+    A string, which should be a valid BCH address. If this is specified the
+    coinbase tx generator will completely skip SPLNS payouts in coinbase and
+    will put all miner rewards into a single output which is to the specified
+    address. This option is offered as a work-around for T17 issues where
+    multiple SPLNS payouts crash Bitmain mining rigs, so we must simply pay
+    the mining reward to a signle address. Since SPLNS payouts directly to
+    users in coinbase are disabled when this is specified, the pool operator
+    is expected to settle debts privately with miners. This setting is an
+    advanced setting for a special case and is not normally recommended.
 
 "startdiff" :
     Starting diff that new clients are given. Default 42
