@@ -6849,12 +6849,22 @@ static void add_submit(pool_t *ckp, stratum_instance_t *client, double sdiff,
     bias = time_bias(bdiff, 300);
     tdiff = sane_tdiff(&now_t, &client->ldc);
 
+#if 0 // Original ck code
     /* Check the difficulty every 240 seconds or as many shares as we
      * should have had in that time, whichever comes first. */
     if (client->ssdc < 72 && tdiff < 240)
         return;
+#else
+    /* Check the difficulty every 30 seconds or as many shares as we
+     * should have had in that time, whichever comes first. */
+    static const double targetSpacing = 3.33333;
+    static const double checkEvery = 30;
+    const int nExpected = round(checkEvery/targetSpacing);
+    if (client->ssdc < nExpected && tdiff < checkEvery)
+        return;
+#endif
 
-    if (diff != client->diff) {
+    if (((int64_t)round(diff)) != client->diff) {
         client->ssdc = 0;
         return;
     }
