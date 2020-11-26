@@ -745,9 +745,11 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, cb1_buffer_t 
     if (sdata->single_payout_override_scriptlen > 0) {
         // single payout override mode -- just add g64 (total) as a single output and skip the json generation
         // and the per-user payouts altogether
-        amt_pos = _add_output(cb_buf, g64, sdata->single_payout_override_scriptbin, sdata->single_payout_override_scriptlen);
+        if (g64 >= DUST_LIMIT_SATS) {
+            amt_pos = _add_output(cb_buf, g64, sdata->single_payout_override_scriptbin, sdata->single_payout_override_scriptlen);
+            total = 0;
+        }
         LOGDEBUG("Single payout override: entire reward of %"PRId64" will go to the override address", g64);
-        total = 0;
         goto skip; // and bail to function exit.
     }
 
