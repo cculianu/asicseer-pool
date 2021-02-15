@@ -786,31 +786,35 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, cb1_buffer_t 
             json_set_double(postponed_entries, user->username, gen->herp);
             continue;
         }
+
+#define TEST_FILL_CB 0 /*PAYOUT_REWARDS*/ /* leave as 0 unless testing large CB payouts */
+#if TEST_FILL_CB > 1
+        if (total >= PAYOUT_DUST) {
+            // this is for testing large payout tx's.
+            int N = TEST_FILL_CB;
+            uint64_t per_out = total / TEST_FILL_CB, rem = total % TEST_FILL_CB;
+            json_set_double(payout_entries, user->username, total / (double)SATOSHIS); // fake it
+            total_fee_discounts = 0; // reset this since we will abort the loop
+            if (per_out < PAYOUT_DUST) {
+                per_out = total;
+                N = 1;
+                rem = 0;
+            }
+            for (int i = 0; i < N; ++i) {
+                const uint64_t rew = per_out + ( i+1 == N ? rem : 0 );
+                total -= rew;
+                amt_pos = _add_output(cb_buf, rew, user->scriptbin, user->scriptlen);
+                LOGDEBUG("User %s outp %d reward %"PRIu64, user->username, 1 + i + payouts, rew);
+            }
+            break; // exit loop. done faking payouts
+        }
+#else
         json_set_double(payout_entries, user->username, total_reward / (double)SATOSHIS);
         if (credit)
             LOGINFO("User %s reward %"PRIu64" + %"PRId64 " fee discount credit (%0.2f%% fee discount) = %1.8f total",
                     user->username, reward, credit, user->fee_discount * 100.0, total_reward / (double)SATOSHIS);
         else
             LOGINFO("User %s reward %1.8f", user->username, total_reward / (double)SATOSHIS);
-
-#define TEST_FILL_CB 0 /* leave as 0 unless testing large CB payouts */
-#if TEST_FILL_CB > 1
-        {
-            // this is for testing large payout tx's.
-            int N = TEST_FILL_CB;
-            uint64_t per_out = total_reward / TEST_FILL_CB, rem = total_reward % TEST_FILL_CB;
-            if (per_out < PAYOUT_DUST) {
-                per_out = total_reward;
-                N = 1;
-                rem = 0;
-            }
-            for (int i = 0; i < N; ++i) {
-                const uint64_t rew = per_out + ( i+1 == N ? rem : 0 );
-                amt_pos = _add_output(cb_buf, rew, user->scriptbin, user->scriptlen);
-                LOGDEBUG("User %s outp %d reward %"PRIu64, user->username, 1 + i + payouts, rew);
-            }
-        }
-#else
         /* Add the user's coinbase reward, using the cached cscript */
         amt_pos = _add_output(cb_buf, total_reward, user->scriptbin, user->scriptlen);
 #endif
