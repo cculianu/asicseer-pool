@@ -1930,6 +1930,17 @@ static void parse_config(pool_t *ckp)
 
     json_get_bool(&ckp->disable_dev_donation, json_conf, "disable_dev_donation");
 
+    {
+        // parse blocking_timeout
+        int64_t blocking_timeout = 0;
+        if (!json_get_int64(&blocking_timeout, json_conf, "blocking_timeout") || blocking_timeout < 1)
+            blocking_timeout = 60; // default: 60 seconds
+        ckp->blocking_timeout = (time_t)blocking_timeout;
+        LOGDEBUG("blocking_timeout: %" PRId64 " seconds", (int64_t)ckp->blocking_timeout);
+        if (ckp->blocking_timeout < 10)
+            LOGWARNING("blocking_timeout of %" PRId64 " seconds is very low!", (int64_t)ckp->blocking_timeout);
+    }
+
     json_decref(json_conf);
 }
 

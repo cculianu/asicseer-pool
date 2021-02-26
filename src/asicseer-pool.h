@@ -304,6 +304,8 @@ struct pool_instance {
 
     bool disable_dev_donation; // comes from "disable_dev_donation" top level key. Defaults to false if unspecified.
 
+    time_t blocking_timeout; // defaults to 60 seconds, can be set as a top-level option "blocking_timeout" : NN
+
     /* Stratum options */
     server_instance_t **servers;
     char **serverurl; // Array of URLs to bind our server/proxy to

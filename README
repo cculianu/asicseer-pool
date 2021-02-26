@@ -324,6 +324,13 @@ can be used for comments. The options recognised are as follows:
             "/This is another sig/"
         ]
 
+"blocking_timeout" :
+    The number of seconds to wait for a client that stopped responding to our
+    packets (on the TCP level) before considering them out-to-lunch, and closing
+    the connection.  Defaults to 60 seconds.  Do not set this below 10.  If you
+    wish to disable idle protection of clients, set this to a high value
+    e.g. 999999999.
+
 "blockpoll" :
     The frequency in milliseconds for how often to check for new network blocks
     (default: 100). This is intended to be a backup only for when the notifier
