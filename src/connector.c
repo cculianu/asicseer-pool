@@ -776,14 +776,17 @@ static bool send_sender_send(pool_t *ckp, cdata_t *cdata, sender_send_t *sender_
 
         if (ret < 1) {
             if (errno == EAGAIN || errno == EWOULDBLOCK || !ret) {
-                if (!client->blocked_time)
+                if (!client->blocked_time) {
                     client->blocked_time = now_t;
-                else if (unlikely(/*client->blocked_time &&*/ now_t - client->blocked_time >= ckp->blocking_timeout)) {
+                } else { // ... client->blocked_time != 0 ...
                     /* Invalidate clients that block for more than blocking_timeout seconds (default: 60) */
-                    LOGNOTICE("Client id %"PRId64" fd %d blocked for >%"PRId64" seconds, disconnecting",
-                          client->id, client->fd, (int64_t)ckp->blocking_timeout);
-                    invalidate_client(ckp, cdata, client);
-                    goto out_true;
+                    const time_t blocking_timeout = ckp->blocking_timeout > 0 ? ckp->blocking_timeout : 60;
+                    if (unlikely(now_t - client->blocked_time >= blocking_timeout)) {
+                        LOGNOTICE("Client id %"PRId64" fd %d blocked for >%"PRId64" seconds, disconnecting",
+                                  client->id, client->fd, (int64_t)blocking_timeout);
+                        invalidate_client(ckp, cdata, client);
+                        goto out_true;
+                    }
                 }
                 return false;
             }
