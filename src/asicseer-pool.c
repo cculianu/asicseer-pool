@@ -2290,8 +2290,15 @@ int main(int argc, char **argv)
         ckp.dev_donations[0].address = (char *) DONATION_ADDRESS_CALIN;
         ckp.dev_donations[1].address = (char *) DONATION_ADDRESS_BCHN;
     }
-    if (!ckp.bchaddress)
-        quit(0, "Please specify a bchaddress in the configuration file");
+    if (!ckp.bchaddress) {
+        if (!ckp.proxy)
+            // non-proxy: we require a valid bchaddress, so give up if no address is specified
+            quit(0, "Please specify a bchaddress in the configuration file");
+        else
+            // in proxy mode we don't do any gbt so we don't equire a valid bchaddress; just fill in anything, such
+            // as first dev donation, in order to not have this pointer be NULL
+            ckp.bchaddress = ckp.dev_donations[0].address;
+    }
     if (!ckp.blockpoll)
         ckp.blockpoll = 100;
     if (!ckp.nonce1length)
