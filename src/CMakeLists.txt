@@ -22,28 +22,27 @@ set(EXTRA_OBJS "")
 option(USE_AVX2 "Use avx2 assembly instructions for sha256" ON)
 option(USE_AVX1 "Use avx1 assembly instructions for sha256" OFF)
 option(USE_SSE4 "Use sse4 assembly instructions for sha256" OFF)
-find_program(YASM_EXE NAMES yasm)
-if(USE_AVX2)
-    set(CMAKE_INCLUDE_CURRENT_DIR ON)
-    add_custom_command(OUTPUT sha256_avx2_rorx2.o
-        COMMAND ${YASM_EXE}
-        ARGS -f x64 -f elf64 -X gnu -g dwarf2 -D LINUX -o sha256_avx2_rorx2.o "${CMAKE_CURRENT_SOURCE_DIR}/sha256_code_release/sha256_avx2_rorx2.asm")
-    set(EXTRA_OBJS ${EXTRA_OBJS} sha256_avx2_rorx2.o)
-elseif(USE_AVX1)
-    set(CMAKE_INCLUDE_CURRENT_DIR ON)
-    add_custom_command(OUTPUT sha256_avx1.o
-        COMMAND ${YASM_EXE}
-        ARGS -f x64 -f elf64 -X gnu -g dwarf2 -D LINUX -o sha256_avx1.o "${CMAKE_CURRENT_SOURCE_DIR}/sha256_code_release/sha256_avx1.asm")
-    set(EXTRA_OBJS ${EXTRA_OBJS} sha256_avx1.o)
-elseif(USE_SSE4)
-    set(CMAKE_INCLUDE_CURRENT_DIR ON)
-    add_custom_command(OUTPUT sha256_sse4.o
-        COMMAND ${YASM_EXE}
-        ARGS -f x64 -f elf64 -X gnu -g dwarf2 -D LINUX -o sha256_sse4.o "${CMAKE_CURRENT_SOURCE_DIR}/sha256_code_release/sha256_sse4.asm")
-    set(EXTRA_OBJS ${EXTRA_OBJS} sha256_sse4.o)
-endif()
+function(add_yasm_custom_command VAR BASENAME)
+    set(VAR_VAL "${${VAR}}")
+    if(VAR_VAL)
+        find_program(YASM_EXE NAMES yasm)
+        if (YASM_EXE STREQUAL "YASM_EXE-NOTFOUND")
+            message(FATAL_ERROR "The `yasm` executable was not found. Try installing it or re-run cmake with -D${VAR}=OFF")
+        endif()
+        set(CMAKE_INCLUDE_CURRENT_DIR ON)
+        # TODO: Support non-Linux here such as macOS, etc.
+        add_custom_command(OUTPUT "${BASENAME}.o"
+            COMMAND ${YASM_EXE}
+            ARGS -f x64 -f elf64 -X gnu -g dwarf2 -D LINUX -o ${BASENAME}.o "${CMAKE_CURRENT_SOURCE_DIR}/sha256_code_release/${BASENAME}.asm")
+        set(EXTRA_OBJS ${EXTRA_OBJS} ${BASENAME}.o PARENT_SCOPE)
+    endif()
+endfunction()
+add_yasm_custom_command("USE_AVX2" "sha256_avx2_rorx2")
+add_yasm_custom_command("USE_AVX1" "sha256_avx1")
+add_yasm_custom_command("USE_SSE4" "sha256_sse4")
 
-add_library(asicseerpool libasicseerpool.c libasicseerpool_cxx.cpp libasicseerpool.h sha2.c sha2.h cashaddr.c cashaddr.h ${EXTRA_OBJS})
+add_library(asicseerpool libasicseerpool.c libasicseerpool_cxx.cpp libasicseerpool.h sha2.c sha2.h cashaddr.c cashaddr.h
+                         ${EXTRA_OBJS})
 
 add_executable(asicseer-pool asicseer-pool.c asicseer-pool.h generator.c generator.h bitcoin.c bitcoin.h
                              stratifier.c stratifier.h connector.c connector.h uthash.h utlist.h donation.h empty.cpp)
