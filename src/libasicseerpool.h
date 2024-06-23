@@ -650,7 +650,7 @@ void ts_monotonic(ts_t *ts);
 int64_t time_micros(void);
 
 void cksleep_prepare_r(ts_t *ts);
-void nanosleep_abstime(ts_t *ts_end);
+void nanosleep_abstime(const ts_t *ts_end);
 void timeraddspec(ts_t *a, const ts_t *b);
 void cksleep_ms_r(ts_t *ts_start, int ms);
 void cksleep_us_r(ts_t *ts_start, int64_t us);
@@ -675,6 +675,18 @@ void gen_hash(const uchar *data, uchar *hash, int len);
 /// returns a number in the range [0, range)
 int random_threadsafe(int range);
 
+/* epoll()/kevent() abstraction layer */
+struct AbstractEvent {
+    int fd;
+    uint64_t userdata;
+    bool in, out, hup, rdhup, err;
+    int64_t data;
+};
+typedef struct AbstractEvent aevt_t;
+
+int epfd_create(void); //< crate a new epfd .. close it using close()
+int epfd_add(int epfd, int fd, uint64_t userdata, bool forRead, bool oneShot, bool edgeTriggered);
+int epfd_wait(int epfd, aevt_t *event, int timeout_msec);
 #ifdef  __cplusplus
 }
 #endif

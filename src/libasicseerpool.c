@@ -18,9 +18,7 @@
 #else
 #include <sys/un.h>
 #endif
-#include <sys/epoll.h>
 #include <sys/file.h>
-#include <sys/prctl.h>
 #include <sys/stat.h>
 #include <netdb.h>
 #include <unistd.h>
@@ -66,15 +64,6 @@ void __attribute__((weak)) logmsg(int __maybe_unused loglevel, const char *fmt, 
 const char *package_version(void)
 {
     return PACKAGE_VERSION;
-}
-
-void rename_proc(const char *name)
-{
-    char buf[16];
-
-    snprintf(buf, 15, "asp@%s", name);
-    buf[15] = '\0';
-    prctl(PR_SET_NAME, buf, 0, 0, 0);
 }
 
 void create_pthread(pthread_t *thread, void *(*start_routine)(void *), void *arg)
@@ -669,11 +658,15 @@ void keep_sockalive(int fd)
     const int tcp_one = 1;
     const int tcp_keepidle = 45;
     const int tcp_keepintvl = 30;
-
+#ifndef SOL_TCP
+    const int SOL_TCP = 6; /* IANA protocol number */
+#endif
     setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (const void *)&tcp_one, sizeof(tcp_one));
     setsockopt(fd, SOL_TCP, TCP_NODELAY, (const void *)&tcp_one, sizeof(tcp_one));
     setsockopt(fd, SOL_TCP, TCP_KEEPCNT, &tcp_one, sizeof(tcp_one));
+#ifdef TCP_KEEPIDLE
     setsockopt(fd, SOL_TCP, TCP_KEEPIDLE, &tcp_keepidle, sizeof(tcp_keepidle));
+#endif
     setsockopt(fd, SOL_TCP, TCP_KEEPINTVL, &tcp_keepintvl, sizeof(tcp_keepintvl));
 }
 
@@ -709,7 +702,7 @@ void _close(int *fd, const char *file, const char *func, const int line)
     *fd = -1;
     if (unlikely(close(sockd))) {
         LOGWARNING("Close of fd %d failed with errno %d:%s from %s %s:%d",
-               sockd, errno, strerror(errno), file, func, line);
+                   sockd, errno, strerror(errno), file, func, line);
     }
 }
 
@@ -1020,44 +1013,6 @@ out:
     return sockd;
 }
 
-/* Wait till a socket has been closed at the other end */
-int wait_close(int sockd, int timeout)
-{
-    struct pollfd sfd;
-    int ret;
-
-    if (unlikely(sockd < 0))
-        return -1;
-    sfd.fd = sockd;
-    sfd.events = POLLRDHUP;
-    sfd.revents = 0;
-    timeout *= 1000;
-    ret = poll(&sfd, 1, timeout);
-    if (ret < 1)
-        return 0;
-    return sfd.revents & (POLLHUP | POLLRDHUP | POLLERR);
-}
-
-/* Emulate a select read wait for high fds that select doesn't support. */
-int wait_read_select(int sockd, float timeout)
-{
-    struct epoll_event event = {0, {NULL}};
-    int epfd, ret;
-
-    epfd = epoll_create1(EPOLL_CLOEXEC);
-    event.events = EPOLLIN | EPOLLRDHUP;
-    epoll_ctl(epfd, EPOLL_CTL_ADD, sockd, &event);
-    timeout *= 1000;
-    for(;;) {
-        ret = epoll_wait(epfd, &event, 1, timeout);
-        if (unlikely(ret == -1 && errno == EINTR))
-            continue;
-        break;
-    }
-    close(epfd);
-    return ret;
-}
-
 int read_length(int sockd, void *buf, int len)
 {
     int ret, ofs = 0;
@@ -1123,26 +1078,6 @@ out:
     if (unlikely(!buf))
         LOGERR("Failure in recv_unix_msg from %s %s:%d", file, func, line);
     return buf;
-}
-
-/* Emulate a select write wait for high fds that select doesn't support */
-int wait_write_select(int sockd, float timeout)
-{
-    struct epoll_event event = {0, {NULL}};
-    int epfd, ret;
-
-    epfd = epoll_create1(EPOLL_CLOEXEC);
-    event.events = EPOLLOUT | EPOLLRDHUP ;
-    epoll_ctl(epfd, EPOLL_CTL_ADD, sockd, &event);
-    timeout *= 1000;
-    for(;;) {
-        ret = epoll_wait(epfd, &event, 1, timeout);
-        if (unlikely(ret == -1 && errno == EINTR))
-            continue;
-        break;
-    }
-    close(epfd);
-    return ret;
 }
 
 int _write_length(int sockd, const void *buf, int len, const char *file, const char *func, const int line)
@@ -2071,11 +2006,6 @@ void cksleep_prepare_r(ts_t *ts)
     clock_gettime(CLOCK_MONOTONIC, ts);
 }
 
-void nanosleep_abstime(ts_t *ts_end)
-{
-    clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, ts_end, NULL);
-}
-
 void timeraddspec(ts_t *a, const ts_t *b)
 {
     a->tv_sec += b->tv_sec;
@@ -2349,30 +2279,4 @@ void gen_hash(const uchar *data, uchar *hash, int len)
 
     sha256(data, len, hash1);
     sha256(hash1, 32, hash);
-}
-
-int random_threadsafe(int range)
-{
-    static pthread_mutex_t mut = PTHREAD_MUTEX_INITIALIZER;
-    static struct random_data buf = {};
-    static char state[256] = {};
-    static bool initted = false;
-
-    if (range <= 1)
-        return 0;
-    assert(range <= RAND_MAX);
-
-    pthread_mutex_lock(&mut);
-    if (!initted) {
-        if (initstate_r((unsigned int)(time_micros() % 1000000LL), state, sizeof(state), &buf)) {
-            quit(1, "Got error result from initstate_r with errno %d", errno);
-        }
-        initted = true;
-    }
-    int32_t result = 0;
-    if (random_r(&buf, &result)) {
-        quit(1, "Got error result from random_r with errno %d", errno);
-    }
-    pthread_mutex_unlock(&mut);
-    return result % range;
 }

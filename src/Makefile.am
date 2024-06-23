@@ -20,7 +20,7 @@ endif
 	yasm -f x64 -f elf64 -X gnu -g dwarf2 -D LINUX -o $@ $<
 
 noinst_LIBRARIES = libasicseerpool.a
-libasicseerpool_a_SOURCES = libasicseerpool.c libasicseerpool_cxx.cpp libasicseerpool.h sha2.c sha2.h cashaddr.c cashaddr.h
+libasicseerpool_a_SOURCES = libasicseerpool.c libasicseerpool_cxx.cpp libasicseerpool.h sha2.c sha2.h cashaddr.c cashaddr.h platform_specific.cpp
 libasicseerpool_a_LIBADD = $(native_objs)
 
 bin_PROGRAMS = asicseer-pool asicseer-pmsg notifier summariser

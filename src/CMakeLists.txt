@@ -42,6 +42,7 @@ add_yasm_custom_command("USE_AVX1" "sha256_avx1")
 add_yasm_custom_command("USE_SSE4" "sha256_sse4")
 
 add_library(asicseerpool libasicseerpool.c libasicseerpool_cxx.cpp libasicseerpool.h sha2.c sha2.h cashaddr.c cashaddr.h
+                         platform_specific.cpp
                          ${EXTRA_OBJS})
 
 add_executable(asicseer-pool asicseer-pool.c asicseer-pool.h generator.c generator.h bitcoin.c bitcoin.h
@@ -111,9 +112,11 @@ check_include_files("netinet/in.h" HAVE_NETINET_IN_H)
 check_include_files("netinet/tcp.h" HAVE_NETINET_TCP_H)
 check_include_files("openssl/hmac.h" HAVE_OPENSSL_HMAC_H)
 check_include_files("openssl/x509.h" HAVE_OPENSSL_X509_H)
+check_include_files("poll.h" HAVE_POLL_H)
 check_include_files("postgresql/libpq-fe.h" HAVE_POSTGRESQL_LIBPQ_FE_H)
 check_include_files("sys/endian.h" HAVE_SYS_ENDIAN_H)
 check_include_files("sys/epoll.h" HAVE_SYS_EPOLL_H)
+check_include_files("sys/event.h" HAVE_SYS_EVENT_H)
 check_include_files("sys/ioctl.h" HAVE_SYS_IOCTL_H)
 check_include_files("sys/poll.h" HAVE_SYS_POLL_H)
 check_include_files("sys/prctl.h" HAVE_SYS_PRCTL_H)
@@ -132,6 +135,21 @@ check_c_source_compiles("#include <sys/types.h>
 if(NOT HAVE_size_t)
 set(size_t "unsigned int")
 endif()
+check_c_source_compiles("#include <stdlib.h>
+    int main(void)
+    {
+        unsigned r;
+        r = arc4random();
+        r = arc4random_uniform(10);
+        return 0;
+    }" HAVE_ARC4RANDOM)
+check_c_source_compiles("#include <time.h>
+    int main(void)
+    {
+        struct timespec ts_end = {0, 0};
+        clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts_end, 0);
+        return 0;
+    }" HAVE_CLOCK_NANOSLEEP)
 # Generate the config
 configure_file(config.h.cmake.in config.h ESCAPE_QUOTES)
 unset(size_t)
