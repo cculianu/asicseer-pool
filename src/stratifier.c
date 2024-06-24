@@ -2659,10 +2659,19 @@ static bool local_block_submit(pool_t *ckp, char *gbt_block, const size_t gbt_bl
     /* Check failures that may be inconclusive but were submitted via other
      * means or accepted due to precious block call. */
     if (!ret) {
+        /* If the block is accepted locally, it means we may have
+         * displaced a known block, and are now working on this fork.
+         * This makes the most sense since if we solve the next block,
+         * it validates this one as the best chain, orphaning the other
+         * block. In the case of mainnet, it means we have found a stale
+         * block and are trying to force ours ahead of the other. In
+         * a low diff environment we may have successive blocks, and
+         * this will be the last one solved locally. Trying to optimise
+         * regtest/testnet will optimise against the mainnet case. */
         if (generator_get_blockhash(ckp, height, heighthash)) {
             ret = !strncmp(rhash, heighthash, 64);
-            LOGWARNING("Hash for block height %d confirms block was %s",
-                   height, ret ? "ACCEPTED" : "REJECTED");
+            LOGWARNING("Hash for forced possibly stale block, height %d confirms block was %s",
+                       height, ret ? "ACCEPTED" : "REJECTED");
         }
     }
     return ret;
