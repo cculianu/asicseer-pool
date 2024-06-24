@@ -147,6 +147,25 @@
 /* Define to 1 if you have the <unistd.h> header file. */
 #cmakedefine HAVE_UNISTD_H 1
 
+/* Define to 1 if you have the function pthread_mutex_timedlock(). */
+#cmakedefine HAVE_PTHREAD_MUTEX_TIMEDLOCK 1
+
+/* Define to 1 if you have the function pthread_rwlock_timedwrlock(). */
+#cmakedefine HAVE_PTHREAD_RWLOCK_TIMEDWRLOCK 1
+
+/* Define to 1 if you have the function pthread_rwlock_timedrdlock(). */
+#cmakedefine HAVE_PTHREAD_RWLOCK_TIMEDRDLOCK 1
+
+/* Define to 1 if on a big endian platform */
+#cmakedefine WORDS_BIGENDIAN 1
+
+/* Define to 1 if on a little endian platform */
+#cmakedefine WORDS_LITTLEENDIAN 1
+
+#if (WORDS_BIGENDIAN && WORDS_LITTLEENDIAN) || (!WORDS_BIGENDIAN && !WORDS_LITTLEENDIAN)
+#error "Must define at exactly one of: WORDS_BIGENDIAN or WORDS_LITTLEENDIAN"
+#endif
+
 /* Name of package */
 #define PACKAGE "${APP_NAME}"
 

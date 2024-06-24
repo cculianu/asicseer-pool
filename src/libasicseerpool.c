@@ -118,7 +118,7 @@ int _cond_timedwait(pthread_cond_t *cond, mutex_t *lock, const struct timespec *
     return ret;
 }
 
-
+#if HAVE_PTHREAD_MUTEX_TIMEDLOCK
 int _mutex_timedlock(mutex_t *lock, int timeout, const char *file, const char *func, const int line)
 {
     tv_t now;
@@ -138,15 +138,23 @@ int _mutex_timedlock(mutex_t *lock, int timeout, const char *file, const char *f
 
     return ret;
 }
+#endif
 
-/* Make every locking attempt warn if we're unable to get the lock for more
- * than 10 seconds and fail if we can't get it for longer than a minute. */
+/* On platforms that have pthread_mutex_timedlock:
+ *   Make every locking attempt warn if we're unable to get the lock for more
+ *   than 10 seconds and fail if we can't get it for longer than a minute.
+ * On other platforms: Just lock the mutex and quit app if error.
+ */
 void _mutex_lock(mutex_t *lock, const char *file, const char *func, const int line)
 {
     int ret, retries = 0;
 
 retry:
+#if HAVE_PTHREAD_MUTEX_TIMEDLOCK
     ret = _mutex_timedlock(lock, 10, file, func, line);
+#else
+    ret = pthread_mutex_lock(&lock->mutex);
+#endif
     if (unlikely(ret)) {
         if (likely(ret == ETIMEDOUT)) {
             LOGERR("WARNING: Prolonged mutex lock contention from %s %s:%d, held by %s %s:%d",
@@ -185,6 +193,7 @@ void mutex_destroy(mutex_t *lock)
 }
 
 
+#if HAVE_PTHREAD_RWLOCK_TIMEDWRLOCK
 static int wr_timedlock(pthread_rwlock_t *lock, int timeout)
 {
     tv_t now;
@@ -199,13 +208,18 @@ static int wr_timedlock(pthread_rwlock_t *lock, int timeout)
 
     return ret;
 }
+#endif
 
 void _wr_lock(rwlock_t *lock, const char *file, const char *func, const int line)
 {
     int ret, retries = 0;
 
 retry:
+#if HAVE_PTHREAD_RWLOCK_TIMEDWRLOCK
     ret = wr_timedlock(&lock->rwlock, 10);
+#else
+    ret = pthread_rwlock_wrlock(&lock->rwlock);
+#endif
     if (unlikely(ret)) {
         if (likely(ret == ETIMEDOUT)) {
             LOGERR("WARNING: Prolonged write lock contention from %s %s:%d, held by %s %s:%d",
@@ -233,6 +247,7 @@ int _wr_trylock(rwlock_t *lock, __maybe_unused const char *file, __maybe_unused 
     return ret;
 }
 
+#if HAVE_PTHREAD_RWLOCK_TIMEDRDLOCK
 static int rd_timedlock(pthread_rwlock_t *lock, int timeout)
 {
     tv_t now;
@@ -247,13 +262,18 @@ static int rd_timedlock(pthread_rwlock_t *lock, int timeout)
 
     return ret;
 }
+#endif
 
 void _rd_lock(rwlock_t *lock, const char *file, const char *func, const int line)
 {
     int ret, retries = 0;
 
 retry:
+#if HAVE_PTHREAD_RWLOCK_TIMEDRDLOCK
     ret = rd_timedlock(&lock->rwlock, 10);
+#else
+    ret = pthread_rwlock_rdlock(&lock->rwlock);
+#endif
     if (unlikely(ret)) {
         if (likely(ret == ETIMEDOUT)) {
             LOGERR("WARNING: Prolonged read lock contention from %s %s:%d, held by %s %s:%d",
@@ -362,7 +382,7 @@ void _cksem_init(sem_t *sem, const char *file, const char *func, const int line)
 {
     int ret;
     if ((ret = sem_init(sem, 0, 0)))
-        quitfrom(1, file, func, line, "Failed to sem_init ret=%d errno=%d", ret, errno);
+        quitfrom(1, file, func, line, "Failed to sem_init ret=%d errno=%d (%s)", ret, errno, strerror(errno));
 }
 
 void _cksem_post(sem_t *sem, const char *file, const char *func, const int line)

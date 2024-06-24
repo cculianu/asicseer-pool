@@ -133,7 +133,9 @@ static inline void flip_80(void *dest_p, const void *src_p)
 
 #define cond_wait(_cond, _lock) _cond_wait(_cond, _lock, __FILE__, __func__, __LINE__)
 #define cond_timedwait(_cond, _lock, _abstime) _cond_timedwait(_cond, _lock, _abstime, __FILE__, __func__, __LINE__)
+#if HAVE_PTHREAD_MUTEX_TIMEDLOCK
 #define mutex_timedlock(_lock, _timeout) _mutex_timedlock(_lock, _timeout, __FILE__, __func__, __LINE__)
+#endif
 #define mutex_lock(_lock) _mutex_lock(_lock, __FILE__, __func__, __LINE__)
 #define mutex_unlock_noyield(_lock) _mutex_unlock_noyield(_lock, __FILE__, __func__, __LINE__)
 #define mutex_unlock(_lock) _mutex_unlock(_lock, __FILE__, __func__, __LINE__)
@@ -440,7 +442,9 @@ void join_pthread(pthread_t thread);
 
 int _cond_wait(pthread_cond_t *cond, mutex_t *lock, const char *file, const char *func, const int line);
 int _cond_timedwait(pthread_cond_t *cond, mutex_t *lock, const struct timespec *abstime, const char *file, const char *func, const int line);
+#if HAVE_PTHREAD_MUTEX_TIMEDLOCK
 int _mutex_timedlock(mutex_t *lock, int timeout, const char *file, const char *func, const int line);
+#endif
 void _mutex_lock(mutex_t *lock, const char *file, const char *func, const int line);
 void _mutex_unlock_noyield(mutex_t *lock, const char *file, const char *func, const int line);
 void _mutex_unlock(mutex_t *lock, const char *file, const char *func, const int line);

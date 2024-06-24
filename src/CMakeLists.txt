@@ -139,7 +139,36 @@ check_cxx_source_compiles("#include <cstdint>
         return (val * val) / (42 * 42) - 1;
     }
 " HAVE_INT128)
+check_c_source_compiles("#include <pthread.h>
+    int main(void) {
+        pthread_mutex_timedlock((pthread_mutex_t *)0, (struct timespec *)0);
+        return 0;
+    }" HAVE_PTHREAD_MUTEX_TIMEDLOCK)
+check_c_source_compiles("#include <pthread.h>
+    int main(void) {
+        pthread_rwlock_timedwrlock((pthread_rwlock_t *)0, (struct timespec *)0);
+        return 0;
+    }" HAVE_PTHREAD_RWLOCK_TIMEDWRLOCK)
+check_c_source_compiles("#include <pthread.h>
+    int main(void) {
+        pthread_rwlock_timedrdlock((pthread_rwlock_t *)0, (struct timespec *)0);
+        return 0;
+    }" HAVE_PTHREAD_RWLOCK_TIMEDRDLOCK)
 # Endianness
+check_cxx_source_compiles("int main(void) { return 0; }
+#   ifndef __BYTE_ORDER__
+#       include <bit>
+        static_assert(std::endian::native == std::endian::big);
+#   else
+        static_assert(__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__);
+#   endif" WORDS_BIGENDIAN)
+check_cxx_source_compiles("int main(void) { return 0; }
+#   ifndef __BYTE_ORDER__
+#       include <bit>
+        static_assert(std::endian::native == std::endian::little);
+#   else
+        static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__);
+#   endif" WORDS_LITTLEENDIAN)
 if(HAVE_ENDIAN_H)
         set(ENDIAN_FILE "endian.h")
 elseif(HAVE_SYS_ENDIAN_H)

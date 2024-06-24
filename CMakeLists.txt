@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.8)
 
 project(asicseer-pool
         LANGUAGES C CXX
@@ -10,8 +10,10 @@ project(asicseer-pool
 set(PACKAGE_NAME "ASICseer Pool")
 
 set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+cmake_policy(SET CMP0067 NEW)  # Require try_compile() and friends to use proper language standard when testing.
 
 # If ccache is available, then use it.
 find_program(CCACHE ccache)

@@ -18,6 +18,10 @@
 
 #include "compat_endian.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 static inline uint16_t ReadLE16(const uint8_t *ptr) {
     uint16_t x;
     STD_NS memcpy(&x, ptr, 2);
@@ -83,7 +87,7 @@ static inline void WriteBE64(uint8_t *ptr, uint64_t x) {
  * Return the smallest number n such that (x >> n) == 0 (or 64 if the highest
  * bit in x is set.
  */
-uint64_t static inline CountBits(uint64_t x) {
+static inline uint64_t CountBits(uint64_t x) {
 #ifdef HAVE_DECL___BUILTIN_CLZL
     if (sizeof(unsigned long) >= sizeof(uint64_t)) {
         return x ? 8 * sizeof(unsigned long) - __builtin_clzl(x) : 0;
@@ -102,4 +106,7 @@ uint64_t static inline CountBits(uint64_t x) {
     return ret;
 }
 
+#ifdef __cplusplus
+}
+#endif
 #undef STD_NS
