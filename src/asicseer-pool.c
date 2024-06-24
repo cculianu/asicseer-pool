@@ -1293,14 +1293,6 @@ static void clean_up(pool_t *ckp)
     dealloc(ckp->socket_dir);
 }
 
-static void cancel_pthread(pthread_t *pth)
-{
-    if (!pth || !*pth)
-        return;
-    pthread_cancel(*pth);
-    pth = NULL;
-}
-
 static pthread_t quitter_thread;
 static int quit_signal = 0;  // sighandler uses this to communicate to quitter_thread_func the signal that was actually received
 
@@ -1326,7 +1318,7 @@ static void *quitter_thread_func(void *arg)
     signal(quit_signal, SIG_IGN);
     signal(SIGTERM, SIG_IGN);
     LOGWARNING("\n-- Process %s received signal %d, shutting down", ckp->name, quit_signal);
-    cancel_pthread(&ckp->pth_listener);
+    pthread_cancel(ckp->pth_listener);
     usleep(250000); // wait for printing, cancel to take effect
     exit(0);
     return NULL; // not reached

@@ -459,6 +459,8 @@ enum DatumID {
 };
 typedef enum DatumID DatumID;
 
+#define LastSwapHashSz 68
+
 struct stratifier_data {
     pool_t *ckp;
 
@@ -514,8 +516,8 @@ struct stratifier_data {
     int session_id;
 
     mutex_t last_hash_lock; ///< guards lasthash, lastswaphash, lasthashbin, and lastswaphashbin
-    char lasthash[68];
-    char lastswaphash[68];
+    char lasthash[LastSwapHashSz /* 68 */];
+    char lastswaphash[LastSwapHashSz /* 68 */];
     uint8_t lasthashbin[32], lastswaphashbin[32];
 
     ckmsgq_t *updateq;	// Generator base work updates
@@ -1955,6 +1957,15 @@ static time_t _sdata_get_update_time_safe(sdata_t *sdata, time_t *last_newblock_
     return update_time;
 }
 
+static void get_lastswaphash_threadsafe(sdata_t *sdata, char outbuf[LastSwapHashSz])
+{
+    memset(outbuf, 0, LastSwapHashSz);
+    mutex_lock(&sdata->last_hash_lock);
+    strncpy(outbuf, sdata->lastswaphash, LastSwapHashSz);
+    mutex_unlock(&sdata->last_hash_lock);
+    outbuf[LastSwapHashSz - 1] = 0;
+}
+
 /* This function assumes it will only receive a valid json gbt base template
  * since checking should have been done earlier, and creates the base template
  * for generating work templates. This is a ckmsgq so all uses of this function
@@ -2008,11 +2019,8 @@ retry:
     LOGINFO("Broadcast updated stratum base");
 
     if (new_block) {
-#define DECLARE_GET_LASTSWAPHASH_THREADSAFE(varname, sdata) \
-        mutex_lock(&sdata->last_hash_lock); \
-        const char * const varname = strdupa(sdata->lastswaphash ? sdata->lastswaphash : ""); \
-        mutex_unlock(&sdata->last_hash_lock)
-        DECLARE_GET_LASTSWAPHASH_THREADSAFE(lastswaphash, sdata);
+        char lastswaphash[LastSwapHashSz];
+        get_lastswaphash_threadsafe(sdata, lastswaphash);
         LOGNOTICE("Block hash changed to %s", lastswaphash);
         /* Checking existence of DL list lockless but not trying to
          * reference data */
@@ -2443,7 +2451,8 @@ static void add_node_base(pool_t *ckp, json_t *val, bool trusted, int64_t client
         add_base(ckp, sdata, wb, &new_block);
 
     if (new_block) {
-        DECLARE_GET_LASTSWAPHASH_THREADSAFE(lastswaphash, sdata);
+        char lastswaphash[LastSwapHashSz];
+        get_lastswaphash_threadsafe(sdata, lastswaphash);
         LOGNOTICE("Block hash changed to %s", lastswaphash);
     }
 }
@@ -3643,7 +3652,8 @@ static void update_notify(pool_t *ckp, const char *cmd)
 
     add_base(ckp, dsdata, wb, &new_block);
     if (new_block) {
-        DECLARE_GET_LASTSWAPHASH_THREADSAFE(lastswaphash, dsdata);
+        char lastswaphash[LastSwapHashSz];
+        get_lastswaphash_threadsafe(dsdata, lastswaphash);
         if (subid)
             LOGINFO("Block hash on proxy %d:%d changed to %s", id, subid, lastswaphash);
         else
@@ -5254,7 +5264,7 @@ static void *blockupdate(void *arg)
 {
     pool_t *ckp = (pool_t *)arg;
     sdata_t *sdata = ckp->sdata;
-    char hash[68];
+    char hash[LastSwapHashSz];
 
     pthread_detach(pthread_self());
     rename_proc("blockupdate");
@@ -5268,7 +5278,8 @@ static void *blockupdate(void *arg)
                 cksleep_ms(5000);
                 break;
             case GETBEST_SUCCESS: {
-                DECLARE_GET_LASTSWAPHASH_THREADSAFE(lastswaphash, sdata);
+                char lastswaphash[LastSwapHashSz];
+                get_lastswaphash_threadsafe(sdata, lastswaphash);
                 if (strcmp(hash, lastswaphash)) {
                     update_base(sdata, GEN_PRIORITY);
                     break;
