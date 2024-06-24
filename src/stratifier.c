@@ -493,9 +493,9 @@ struct stratifier_data {
     /* For the hashtable of all workbases */
     workbase_t *workbases;
     workbase_t *current_workbase;
-    int workbases_generated;
+    int64_t workbases_generated;
     txntable_t *txns;
-    int txns_generated;
+    int64_t txns_generated;
 
     /* Workbases from remote trusted servers */
     workbase_t *remote_workbases;
@@ -534,8 +534,8 @@ struct stratifier_data {
     stratum_instance_t *node_instances;
     stratum_instance_t *remote_instances;
 
-    int stratum_generated;
-    int disconnected_generated;
+    int64_t stratum_generated;
+    int64_t disconnected_generated;
     session_t *disconnected_sessions;
 
     user_instance_t *user_instances;
@@ -2814,7 +2814,7 @@ static void submit_node_block(pool_t *ckp, sdata_t *sdata, json_t *val)
              "nonce2", nonce2,
              "version_mask", version_mask,
              "nonce", nonce,
-             "reward", wb->coinbasevalue,
+             "reward", (json_int_t)wb->coinbasevalue,
              "diff", diff,
              "createdate", cdfield,
              "createby", "code",
@@ -4351,7 +4351,7 @@ static void block_solve(pool_t *ckp, json_t *val)
     }
 
     ts_realtime(&ts_now);
-    sprintf(cdfield, "%lu,%lu", ts_now.tv_sec, ts_now.tv_nsec);
+    sprintf(cdfield, "%lu,%lu", (unsigned long)ts_now.tv_sec, (unsigned long)ts_now.tv_nsec);
 
     json_set_string(val, "confirmed", "1");
     json_set_string(val, "createdate", cdfield);
@@ -4428,8 +4428,8 @@ static void broadcast_ping(sdata_t *sdata)
 
 static void ckmsgq_stats(ckmsgq_t *ckmsgq, const int size, json_t **val)
 {
-    int objects, generated;
-    int64_t memsize;
+    int objects;
+    int64_t memsize, generated;
     ckmsg_t *msg;
 
     mutex_lock(ckmsgq->lock);
@@ -4438,15 +4438,15 @@ static void ckmsgq_stats(ckmsgq_t *ckmsgq, const int size, json_t **val)
     mutex_unlock(ckmsgq->lock);
 
     memsize = (sizeof(ckmsg_t) + size) * objects;
-    JSON_CPACK(*val, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
+    JSON_CPACK(*val, "{si,sI,sI}", "count", objects, "memory", memsize, "generated", generated);
 }
 
 char *stratifier_stats(pool_t *ckp, void *data)
 {
     json_t *val = json_object(), *subval;
-    int objects, generated;
+    int objects;
     sdata_t *sdata = data;
-    int64_t memsize;
+    int64_t memsize, generated;
     char *buf;
 
     (void)ckp; // suppress unused param warnings
@@ -4455,32 +4455,32 @@ char *stratifier_stats(pool_t *ckp, void *data)
     objects = HASH_COUNT(sdata->workbases);
     memsize = SAFE_HASH_OVERHEAD(sdata->workbases) + sizeof(workbase_t) * objects;
     generated = sdata->workbases_generated;
-    JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
+    JSON_CPACK(subval, "{si,sI,sI}", "count", objects, "memory", memsize, "generated", generated);
     json_steal_object(val, "workbases", subval);
     objects = HASH_COUNT(sdata->remote_workbases);
     memsize = SAFE_HASH_OVERHEAD(sdata->remote_workbases) + sizeof(workbase_t) * objects;
     ck_runlock(&sdata->workbase_lock);
 
-    JSON_CPACK(subval, "{si,si}", "count", objects, "memory", memsize);
+    JSON_CPACK(subval, "{si,sI}", "count", objects, "memory", memsize);
     json_steal_object(val, "remote_workbases", subval);
 
     ck_rlock(&sdata->instance_lock);
     objects = HASH_COUNT(sdata->user_instances);
     memsize = SAFE_HASH_OVERHEAD(sdata->user_instances) + sizeof(stratum_instance_t) * objects;
-    JSON_CPACK(subval, "{si,si}", "count", objects, "memory", memsize);
+    JSON_CPACK(subval, "{si,sI}", "count", objects, "memory", memsize);
     json_steal_object(val, "users", subval);
 
     objects = HASH_COUNT(sdata->stratum_instances);
     memsize = SAFE_HASH_OVERHEAD(sdata->stratum_instances);
     generated = sdata->stratum_generated;
-    JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
+    JSON_CPACK(subval, "{si,sI,sI}", "count", objects, "memory", memsize, "generated", generated);
     json_steal_object(val, "clients", subval);
 
     objects = sdata->stats.disconnected;
     generated = sdata->disconnected_generated;
     memsize = SAFE_HASH_OVERHEAD(sdata->disconnected_sessions);
     memsize += sizeof(session_t) * sdata->stats.disconnected;
-    JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
+    JSON_CPACK(subval, "{si,sI,sI}", "count", objects, "memory", memsize, "generated", generated);
     json_steal_object(val, "disconnected", subval);
     ck_runlock(&sdata->instance_lock);
 
@@ -4490,14 +4490,14 @@ char *stratifier_stats(pool_t *ckp, void *data)
     memsize = SAFE_HASH_OVERHEAD(sdata->shares) + sizeof(share_t) * objects;
     mutex_unlock(&sdata->share_lock);
 
-    JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
+    JSON_CPACK(subval, "{si,sI,sI}", "count", objects, "memory", memsize, "generated", generated);
     json_steal_object(val, "shares", subval);
 
     ck_rlock(&sdata->txn_lock);
     objects = HASH_COUNT(sdata->txns);
     memsize = SAFE_HASH_OVERHEAD(sdata->txns) + sizeof(txntable_t) * objects;
     generated = sdata->txns_generated;
-    JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
+    JSON_CPACK(subval, "{si,sI,sI}", "count", objects, "memory", memsize, "generated", generated);
     json_steal_object(val, "transactions", subval);
     ck_runlock(&sdata->txn_lock);
 
@@ -4572,12 +4572,12 @@ static json_t *userinfo(const user_instance_t *user)
 {
     json_t *val;
 
-    JSON_CPACK(val, "{ss,si,si,sf,sf,sf,sf,sf,sf,sf,si}",
+    JSON_CPACK(val, "{ss,si,si,sf,sf,sf,sf,sf,sf,sf,sI}",
                "user", user->username, "id", user->id, "workers", user->workers,
                "bestdiff", user->best_diff,  "bestdiff_alltime", user->best_diff_alltime,
                "dsps1", user->dsps1, "dsps5", user->dsps5, "dsps60", user->dsps60,
                "dsps1440", user->dsps1440, "dsps10080", user->dsps10080,
-               "lastshare", user->last_share.tv_sec);
+               "lastshare", (json_int_t)user->last_share.tv_sec);
     return val;
 }
 
@@ -4694,10 +4694,10 @@ static json_t *workerinfo(const user_instance_t *user, const worker_instance_t *
 {
     json_t *val;
 
-    JSON_CPACK(val, "{ss,ss,si,sf,sf,sf,sf,si,sf,sf,si,sb}",
+    JSON_CPACK(val, "{ss,ss,si,sf,sf,sf,sf,sI,sf,sf,si,sb}",
                "user", user->username, "worker", worker->workername, "id", user->id,
                "dsps1", worker->dsps1, "dsps5", worker->dsps5, "dsps60", worker->dsps60,
-               "dsps1440", worker->dsps1440, "lastshare", worker->last_share.tv_sec,
+               "dsps1440", worker->dsps1440, "lastshare", (json_int_t)worker->last_share.tv_sec,
                "bestdiff", worker->best_diff, "bestdiff_alltime", worker->best_diff_alltime,
                "mindiff", worker->mindiff, "idle", worker->idle);
     return val;
@@ -4946,7 +4946,7 @@ static json_t *json_proxyinfo(const proxy_t *proxy)
     const proxy_t *parent = proxy->parent;
     json_t *val;
 
-    JSON_CPACK(val, "{si,si,si,sf,ss,ss,ss,ss,ss,si,si,si,si,sb,sb,sI,sI,sI,sI,si,si,sb,sb,si}",
+    JSON_CPACK(val, "{si,si,si,sf,ss,ss,ss,ss,ss,si,si,si,si,sb,sb,sI,sI,sI,sI,sI,si,sb,sb,si}",
         "id", proxy->id, "subid", proxy->subid, "priority", proxy_prio(parent),
         "diff", proxy->diff, "baseurl", proxy->baseurl, "url", proxy->url,
         "auth", proxy->auth, "pass", proxy->pass,
@@ -6829,7 +6829,7 @@ static void submit_share(stratum_instance_t *client, const int64_t jobid, const 
     char enonce2[32];
 
     sprintf(enonce2, "%s%s", client->enonce1var, nonce2);
-    JSON_CPACK(json_msg, "{sIsssssssIsIsi}", "jobid", jobid, "nonce2", enonce2,
+    JSON_CPACK(json_msg, "{sIsssssssIsisi}", "jobid", jobid, "nonce2", enonce2,
                  "ntime", ntime, "nonce", nonce, "client_id", client->id,
                  "proxy", client->proxyid, "subproxy", client->subproxyid);
     generator_add_send(ckp, json_msg);
