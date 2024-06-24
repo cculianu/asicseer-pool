@@ -7,6 +7,7 @@
 #include <ctime>
 #include <functional>
 #include <mutex>
+#include <random>
 #include <thread>
 #include <utility>
 
@@ -282,7 +283,7 @@ extern "C" int random_threadsafe(int range)
         return 0;
     std::unique_lock l(mut);
     return static_cast<int>(arc4random_uniform(static_cast<unsigned>(range)));
-#else
+#elif HAVE_RANDOM_R
     static struct random_data buf = {};
     static char state[256] = {};
     static bool initted = false;
@@ -303,6 +304,15 @@ extern "C" int random_threadsafe(int range)
         quit(1, "Got error result from random_r with errno %d", errno);
     }
     return result % range;
+#else
+    // Fall back to the C++ std random generator
+    static std::mt19937 rgen = []{
+        std::random_device rd;
+        return std::mt19937(rd());
+    }();
+    std::uniform_int_distribution<> distrib(0, range - 1);
+    std::unique_lock l(mut);
+    return distrib(rgen);
 #endif
 }
 

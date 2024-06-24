@@ -154,6 +154,12 @@ check_c_source_compiles("#include <pthread.h>
         pthread_rwlock_timedrdlock((pthread_rwlock_t *)0, (struct timespec *)0);
         return 0;
     }" HAVE_PTHREAD_RWLOCK_TIMEDRDLOCK)
+check_c_source_compiles("#include <stdlib.h>
+#   include <stdint.h>
+    int main(void) {
+        initstate_r(0, (char *)0, 0, (struct random_data *)0);
+        return random_r((struct random_data *)0, (int32_t *)0);
+    }" HAVE_RANDOM_R)
 # Endianness
 check_cxx_source_compiles("int main(void) { return 0; }
 #   ifndef __BYTE_ORDER__
