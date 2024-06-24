@@ -176,6 +176,9 @@
     STACK_DIRECTION = 0 => direction of growth unknown */
 /* #undef STACK_DIRECTION */
 
+/* CMakeLists.txt defaults this to on, but can be turned off at the cmake line */
+#cmakedefine USE_ASM 1
+
 /* Use avx2 assembly instructions for sha256 */
 #cmakedefine USE_AVX2 1
 

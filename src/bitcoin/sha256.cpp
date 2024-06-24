@@ -6,6 +6,7 @@
 
 #include "common.h"
 #include "compat_cpuid.h"
+#include "config.h"
 
 #include <cassert>
 #include <cstring>
