@@ -1349,8 +1349,8 @@ static bool _json_get_string(char **store, const json_t *entry, const char *res)
         goto out;
     }
     buf = json_string_value(entry);
-    LOGDEBUG("Json found entry %s: %s", res, buf);
     *store = strdup(buf);
+    LOGDEBUG("Json found entry %s: %s", res, buf);
     ret = true;
 out:
     return ret;
