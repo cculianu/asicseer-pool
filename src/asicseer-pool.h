@@ -306,6 +306,7 @@ struct pool_instance {
     char **serverurl; // Array of URLs to bind our server/proxy to
     int serverurls; // Number of server bindings
     bool *nodeserver; // If this server URL serves node information
+    int nodeservers; // If this server has remote node servers
     bool *trusted; // If this server URL accepts trusted remote nodes
     char *upstream; // Upstream pool in trusted remote mode
 
