@@ -51,7 +51,7 @@ void logmsg(int loglevel, const char *fmt, ...)
 void mkstamp(char *stamp, size_t siz)
 {
 	long minoff, hroff;
-	char tzinfo[16];
+        char tzinfo[24];
 	time_t now_t;
 	struct tm tm;
 	char tzch;
