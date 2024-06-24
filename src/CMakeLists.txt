@@ -58,14 +58,6 @@ target_link_libraries(notifier ${LIBS})
 add_executable(summariser summariser.c empty.cpp)
 target_link_libraries(summariser ${LIBS})
 
-option(ENABLE_CKDB "Enable ckdb" OFF)
-if(ENABLE_CKDB)
-    add_executable(asicseer-db asicseer-db.c ckdb_cmd.c ckdb_data.c ckdb_dbio.c ckdb_btc.c ckdb_crypt.c
-                               asicseer-db.h klist.c ktree.c klist.h ktree.h empty.cpp)
-    target_link_libraries(asicseer-db ${LIBS})
-    set(USE_ASICSEER_DB 1)
-endif()
-
 # ------------------------------------------- config.h generation -------------------------------------------
 # This generates config.h which provides numerous defines about the state of the platform we are building on.
 include(CheckIncludeFiles)
@@ -100,20 +92,14 @@ check_include_files("fcntl.h" HAVE_FCNTL_H)
 check_include_files("fenv.h" HAVE_FENV_H)
 check_include_files("getopt.h" HAVE_GETOPT_H)
 check_include_files("grp.h" HAVE_GRP_H)
-check_include_files("gsl/gsl_cdf.h" HAVE_GSL_GSL_CDF_H)
-check_include_files("gsl/gsl_math.h" HAVE_GSL_GSL_MATH_H)
 check_include_files("inttypes.h" HAVE_INTTYPES_H)
-check_include_files("libpq-fe.h" HAVE_LIBPQ_FE_H)
 check_include_files("linux/un.h" HAVE_LINUX_UN_H)
 check_include_files("math.h" HAVE_MATH_H)
 check_include_files("memory.h" HAVE_MEMORY_H)
 check_include_files("netdb.h" HAVE_NETDB_H)
 check_include_files("netinet/in.h" HAVE_NETINET_IN_H)
 check_include_files("netinet/tcp.h" HAVE_NETINET_TCP_H)
-check_include_files("openssl/hmac.h" HAVE_OPENSSL_HMAC_H)
-check_include_files("openssl/x509.h" HAVE_OPENSSL_X509_H)
 check_include_files("poll.h" HAVE_POLL_H)
-check_include_files("postgresql/libpq-fe.h" HAVE_POSTGRESQL_LIBPQ_FE_H)
 check_include_files("sys/endian.h" HAVE_SYS_ENDIAN_H)
 check_include_files("sys/epoll.h" HAVE_SYS_EPOLL_H)
 check_include_files("sys/event.h" HAVE_SYS_EVENT_H)
@@ -150,6 +136,13 @@ check_c_source_compiles("#include <time.h>
         clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts_end, 0);
         return 0;
     }" HAVE_CLOCK_NANOSLEEP)
+check_c_source_compiles("#define _GNU_SOURCE
+#include <string.h>
+    int main(int argc, char *argv[])
+    {
+        char *dup = strdupa(argc ? argv[0] : \"foo\");
+        return 0;
+    }" HAVE_STRDUPA)
 # Generate the config
 configure_file(config.h.cmake.in config.h ESCAPE_QUOTES)
 unset(size_t)

@@ -352,7 +352,7 @@ out:
 bool submit_block(connsock_t *cs, const char *params, size_t param_len)
 {
     json_t *val, *res_val;
-    int len, retries = 0;
+    int retries = 0;
     const char *res_ret;
     bool ret = false;
 

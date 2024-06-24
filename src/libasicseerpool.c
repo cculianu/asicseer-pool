@@ -96,26 +96,6 @@ static void *completion_thread(void *arg)
     return NULL;
 }
 
-bool ck_completion_timeout(void *fn, void *fnarg, int timeout)
-{
-    struct ck_completion ckc;
-    pthread_t pthread;
-    bool ret = false;
-
-    cksem_init(&ckc.sem);
-    ckc.fn = fn;
-    ckc.fnarg = fnarg;
-
-    pthread_create(&pthread, NULL, completion_thread, (void *)&ckc);
-
-    ret = cksem_mswait(&ckc.sem, timeout);
-    if (!ret)
-        pthread_join(pthread, NULL);
-    else
-        pthread_cancel(pthread);
-    return !ret;
-}
-
 int _cond_wait(pthread_cond_t *cond, mutex_t *lock, const char *file, const char *func, const int line)
 {
     int ret;
@@ -407,28 +387,6 @@ int _cksem_trywait(sem_t *sem, const char *file, const char *func, const int lin
     if (unlikely(ret && errno != EAGAIN && errno != EINTR))
         quitfrom(1, file, func, line, "Failed to sem_trywait errno=%d sem=0x%p", errno, sem);
     return ret;
-}
-
-int _cksem_mswait(sem_t *sem, int ms, const char *file, const char *func, const int line)
-{
-    ts_t abs_timeout, ts_now;
-    tv_t tv_now;
-    int ret;
-
-    tv_time(&tv_now);
-    tv_to_ts(&ts_now, &tv_now);
-    ms_to_ts(&abs_timeout, ms);
-    timeraddspec(&abs_timeout, &ts_now);
-    ret = sem_timedwait(sem, &abs_timeout);
-
-    if (ret) {
-        if (likely(errno == ETIMEDOUT))
-            return ETIMEDOUT;
-        if (errno == EINTR)
-            return EINTR;
-        quitfrom(1, file, func, line, "Failed to sem_timedwait errno=%d sem=0x%p", errno, sem);
-    }
-    return 0;
 }
 
 void _cksem_destroy(sem_t *sem, const char *file, const char *func, const int line)

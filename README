@@ -19,7 +19,7 @@ Updated and maintained by:
 ===
 
 This software is originally based on the work of Con Kolivas' ckpool
-   [ckpool-splns](https://bitbucket.org/ckolivas-splns/ckpool/)
+   [ckpool-splns](https://bitbucket.org/ckolivas/ckpool-splns/)
 
 It has been updated and reworked to add features and to support Bitcoin Cash
 (rather than Bitcoin).
@@ -36,10 +36,22 @@ It has been updated and reworked to add features and to support Bitcoin Cash
 * Updated asicseer-db (formerly ckdb) sources to actually compile on modern
   Linux
 * Added ZMQ support for new block notifications
+* Removed asicseer-db, removed all sql, HTML, & php files related to this.
+* Uupdated source tree to use cmake, removed autotools-based build.
 * Fixed bugs
 
-README follows (modified by Calin from the original to reflect added config
-options):
+BUILDING
+---
+
+$ sudo apt-get install build-essential yasm libzmq3-dev cmake
+$ mkdir build && cd build
+$ cmake ..
+$ make
+
+---
+
+Original README follows (modified by Calin from the original to reflect added
+config options):
 
 ---
 
@@ -108,6 +120,9 @@ Features:
 ---
 BUILDING:
 
+** NOTE from Calin: The below is no longer accurate since we switched the
+** codebase to use cmake instead of autotools.
+
 Building asicseer-pool standalone without asicseer-db has no dependencies
 outside of the basic build tools on any Linux installation.
 
@@ -115,6 +130,9 @@ sudo apt-get install build-essential yasm libzmq3-dev
 ./configure --without-asicseer-db
 make
 
+
+** NOTE from Calin: The below is no longer accurate since we have removed
+** asicseer-db.
 
 Building with asicseer-db requires installation of the postgresql, gsl and ssl
 development libraries.

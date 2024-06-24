@@ -178,11 +178,6 @@ struct pool_instance {
     char *name;
     /* Directory where sockets are created */
     char *socket_dir;
-    /* Directory where ckdb sockets are */
-    char *ckdb_sockdir;
-    /* Name of the ckdb process */
-    char *ckdb_name;
-    char *ckdb_sockname;
     /* Group ID for unix sockets */
     char *grpnam;
     gid_t gr_gid;
@@ -389,12 +384,6 @@ static const char __maybe_unused *stratum_msgs[] = {
     ""
 };
 
-#ifdef USE_ASICSEER_DB
-#define CKP_STANDALONE(CKP) ((CKP)->standalone == true)
-#else
-#define CKP_STANDALONE(CKP) ((CKP) == (CKP)) /* Always true, silences unused warn */
-#endif
-
 #define SAFE_HASH_OVERHEAD(HASHLIST) (HASHLIST ? HASH_OVERHEAD(hh, HASHLIST) : 0)
 
 void get_timestamp(char *stamp);
@@ -422,11 +411,6 @@ void _queue_proc(proc_instance_t *pi, const char *msg, const char *file, const c
 char *_send_recv_proc(const proc_instance_t *pi, const char *msg, int writetimeout, int readtimedout,
               const char *file, const char *func, const int line);
 #define send_recv_proc(pi, msg) _send_recv_proc(&(pi), msg, UNIX_WRITE_TIMEOUT, UNIX_READ_TIMEOUT, __FILE__, __func__, __LINE__)
-char *_send_recv_ckdb(const pool_t *ckp, const char *msg, const char *file, const char *func, const int line);
-#define send_recv_ckdb(ckp, msg) _send_recv_ckdb(ckp, msg, __FILE__, __func__, __LINE__)
-char *_ckdb_msg_call(const pool_t *ckp, const char *msg,  const char *file, const char *func,
-             const int line);
-#define ckdb_msg_call(ckp, msg) _ckdb_msg_call(ckp, msg, __FILE__, __func__, __LINE__)
 
 struct rpc_req_part {
     const char *string;

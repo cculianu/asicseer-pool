@@ -11,7 +11,6 @@
 
 #include "config.h"
 
-#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <jansson.h>
 #include <string.h>
@@ -246,7 +245,7 @@ static bool server_alive(pool_t *ckp, server_instance_t *si, bool pinging)
     if (!ckp->node && si->zmqendpoint && !check_getzmqnotifications_roughly_matches(cs, si->zmqendpoint, &what_bitcoind_has)) {
         LOGWARNING("bitcoind %s does not have any ZMQ \"pubhashblock\""
                    " entries that match the configured value of \"%s\", instead it reports \"%s\"",
-                   si->url, si->zmqendpoint, what_bitcoind_has ? : "");
+                   si->url, si->zmqendpoint, what_bitcoind_has ? what_bitcoind_has : "");
     }
     free(what_bitcoind_has);
     si->alive = cs->alive = ret = true;
@@ -492,7 +491,7 @@ out:
 static bool connect_proxy(pool_t *ckp, connsock_t *cs, proxy_instance_t *proxy)
 {
     if (cs->fd > 0) {
-        epoll_ctl(proxy->epfd, EPOLL_CTL_DEL, cs->fd, NULL);
+        epfd_rm(proxy->epfd, cs->fd);
         Close(cs->fd);
     }
     cs->fd = connect_socket(cs->url, cs->port);
@@ -503,14 +502,9 @@ static bool connect_proxy(pool_t *ckp, connsock_t *cs, proxy_instance_t *proxy)
     }
     keep_sockalive(cs->fd);
     if (!ckp->passthrough) {
-        struct epoll_event event;
-
-        event.events = EPOLLIN | EPOLLRDHUP;
-        event.data.ptr = proxy;
-        /* Add this connsock_t to the epoll list */
-        if (unlikely(epoll_ctl(proxy->epfd, EPOLL_CTL_ADD, cs->fd, &event) == -1)) {
-            LOGERR("Failed to add fd %d to epfd %d to epoll_ctl in proxy_alive",
-                cs->fd, proxy->epfd);
+        /* Add this connsock_t to the epoll/kqueue list */
+        if (unlikely(epfd_add(proxy->epfd, cs->fd, (uint64_t)proxy, true, false, false) < 0)) {
+            LOGERR("Failed to add fd %d to epfd %d (epfd_add) in connect_proxy", cs->fd, proxy->epfd);
             return false;
         }
     } else {
@@ -752,7 +746,7 @@ retry:
 
 out:
     if (!ret && cs->fd > 0) {
-        epoll_ctl(proxi->epfd, EPOLL_CTL_DEL, cs->fd, NULL);
+        epfd_rm(proxi->epfd, cs->fd);
         Close(cs->fd);
     }
     return ret;
@@ -1174,11 +1168,11 @@ static void send_stratifier_delproxy(pool_t *ckp, const int id, const int subid)
     send_proc(ckp->stratifier, buf);
 }
 
-/* Close the subproxy socket if it's open and remove it from the epoll list */
+/* Close the subproxy socket if it's open and remove it from the epoll/kqueue list */
 static void close_proxy_socket(proxy_instance_t *proxy, proxy_instance_t *subproxy)
 {
     if (subproxy->cs.fd > 0) {
-        epoll_ctl(proxy->epfd, EPOLL_CTL_DEL, subproxy->cs.fd, NULL);
+        epfd_rm(proxy->epfd, subproxy->cs.fd);
         Close(subproxy->cs.fd);
     }
 }
@@ -1441,7 +1435,7 @@ static bool auth_stratum(pool_t *ckp, connsock_t *cs, proxy_instance_t *proxi)
         LOGNOTICE("Proxy %d:%d %s failed to send message in auth_stratum",
               proxi->id, proxi->subid, proxi->url);
         if (cs->fd > 0) {
-            epoll_ctl(proxi->epfd, EPOLL_CTL_DEL, cs->fd, NULL);
+            epfd_rm(proxi->epfd, cs->fd);
             Close(cs->fd);
         }
         goto out_noconn;
@@ -2263,16 +2257,15 @@ static void *proxy_recv(void *arg)
     proxy_instance_t *subproxy;
     pool_t *ckp = proxi->ckp;
     gdata_t *gdata = ckp->gdata;
-    struct epoll_event event;
     bool alive;
     int epfd;
 
     rename_proc("proxyrecv");
     pthread_detach(pthread_self());
 
-    proxi->epfd = epfd = epoll_create1(EPOLL_CLOEXEC);
+    proxi->epfd = epfd = epfd_create();
     if (epfd < 0){
-        LOGEMERG("FATAL: Failed to create epoll in proxyrecv");
+        LOGEMERG("FATAL: Failed to create epoll/kqueue in proxyrecv");
         return NULL;
     }
 
@@ -2282,6 +2275,7 @@ static void *proxy_recv(void *arg)
     alive = proxi->alive;
 
     while (42) {
+        aevt_t event;
         bool message = false, hup = false;
         share_msg_t *share, *tmpshare;
         notify_instance_t *ni, *tmp;
@@ -2335,9 +2329,9 @@ static void *proxy_recv(void *arg)
         cs = NULL;
         /* If we don't get an update within 10 minutes the upstream pool
          * has likely stopped responding. */
-        ret = epoll_wait(epfd, &event, 1, 600000);
+        ret = epfd_wait(epfd, &event, 600000);
         if (likely(ret > 0)) {
-            subproxy = event.data.ptr;
+            subproxy = (void *)event.userdata;
             cs = &subproxy->cs;
             if (!subproxy->alive) {
                 cs = NULL;
@@ -2351,7 +2345,7 @@ static void *proxy_recv(void *arg)
              * case a message is sent and then the socket
              * immediately closed.
              */
-            if (event.events & EPOLLIN) {
+            if (event.in) {
                 timeout = 30;
                 ret = read_socket_line(cs, &timeout);
                 /* If we are unable to read anything within 30
@@ -2366,13 +2360,13 @@ static void *proxy_recv(void *arg)
                     timeout = 0;
                 }
             }
-            if (event.events & (EPOLLHUP | EPOLLERR | EPOLLRDHUP)) {
-                LOGNOTICE("Proxy %d:%d %s epoll hangup in proxy_recv",
+            if (event.err || event.hup || event.rdhup) {
+                LOGNOTICE("Proxy %d:%d %s epoll/kevent hangup in proxy_recv",
                       proxi->id, subproxy->subid, subproxy->url);
                 hup = true;
             }
         } else {
-            LOGNOTICE("Proxy %d:%d %s failed to epoll in proxy_recv",
+            LOGNOTICE("Proxy %d:%d %s failed to epoll/kevent in proxy_recv",
                   proxi->id, subproxy->subid, subproxy->url);
             hup = true;
         }
@@ -2409,19 +2403,19 @@ static void *userproxy_recv(void *arg)
 {
     pool_t *ckp = (pool_t *)arg;
     gdata_t *gdata = ckp->gdata;
-    struct epoll_event event;
     int epfd;
 
     rename_proc("uproxyrecv");
     pthread_detach(pthread_self());
 
-    epfd = epoll_create1(EPOLL_CLOEXEC);
+    epfd = epfd_create();
     if (epfd < 0){
-        LOGEMERG("FATAL: Failed to create epoll in userproxy_recv");
+        LOGEMERG("FATAL: Failed to create epfd in userproxy_recv");
         return NULL;
     }
 
     while (42) {
+        aevt_t event;
         proxy_instance_t *proxy, *tmpproxy;
         bool message = false, hup = false;
         share_msg_t *share, *tmpshare;
@@ -2440,14 +2434,14 @@ static void *userproxy_recv(void *arg)
         }
         mutex_unlock(&gdata->lock);
 
-        ret = epoll_wait(epfd, &event, 1, 1000);
+        ret = epfd_wait(epfd, &event, 1000);
         if (ret < 1) {
             if (likely(!ret))
                 continue;
-            LOGEMERG("Failed to epoll_wait in userproxy_recv");
+            LOGEMERG("Failed to epfd_wait in userproxy_recv");
             break;
         }
-        proxy = event.data.ptr;
+        proxy = (void *)event.userdata;
         /* Make sure we haven't popped this off before we've finished
          * subscribe/auth */
         if (unlikely(!proxy->authorized))
@@ -2483,13 +2477,12 @@ static void *userproxy_recv(void *arg)
             continue;
 #endif
 
-        if ((event.events & (EPOLLHUP | EPOLLERR | EPOLLRDHUP))) {
-            LOGNOTICE("Proxy %d:%d %s hangup in userproxy_recv", proxy->id,
-                  proxy->subid, proxy->url);
+        if (event.hup || event.rdhup || event.err) {
+            LOGNOTICE("Proxy %d:%d %s hangup in userproxy_recv", proxy->id, proxy->subid, proxy->url);
             hup = true;
         }
 
-        if (likely(event.events & EPOLLIN)) {
+        if (likely(event.in)) {
             timeout = 30;
 
             cksem_wait(&cs->sem);
@@ -3006,11 +2999,19 @@ out:
 
 static void parse_globaluser(pool_t *ckp, gdata_t *gdata, const char *buf)
 {
-    char *url, *username, *pass = strdupa(buf);
+    char *url, *username, *pass;
     int userid = -1, proxyid = -1;
     proxy_instance_t *proxy, *tmp;
     int64_t clientid = -1;
     bool found = false;
+
+#if HAVE_STRDUPA
+    pass = strdupa(buf);
+#else
+    size_t passlen = strlen(buf);
+    pass = alloca(passlen + 1);
+    memcpy(pass, buf, passlen + 1);
+#endif
 
     sscanf(buf, "%d:%d:%"PRId64":%s", &proxyid, &userid, &clientid, pass);
     if (unlikely(clientid < 0 || userid < 0 || proxyid < 0)) {

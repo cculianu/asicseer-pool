@@ -12,7 +12,6 @@
 #include "config.h"
 
 #include <sys/ioctl.h>
-#include <sys/prctl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -501,7 +500,9 @@ int set_sendbufsize(pool_t *ckp, const int fd, const int len)
              len, opt);
         optlen = sizeof(opt);
         opt = len * 4 / 3;
+#ifdef SO_SNDBUFFORCE
         setsockopt(fd, SOL_SOCKET, SO_SNDBUFFORCE, &opt, optlen);
+#endif
         getsockopt(fd, SOL_SOCKET, SO_SNDBUF, &opt, &optlen);
         opt /= 2;
     }
@@ -529,7 +530,9 @@ int set_recvbufsize(pool_t *ckp, const int fd, const int len)
              len, opt);
         optlen = sizeof(opt);
         opt = len * 4 / 3;
+#ifdef SO_RCVBUFFORCE
         setsockopt(fd, SOL_SOCKET, SO_RCVBUFFORCE, &opt, optlen);
+#endif
         getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &opt, &optlen);
         opt /= 2;
     }
@@ -872,49 +875,6 @@ out:
     return buf;
 }
 
-/* As send_recv_proc but only to ckdb */
-char *_send_recv_ckdb(const pool_t *ckp, const char *msg, const char *file, const char *func, const int line)
-{
-    const char *path = ckp->ckdb_sockname;
-    char *buf = NULL;
-    int sockd;
-
-    if (unlikely(!path || !strlen(path))) {
-        LOGERR("Attempted to send message %s to null path in send_recv_ckdb", msg ? msg : "");
-        goto out;
-    }
-    if (unlikely(!msg || !strlen(msg))) {
-        LOGERR("Attempted to send null message to ckdb in send_recv_ckdb");
-        goto out;
-    }
-    sockd = open_unix_client(path);
-    if (unlikely(sockd < 0)) {
-        LOGWARNING("Failed to open socket %s in send_recv_ckdb", path);
-        goto out;
-    }
-    if (unlikely(!send_unix_msg(sockd, msg)))
-        LOGWARNING("Failed to send %s to ckdb", msg);
-    else
-        buf = recv_unix_msg(sockd);
-    Close(sockd);
-out:
-    if (unlikely(!buf))
-        LOGERR("Failure in send_recv_ckdb from %s %s:%d", file, func, line);
-    return buf;
-}
-
-/* Send a json msg to ckdb and return the response */
-char *_ckdb_msg_call(const pool_t *ckp, const char *msg,  const char *file, const char *func,
-             const int line)
-{
-    char *buf = NULL;
-
-    LOGDEBUG("Sending ckdb: %s", msg);
-    buf = _send_recv_ckdb(ckp, msg, file, func, line);
-    LOGDEBUG("Received from ckdb: %s", buf);
-    return buf;
-}
-
 static const char *rpc_method(const char *rpc_req)
 {
     const char *ptr = strchr(rpc_req, ':');
@@ -1044,6 +1004,8 @@ static json_t *_json_rpc_call(connsock_t *cs, const struct rpc_req_part *rpc_req
             // parse content-length: header line
             if (1 != sscanf(cs->buf + 16, "%d", &contentlen) || contentlen < 0) {
                 // parse error
+                tv_time(&fin_tv);
+                elapsed = tvdiff(&fin_tv, &stt_tv);
                 ASPRINTF(&warning, "Failed to read content-length lines in %s (%.20s...) %.3fs",
                          __func__, rpc_method(rpc_req[0].string), elapsed);
                 goto out_empty;
@@ -1554,7 +1516,7 @@ static void parse_btcds(pool_t *ckp, const json_t *arr_val, const int arr_size)
 static void assert_json_get_ok(bool b, const char *obj, const char *key)
 {
     if (!b) {
-        quit(1, "Required key '%s' in json object '%s' missing!", key ? : "null", obj ? : "null");
+        quit(1, "Required key '%s' in json object '%s' missing!", key ? key : "null", obj ? obj : "null");
     }
 }
 
@@ -1735,7 +1697,7 @@ static void parse_mindiff_overrides(pool_t *ckp, json_t *obj, const size_t n_key
             arr[n_ok].mindiff = mindiff;
             ++n_ok;
         }  else {
-            LOGWARNING("mindiff_overrides: failed to parse \"%s\", expected numeric value > 0", useragent ? : "");
+            LOGWARNING("mindiff_overrides: failed to parse \"%s\", expected numeric value > 0", useragent ? useragent : "");
         }
         assert(n_ok <= n_keys);
     }
@@ -1768,7 +1730,7 @@ static void parse_fee_discounts(pool_t *ckp, json_t *obj, const size_t n_keys)
         if (json_is_real(jval))
             discount = json_real_value(jval);
         if (discount < 0.0 || discount > 1.0 || !username || !*username) {
-            quit(1, "fee_discounts: Bad entry \"%s\". Fix your config file!", username ? : "");
+            quit(1, "fee_discounts: Bad entry \"%s\". Fix your config file!", username ? username : "");
         }
         user_fee_discount_t *ufd = NULL;
         HASH_FIND_STR(ckp->user_fee_discounts, username, ufd);
@@ -1982,32 +1944,6 @@ static void prepare_child(pool_t *ckp, proc_instance_t *pi, void *process, char 
     create_unix_receiver(pi);
 }
 
-#ifdef USE_ASICSEER_DB
-static struct option long_options[] = {
-    {"standalone",          no_argument,        0,    'A'},
-    {"config",              required_argument,  0,    'c'},
-    {"daemonise",           no_argument,        0,    'D'},
-    {"db-name",             required_argument,  0,    'd'},
-    {"group",               required_argument,  0,    'g'},
-    {"handover",            no_argument,        0,    'H'},
-    {"help",                no_argument,        0,    'h'},
-    {"killold",             no_argument,        0,    'k'},
-    {"log-shares",          no_argument,        0,    'L'},
-    {"loglevel",            required_argument,  0,    'l'},
-    {"name",                required_argument,  0,    'n'},
-    {"node",                no_argument,        0,    'N'},
-    {"passthrough",         no_argument,        0,    'P'},
-    {"proxy",               no_argument,        0,    'p'},
-    {"quiet",               no_argument,        0,    'q'},
-    {"redirector",          no_argument,        0,    'R'},
-    {"asicseer-db-sockdir", required_argument,  0,    'S'},
-    {"sockdir",             required_argument,  0,    's'},
-    {"trusted",             no_argument,        0,    't'},
-    {"userproxy",           no_argument,        0,    'u'},
-    {"version",             no_argument,        0,    'v'},
-    {0, 0, 0, 0}
-};
-#else
 static struct option long_options[] = {
     {"config",      required_argument, 0,    'c'},
     {"daemonise",   no_argument,       0,    'D'},
@@ -2029,7 +1965,6 @@ static struct option long_options[] = {
     {"version",     no_argument,       0,    'v'},
     {0, 0, 0, 0}
 };
-#endif
 
 static bool send_recv_path(const char *path, const char *msg)
 {
@@ -2054,11 +1989,34 @@ static const char *banner_string(void)
     return PACKAGE_STRING " - " PACKAGE_BUGREPORT;
 }
 
+#if defined(__APPLE__) && defined(__MACH__) && defined(__clang__)
+// Public domain polyfill for feenableexcept on OS X
+// http://www-personal.umich.edu/~williams/archive/computation/fe-handling-example.c
+static int feenableexcept(unsigned int excepts)
+{
+    static fenv_t fenv;
+    unsigned int new_excepts = excepts & FE_ALL_EXCEPT;
+    // previous masks
+    unsigned int old_excepts;
+
+    if (fegetenv(&fenv)) {
+        return -1;
+    }
+    old_excepts = fenv.__control & FE_ALL_EXCEPT;
+
+    // unmask
+    fenv.__control &= ~new_excepts;
+    fenv.__mxcsr   &= ~(new_excepts << 7);
+
+    return fesetenv(&fenv) ? -1 : old_excepts;
+}
+#endif
+
 int main(int argc, char **argv)
 {
     struct sigaction handler;
     int c, ret, i = 0, j;
-    char buf[512] = {};
+    char buf[512] = {0};
     pool_t ckp;
 
     /* Make significant floating point errors fatal to avoid subtle bugs being missed */
@@ -2086,9 +2044,6 @@ int main(int argc, char **argv)
                 break;
             case 'D':
                 ckp.daemon = true;
-                break;
-            case 'd':
-                ckp.ckdb_name = optarg;
                 break;
             case 'g':
                 ckp.grpnam = optarg;
@@ -2153,9 +2108,6 @@ int main(int argc, char **argv)
                     quit(1, "Cannot set a proxy type or passthrough and redirector modes");
                 ckp.standalone = ckp.proxy = ckp.passthrough = ckp.redirector = true;
                 break;
-            case 'S':
-                ckp.ckdb_sockdir = strdup(optarg);
-                break;
             case 's':
                 ckp.socket_dir = strdup(optarg);
                 break;
@@ -2204,9 +2156,7 @@ int main(int argc, char **argv)
         else
             ckp.name = POOL_PROGNAME;
     }
-    snprintf(buf, 15, "%s", ckp.name);
-    prctl(PR_SET_NAME, buf, 0, 0, 0);
-    memset(buf, 0, 15);
+    rename_proc(ckp.name);
 
     if (ckp.grpnam) {
         struct group *group = getgrnam(ckp.grpnam);
@@ -2226,23 +2176,6 @@ int main(int argc, char **argv)
         realloc_strcat(&ckp.socket_dir, ckp.name);
     }
     trail_slash(&ckp.socket_dir);
-
-    if (!CKP_STANDALONE(&ckp)) {
-        if (!ckp.ckdb_name)
-            ckp.ckdb_name = "ckdb";
-        if (!ckp.ckdb_sockdir) {
-            ckp.ckdb_sockdir = strdup("/opt/");
-            realloc_strcat(&ckp.ckdb_sockdir, ckp.ckdb_name);
-        }
-        trail_slash(&ckp.ckdb_sockdir);
-
-        ret = mkdir(ckp.ckdb_sockdir, 0750);
-        if (ret && errno != EEXIST)
-            quit(1, "Failed to make directory %s", ckp.ckdb_sockdir);
-
-        ckp.ckdb_sockname = ckp.ckdb_sockdir;
-        realloc_strcat(&ckp.ckdb_sockname, "listener");
-    }
 
     // setup default chain and prefix
     {

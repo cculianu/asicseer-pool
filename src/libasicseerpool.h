@@ -17,7 +17,6 @@
 // The below are used to name processes and for socket names in the sockets dir
 #define PROG_PREFIX "asicseer-"
 #define POOL_PROGNAME PROG_PREFIX"pool"
-#define DB_PROGNAME PROG_PREFIX"db"
 #define PROXY_PROGNAME PROG_PREFIX"proxy"
 #define NODE_PROGNAME PROG_PREFIX"node"
 #define REDIRECTOR_PROGNAME PROG_PREFIX"redirector"
@@ -473,7 +472,6 @@ const char *package_version(void); // returns the libasicseerpool compiled-in PA
 void rename_proc(const char *name);
 void create_pthread(pthread_t *thread, void *(*start_routine)(void *), void *arg);
 void join_pthread(pthread_t thread);
-bool ck_completion_timeout(void *fn, void *fnarg, int timeout);
 
 int _cond_wait(pthread_cond_t *cond, mutex_t *lock, const char *file, const char *func, const int line);
 int _cond_timedwait(pthread_cond_t *cond, mutex_t *lock, const struct timespec *abstime, const char *file, const char *func, const int line);
@@ -513,14 +511,12 @@ void _cksem_init(sem_t *sem, const char *file, const char *func, const int line)
 void _cksem_post(sem_t *sem, const char *file, const char *func, const int line);
 void _cksem_wait(sem_t *sem, const char *file, const char *func, const int line);
 int _cksem_trywait(sem_t *sem, const char *file, const char *func, const int line);
-int _cksem_mswait(sem_t *sem, int ms, const char *file, const char *func, const int line);
 void _cksem_destroy(sem_t *sem, const char *file, const char *func, const int line);
 
 #define cksem_init(SEM) _cksem_init(SEM, __FILE__, __func__, __LINE__)
 #define cksem_post(SEM) _cksem_post(SEM, __FILE__, __func__, __LINE__)
 #define cksem_wait(SEM) _cksem_wait(SEM, __FILE__, __func__, __LINE__)
 #define cksem_trywait(SEM) _cksem_trywait(SEM, __FILE__, __func__, __LINE__)
-#define cksem_mswait(SEM, _timeout) _cksem_mswait(SEM, _timeout, __FILE__, __func__, __LINE__)
 #define cksem_destroy(SEM) _cksem_destroy(SEM, __FILE__, __func__, __LINE__)
 
 __maybe_unused
@@ -686,6 +682,7 @@ typedef struct AbstractEvent aevt_t;
 
 int epfd_create(void); //< crate a new epfd .. close it using close()
 int epfd_add(int epfd, int fd, uint64_t userdata, bool forRead, bool oneShot, bool edgeTriggered);
+int epfd_rm(int epfd, int fd);
 int epfd_wait(int epfd, aevt_t *event, int timeout_msec);
 #ifdef  __cplusplus
 }

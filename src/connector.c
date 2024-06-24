@@ -13,7 +13,6 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
-#include <sys/epoll.h>
 #include <sys/socket.h>
 #include <string.h>
 #include <unistd.h>
@@ -126,7 +125,7 @@ struct connector_data {
     int *serverfd;
     /* All time count of clients connected */
     int nfds;
-    /* The epoll fd */
+    /* The epoll or kqueue fd */
     int epfd;
 
     bool accept;
@@ -270,7 +269,6 @@ static int accept_client(cdata_t *cdata, const int epfd, const uint64_t server)
     int fd, port, no_clients, sockd;
     pool_t *ckp = cdata->ckp;
     client_instance_t *client;
-    struct epoll_event event;
     socklen_t address_len;
     socklen_t optlen;
 
@@ -344,10 +342,8 @@ static int accept_client(cdata_t *cdata, const int epfd, const uint64_t server)
     getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &client->sendbufsize, &optlen);
     LOGDEBUG("Client sendbufsize detected as %d", client->sendbufsize);
 
-    event.data.u64 = client->id;
-    event.events = EPOLLIN | EPOLLRDHUP | EPOLLONESHOT;
-    if (unlikely(epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &event) < 0)) {
-        LOGERR("Failed to epoll_ctl add in accept_client");
+    if (unlikely(epfd_add(epfd, fd, client->id, true, true, false)) < 0) {
+        LOGERR("Failed to epfd_add in accept_client");
         dec_instance_ref(cdata, client);
         return 0;
     }
@@ -622,10 +618,9 @@ static bool redirect_matches(cdata_t *cdata, client_instance_t *client)
     return redirect;
 }
 
-static void client_event_processor(pool_t *ckp, struct epoll_event *event)
+static void client_event_processor(pool_t *ckp, aevt_t *event)
 {
-    const uint32_t events = event->events;
-    const uint64_t id = event->data.u64;
+    const uint64_t id = event->userdata;
     cdata_t *cdata = ckp->cdata;
     client_instance_t *client;
 
@@ -636,7 +631,7 @@ static void client_event_processor(pool_t *ckp, struct epoll_event *event)
     }
     /* We can have both messages and read hang ups so process the
      * message first. */
-    if (likely(events & EPOLLIN)) {
+    if (likely(event->in)) {
         /* Rearm the client for epoll events if we have successfully
          * parsed a message from it */
         if (unlikely(!parse_client_msg(ckp, cdata, client))) {
@@ -644,7 +639,7 @@ static void client_event_processor(pool_t *ckp, struct epoll_event *event)
             goto out;
         }
     }
-    if (unlikely(events & EPOLLERR)) {
+    if (unlikely(event->err)) {
         socklen_t errlen = sizeof(int);
         int error = 0;
 
@@ -659,11 +654,11 @@ static void client_event_processor(pool_t *ckp, struct epoll_event *event)
                 client->id, client->fd, error, strerror(error));
         }
         invalidate_client(cdata->pi->ckp, cdata, client);
-    } else if (unlikely(events & EPOLLHUP)) {
+    } else if (unlikely(event->hup)) {
         /* Client connection reset by peer */
         LOGINFO("Client id %"PRId64" fd %d HUP in epoll", client->id, client->fd);
         invalidate_client(cdata->pi->ckp, cdata, client);
-    } else if (unlikely(events & EPOLLRDHUP)) {
+    } else if (unlikely(event->rdhup)) {
         /* Client disconnected by peer */
         LOGINFO("Client id %"PRId64" fd %d RDHUP in epoll", client->id, client->fd);
         invalidate_client(cdata->pi->ckp, cdata, client);
@@ -671,9 +666,7 @@ static void client_event_processor(pool_t *ckp, struct epoll_event *event)
 out:
     if (likely(!client->invalid)) {
         /* Rearm the fd in the epoll list if it's still active */
-        event->data.u64 = id;
-        event->events = EPOLLIN | EPOLLRDHUP | EPOLLONESHOT;
-        epoll_ctl(cdata->epfd, EPOLL_CTL_MOD, client->fd, event);
+        epfd_add(cdata->epfd, client->fd, id, true, true, false);
     }
     dec_instance_ref(cdata, client);
 outnoclient:
@@ -685,27 +678,25 @@ outnoclient:
 static void *receiver(void *arg)
 {
     cdata_t *cdata = (cdata_t *)arg;
-    struct epoll_event *event = ckzalloc(sizeof(struct epoll_event));
+    aevt_t *event = ckzalloc(sizeof(aevt_t));
     pool_t *ckp = cdata->ckp;
     uint64_t serverfds, i;
     int ret, epfd;
 
     rename_proc("creceiver");
 
-    epfd = cdata->epfd = epoll_create1(EPOLL_CLOEXEC);
+    epfd = cdata->epfd = epfd_create();
     if (epfd < 0) {
-        LOGEMERG("FATAL: Failed to create epoll in receiver");
+        LOGEMERG("FATAL: Failed to create epfd in receiver");
         goto out;
     }
     serverfds = ckp->serverurls;
-    /* Add all the serverfds to the epoll */
+    /* Add all the serverfds to the epfd */
     for (i = 0; i < serverfds; i++) {
         /* The small values will be less than the first client ids */
-        event->data.u64 = i;
-        event->events = EPOLLIN | EPOLLRDHUP;
-        ret = epoll_ctl(epfd, EPOLL_CTL_ADD, cdata->serverfd[i], event);
+        ret = epfd_add(epfd, cdata->serverfd[i], i, true, false, false);
         if (ret < 0) {
-            LOGEMERG("FATAL: Failed to add epfd %d to epoll_ctl", epfd);
+            LOGEMERG("FATAL: Failed to add epfd_add fd %d to epfd %d", cdata->serverfd[i], epfd);
             goto out;
         }
     }
@@ -719,18 +710,18 @@ static void *receiver(void *arg)
 
         while (unlikely(!cdata->accept))
             cksleep_ms(10);
-        ret = epoll_wait(epfd, event, 1, 1000);
+        ret = epfd_wait(epfd, event, 1000);
         if (unlikely(ret < 1)) {
             if (unlikely(ret == -1)) {
                 if (errno == EINTR)
                     continue;
-                LOGEMERG("FATAL: Failed to epoll_wait in receiver");
+                LOGEMERG("FATAL: Failed to epfd_wait in receiver");
                 break;
             }
             /* Nothing to service, still very unlikely */
             continue;
         }
-        edu64 = event->data.u64;
+        edu64 = event->userdata;
         if (edu64 < serverfds) {
             ret = accept_client(cdata, epfd, edu64);
             if (unlikely(ret < 0)) {
@@ -742,10 +733,11 @@ static void *receiver(void *arg)
         /* Event structure is handed off to client_event_processor
          * here to be freed so we need to allocate a new one */
         ckmsgq_add(cdata->cevents, event);
-        event = ckzalloc(sizeof(struct epoll_event));
+        event = ckzalloc(sizeof(aevt_t));
     }
 out:
     /* We shouldn't get here unless there's an error */
+    if (event) free(event), event = NULL;
     return NULL;
 }
 
@@ -1119,8 +1111,7 @@ static void remote_server(pool_t *ckp, cdata_t *cdata, client_instance_t *client
     LOGWARNING("Connector adding client %"PRId64" %s as remote trusted server",
            client->id, client->address_name);
     client->remote = true;
-    JSON_CPACK(val, "{sbsb}",
-           "result", true, "ckdb", CKP_STANDALONE(ckp) ? false : true);
+    JSON_CPACK(val, "{sbsb}", "result", true, "ckdb", false);
     send_client_json(ckp, cdata, client->id, val);
     if (!ckp->rmem_warn)
         set_recvbufsize(ckp, client->fd, 2097152);
@@ -1678,12 +1669,13 @@ void *connector(void *arg)
     cdata->pi = pi;
     cdata->nfds = 0;
     /* Set the client id to the highest serverurl count to distinguish
-     * them from the server fds in epoll. */
+     * them from the server fds in epoll/kqueue. */
     cdata->client_ids = ckp->serverurls;
     mutex_init(&cdata->sender_lock);
     cond_init(&cdata->sender_cond);
     create_pthread(&cdata->pth_sender, sender, cdata);
-    threads = sysconf(_SC_NPROCESSORS_ONLN) / 2 ? : 1;
+    threads = sysconf(_SC_NPROCESSORS_ONLN) / 2;
+    threads = threads > 0 ? threads : 1;
     cdata->cevents = create_ckmsgqs(ckp, "cevent", &client_event_processor, threads);
     create_pthread(&cdata->pth_receiver, receiver, cdata);
     cdata->start_time = time(NULL);

@@ -38,7 +38,7 @@ out:
     return ret;
 }
 
-int main()
+int main(void)
 {
     char *dnam, *s, *username, *buf, *fname;
     int ret, users = 0, workers = 0;

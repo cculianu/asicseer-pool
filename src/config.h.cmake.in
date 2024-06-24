@@ -54,17 +54,8 @@
 /* Define to 1 if you have the <grp.h> header file. */
 #cmakedefine HAVE_GRP_H 1
 
-/* Define to 1 if you have the <gsl/gsl_cdf.h> header file. */
-#cmakedefine HAVE_GSL_GSL_CDF_H 1
-
-/* Define to 1 if you have the <gsl/gsl_math.h> header file. */
-#cmakedefine HAVE_GSL_GSL_MATH_H 1
-
 /* Define to 1 if you have the <inttypes.h> header file. */
 #cmakedefine HAVE_INTTYPES_H 1
-
-/* Define to 1 if you have the <libpq-fe.h> header file. */
-#cmakedefine HAVE_LIBPQ_FE_H 1
 
 /* Define to 1 if you have the <linux/un.h> header file. */
 #cmakedefine HAVE_LINUX_UN_H 1
@@ -84,17 +75,11 @@
 /* Define to 1 if you have the <netinet/tcp.h> header file. */
 #cmakedefine HAVE_NETINET_TCP_H 1
 
-/* Define to 1 if you have the <openssl/hmac.h> header file. */
-#cmakedefine HAVE_OPENSSL_HMAC_H 1
-
-/* Define to 1 if you have the <openssl/x509.h> header file. */
-#cmakedefine HAVE_OPENSSL_X509_H 1
-
 /* Define to 1 if you have the <poll.h> header file. */
 #cmakedefine HAVE_POLL_H 1
 
-/* Define to 1 if you have the <postgresql/libpq-fe.h> header file. */
-#cmakedefine HAVE_POSTGRESQL_LIBPQ_FE_H 1
+/* Define to 1 if you have the strdupa() function. */
+#cmakedefine HAVE_STRDUPA 1
 
 /* Define to 1 if you have the <sys/endian.h> header file. */
 #cmakedefine HAVE_SYS_ENDIAN_H 1
@@ -160,9 +145,6 @@
     STACK_DIRECTION < 0 => grows toward lower addresses
     STACK_DIRECTION = 0 => direction of growth unknown */
 /* #undef STACK_DIRECTION */
-
-/* Defined to 1 if asicseer-db support required */
-#cmakedefine USE_ASICSEER_DB 1
 
 /* Use avx2 assembly instructions for sha256 */
 #cmakedefine USE_AVX2 1

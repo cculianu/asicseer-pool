@@ -319,71 +319,104 @@ extern "C" void nanosleep_abstime(const ts_t *ts_end)
 
 extern "C" int epfd_create(void)
 {
+    const int ret = []{
 #ifdef USE_EPOLL /* Linux */
-    return epoll_create1(EPOLL_CLOEXEC);
+        return epoll_create1(EPOLL_CLOEXEC);
 #elif USE_KEVENT /* macOS, BSD, etc */
-    return kqueue();
+        return kqueue();
 #else
 #error "Unsupported platform!"
 #endif
+    }();
+    LOGDEBUG("%s: returning: %d", __func__, ret);
+    return ret;
 }
 
 extern "C" int epfd_add(int epfd, int fd, uint64_t userdata, bool forRead, bool oneShot, bool edgeTriggered)
 {
+    const int ret = [&]{
 #ifdef USE_EPOLL /* Linux */
-    struct epoll_event event;
-    std::memset(&event, 0, sizeof(event));
-    event.data.u64 = userdata;
-    event.events = EPOLLRDHUP | (forRead ? EPOLLIN : EPOLLOUT) | (oneShot ? EPOLLONESHOT : 0) | (edgeTriggered ? EPOLLET : 0);
-    return epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &event);
+        struct epoll_event event;
+        std::memset(&event, 0, sizeof(event));
+        event.data.u64 = userdata;
+        event.events = EPOLLRDHUP | (forRead ? EPOLLIN : EPOLLOUT) | (oneShot ? EPOLLONESHOT : 0) | (edgeTriggered ? EPOLLET : 0);
+        return epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &event);
 #elif USE_KEVENT /* macOS, BSD, etc */
-    struct kevent64_s kev;
-    std::memset(&kev, 0, sizeof(kev));
-    int16_t filter = 0;
-    uint16_t flags = EV_ADD;
-    if (forRead) filter = EVFILT_READ;
-    else filter = EVFILT_WRITE;
-    if (edgeTriggered) flags |= EV_CLEAR;
-    if (oneShot) flags |= EV_ONESHOT;
-    EV_SET64(&kev, fd, filter, flags, 0, 0, userdata, 0, 0);
-    return kevent64(epfd, &kev, 1, nullptr, 0, 0, nullptr);
+        struct kevent64_s kev;
+        std::memset(&kev, 0, sizeof(kev));
+        int16_t filter = 0;
+        uint16_t flags = EV_ADD;
+        if (forRead) filter = EVFILT_READ;
+        else filter = EVFILT_WRITE;
+        if (edgeTriggered) flags |= EV_CLEAR;
+        if (oneShot) flags |= EV_ONESHOT;
+        EV_SET64(&kev, fd, filter, flags, 0, 0, userdata, 0, 0);
+        return kevent64(epfd, &kev, 1, nullptr, 0, 0, nullptr);
 #else
 #error "Unsupported platform!"
 #endif
+    }();
+    LOGDEBUG("%s: epfd: %d, fd: %d, userdata: %llu, returning: %d", __func__, epfd, fd, (unsigned long long)userdata, ret);
+    return ret;
 }
 
 extern "C" int epfd_wait(int epfd, aevt_t *event, int timeout_msec)
 {
-    std::memset(event, 0, sizeof(*event));
+    const int ret = [&] {
+        std::memset(event, 0, sizeof(*event));
 #ifdef USE_EPOLL /* Linux */
-    struct epoll_event ev;
-    std::memset(&ev, 0, sizeof(ev));
-    int r = epoll_wait(epfd, &ev, 1, timeout_msec);
-    if (r >= 1) {
-        event->userdata = ev.data.u64;
-        event->in = ev.events & EPOLLIN;
-        event->out = ev.events & EPOLLOUT;
-        event->hup = ev.events & EPOLLHUP;
-        event->rdhup = ev.events & EPOLLRDHUP;
-        event->err = ev.events & EPOLLERR;
-    }
-    return r;
+        struct epoll_event ev;
+        std::memset(&ev, 0, sizeof(ev));
+        int r = epoll_wait(epfd, &ev, 1, timeout_msec);
+        if (r >= 1) {
+            event->userdata = ev.data.u64;
+            event->in = ev.events & EPOLLIN;
+            event->out = ev.events & EPOLLOUT;
+            event->hup = ev.events & EPOLLHUP;
+            event->rdhup = ev.events & EPOLLRDHUP;
+            event->err = ev.events & EPOLLERR;
+            if (event->err) event->data = errno;
+        }
+        return r;
 #elif USE_KEVENT /* macOS, BSD, etc */
-    struct kevent64_s kev;
-    std::memset(&kev, 0, sizeof(kev));
-    struct timespec ts{.tv_sec = timeout_msec / 1000, .tv_nsec = (timeout_msec % 1000) * 1'000'000L};
-    int r = kevent64(epfd, nullptr, 0, &kev, 1, 0, &ts);
-    if (r >= 1) {
-        event->fd = kev.ident;
-        event->userdata = kev.udata;
-        event->data = kev.data;
-        event->rdhup = event->hup = kev.flags & EV_EOF;
-        event->in = kev.filter == EVFILT_READ;
-        event->out = kev.filter == EVFILT_WRITE;
-        event->err = kev.flags & EV_ERROR;
-    }
-    return r;
+        struct kevent64_s kev;
+        std::memset(&kev, 0, sizeof(kev));
+        struct timespec ts{.tv_sec = timeout_msec / 1000, .tv_nsec = (timeout_msec % 1000) * 1'000'000L};
+        int r = kevent64(epfd, nullptr, 0, &kev, 1, 0, &ts);
+        if (r >= 1) {
+            event->fd = kev.ident;
+            event->userdata = kev.udata;
+            event->data = kev.data;
+            event->rdhup = event->hup = kev.flags & EV_EOF;
+            event->in = kev.filter == EVFILT_READ;
+            event->out = kev.filter == EVFILT_WRITE;
+            event->err = kev.flags & EV_ERROR;
+            if (event->err && !event->data) event->data = errno;
+        }
+        return r;
 #else
 #error "Unsupported platform!"
 #endif
+    }();
+    LOGDEBUG("%s: epfd: %d, fd: %d, userdata: %llu, returning: %d", __func__, epfd, event->fd,
+             (unsigned long long)event->userdata, ret);
+    return ret;
+}
+
+extern "C" int epfd_rm(int epfd, int fd)
+{
+    const int ret = [&] {
+#ifdef USE_EPOLL /* Linux */
+        return epoll_ctl(epfd, EPOLL_CTL_DEL, fd, nullptr);
+#elif USE_KEVENT /* macOS, BSD, etc */
+        struct kevent64_s kev;
+        std::memset(&kev, 0, sizeof(kev));
+        EV_SET64(&kev, fd, 0, EV_DELETE, 0, 0, 0, 0, 0);
+        return kevent64(epfd, &kev, 1, nullptr, 0, 0, nullptr);
+#else
+#error "Unsupported platform!"
+#endif
+    }();
+    LOGDEBUG("%s: epfd: %d, fd: %d, returning: %d", __func__, epfd, fd, ret);
+    return ret;
 }
