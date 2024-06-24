@@ -28,13 +28,14 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "cashaddr.h"
 #include "asicseer-pool.h"
-#include "libasicseerpool.h"
-#include "generator.h"
-#include "stratifier.h"
+#include "cashaddr.h"
 #include "connector.h"
 #include "donation.h"
+#include "generator.h"
+#include "libasicseerpool.h"
+#include "sha2.h"
+#include "stratifier.h"
 
 pool_t *global_ckp;
 
@@ -2127,6 +2128,9 @@ int main(int argc, char **argv)
                 break; // not reached
         }
     }
+
+    sha256_selftest(); // may exit if there is a problem
+
     if (ckp.daemon) {
         // Daemonize immediately. We must do this before any threads are started because
         // fork() stops all other threads besides the calling thread.  Code previous to v1.0.2

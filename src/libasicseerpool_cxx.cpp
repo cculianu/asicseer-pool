@@ -1,6 +1,8 @@
 #include "libasicseerpool.h"
+#include "sha2.h"
 
-#include <cinttypes>
+#include "bitcoin/sha256.h"
+
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -9,28 +11,6 @@
 
 namespace {
 using uchar = uint8_t;
-
-inline void WriteLE16(uint8_t *ptr, uint16_t x) {
-    uint16_t v = htole16(x);
-    std::memcpy(ptr, (char *)&v, 2);
-}
-
-inline void WriteLE32(uint8_t *ptr, uint32_t x) {
-    uint32_t v = htole32(x);
-    std::memcpy(ptr, (char *)&v, 4);
-}
-
-inline uint16_t ReadLE16(const uint8_t *ptr) {
-    uint16_t x;
-    std::memcpy((char *)&x, ptr, 2);
-    return le16toh(x);
-}
-
-inline uint32_t ReadLE32(const uint8_t *ptr) {
-    uint32_t x;
-    std::memcpy((char *)&x, ptr, 4);
-    return le32toh(x);
-}
 
 enum opcodetype {
     // push value
@@ -200,4 +180,22 @@ extern "C" void test_ser_deser_cbheight(void)
         }
     }
     std::cout << "Success!" << std::endl;
+}
+
+extern "C" void sha256(const unsigned char *message, unsigned int len, unsigned char digest[SHA256_DIGEST_SIZE])
+{
+    CSHA256 ctx;
+    ctx.Write(reinterpret_cast<const uint8_t *>(message), len);
+    ctx.Finalize(reinterpret_cast<uint8_t *>(digest));
+}
+
+extern "C" void sha256_selftest(void)
+{
+    try {
+        const auto impl = SHA256AutoDetect();
+        LOGINFO("Using SHA256: %s", impl.c_str());
+    } catch (const std::exception &e) {
+        LOGEMERG("SHA256 self-test failed: %s", e.what());
+        std::exit(1);
+    }
 }

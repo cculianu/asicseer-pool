@@ -1,3 +1,6 @@
+#ifndef HAVE_CONFIG_H
+#define HAVE_CONFIG_H 1
+
 /* Version number of package */
 #define VERSION "${APP_VERSION_MAJOR}.${APP_VERSION_MINOR}.${APP_VERSION_REVISION}"
 
@@ -27,6 +30,27 @@
 /* Define to 1 if you have the clock_nanosleep() function. */
 #cmakedefine HAVE_CLOCK_NANOSLEEP 1
 
+/* HAVE_DECL_* */
+#cmakedefine HAVE_DECL_HTOLE16 1
+#cmakedefine HAVE_DECL_HTOBE16 1
+#cmakedefine HAVE_DECL_BE16TOH 1
+#cmakedefine HAVE_DECL_LE16TOH 1
+#cmakedefine HAVE_DECL_HTOBE32 1
+#cmakedefine HAVE_DECL_HTOLE32 1
+#cmakedefine HAVE_DECL_BE32TOH 1
+#cmakedefine HAVE_DECL_LE32TOH 1
+#cmakedefine HAVE_DECL_HTOBE64 1
+#cmakedefine HAVE_DECL_HTOLE64 1
+#cmakedefine HAVE_DECL_BE64TOH 1
+#cmakedefine HAVE_DECL_LE64TOH 1
+#cmakedefine HAVE_DECL_BSWAP_16 1
+#cmakedefine HAVE_DECL_BSWAP_32 1
+#cmakedefine HAVE_DECL_BSWAP_64 1
+#cmakedefine HAVE_DECL___BUILTIN_CLZ 1
+#cmakedefine HAVE_DECL___BUILTIN_CLZL 1
+#cmakedefine HAVE_DECL___BUILTIN_CLZLL 1
+#cmakedefine HAVE_DECL___BUILTIN_POPCOUNT 1
+
 /* Define to 1 if you have the <ctype.h> header file. */
 #cmakedefine HAVE_CTYPE_H 1
 
@@ -53,6 +77,9 @@
 
 /* Define to 1 if you have the <grp.h> header file. */
 #cmakedefine HAVE_GRP_H 1
+
+/* Define to 1 if you have the __int128 builtin. */
+#cmakedefine HAVE_INT128 1
 
 /* Define to 1 if you have the <inttypes.h> header file. */
 #cmakedefine HAVE_INTTYPES_H 1
@@ -98,6 +125,9 @@
 
 /* Define to 1 if you have the <sys/prctl.h> header file. */
 #cmakedefine HAVE_SYS_PRCTL_H 1
+
+/* Define to 1 if you have the <sys/select.h> header file. */
+#cmakedefine HAVE_SYS_SELECT_H 1
 
 /* Define to 1 if you have the <sys/socket.h> header file. */
 #cmakedefine HAVE_SYS_SOCKET_H 1
@@ -188,3 +218,10 @@
 
 /* Define to `unsigned int' if <sys/types.h> does not define (very old unix). */
 #cmakedefine size_t ${size_t}
+
+/* For the various cpu-specific bits in bitcoin/sha256_*.cpp */
+#cmakedefine ENABLE_SSE41 1
+#cmakedefine ENABLE_AVX2 1
+#cmakedefine ENABLE_SHANI 1
+
+#endif /* HAVE_CONFIG_H */

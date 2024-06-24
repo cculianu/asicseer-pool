@@ -43,7 +43,7 @@ It has been updated and reworked to add features and to support Bitcoin Cash
 BUILDING
 ---
 
-$ sudo apt-get install build-essential yasm libzmq3-dev cmake
+$ sudo apt-get install build-essential libzmq3-dev cmake
 $ mkdir build && cd build
 $ cmake ..
 $ make

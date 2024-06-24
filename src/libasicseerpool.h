@@ -47,46 +47,11 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
+#include "bitcoin/common.h"
 #include "utlist.h"
 
 #ifdef  __cplusplus
 extern "C" {
-#endif
-
-#ifndef bswap_16
- #define bswap_16 __builtin_bswap16
- #define bswap_32 __builtin_bswap32
- #define bswap_64 __builtin_bswap64
-#endif
-
-/* This assumes htobe32 is a macro in endian.h, and if it doesn't exist, then
- * htobe64 also won't exist */
-#ifndef htobe32
-# if __BYTE_ORDER == __LITTLE_ENDIAN
-#  define htole16(x) (x)
-#  define le16toh(x) (x)
-#  define htole32(x) (x)
-#  define htole64(x) (x)
-#  define le32toh(x) (x)
-#  define le64toh(x) (x)
-#  define be32toh(x) bswap_32(x)
-#  define be64toh(x) bswap_64(x)
-#  define htobe16(x) bswap_16(x)
-#  define htobe32(x) bswap_32(x)
-#  define htobe64(x) bswap_64(x)
-# elif __BYTE_ORDER == __BIG_ENDIAN
-#  define htole16(x) bswap_16(x)
-#  define le16toh(x) bswap_16(x)
-#  define htole32(x) bswap_32(x)
-#  define le32toh(x) bswap_32(x)
-#  define le64toh(x) bswap_64(x)
-#  define htole64(x) bswap_64(x)
-#  define be32toh(x) (x)
-#  define be64toh(x) (x)
-#  define htobe16(x) (x)
-#  define htobe32(x) (x)
-#  define htobe64(x) (x)
-# endif
 #endif
 
 #define unlikely(expr) (__builtin_expect(!!(expr), 0))
