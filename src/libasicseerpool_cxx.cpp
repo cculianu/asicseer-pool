@@ -7,6 +7,7 @@
 #include <cstring>
 #include <iostream>
 #include <sstream>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -194,6 +195,16 @@ extern "C" void sha256_selftest(void)
     try {
         const auto impl = SHA256AutoDetect();
         LOGINFO("Using SHA256: %s", impl.c_str());
+        // Test sha256() API above is ok
+        using namespace std::string_view_literals;
+        constexpr auto expected = "\x58\xb4\x33\xfa\x7e\x8b\x0f\x94\xb2\xff\x02\x17\x8e\x77\x68\xf5\xa3\x29\xef\x34\x6d"
+                                  "\x90\x8c\x7b\x91\x78\x24\xe5\xa4\xca\x95\x75"sv;
+        static_assert(expected.size() == SHA256_DIGEST_SIZE);
+        constexpr auto message = "The quick brown fox jumped over the lazy dogs"sv;
+        unsigned char buf[SHA256_DIGEST_SIZE];
+        sha256(reinterpret_cast<const unsigned char *>(message.data()), message.size(), buf);
+        if (0 != std::memcmp(expected.data(), buf, expected.size()))
+            throw std::runtime_error("Hashing produced unexpected results when runtime-tested -- this sould never happen!");
     } catch (const std::exception &e) {
         LOGEMERG("SHA256 self-test failed: %s", e.what());
         std::exit(1);
