@@ -43,6 +43,8 @@ It has been updated and reworked to add features and to support Bitcoin Cash
 BUILDING
 ---
 
+A relatively recent, C++-20-capable compiler is required.
+
 $ sudo apt-get install build-essential libzmq3-dev cmake
 $ mkdir build && cd build
 $ cmake ..

@@ -80,22 +80,6 @@ void join_pthread(pthread_t thread)
         pthread_join(thread, NULL);
 }
 
-struct ck_completion {
-    sem_t sem;
-    void (*fn)(void *fnarg);
-    void *fnarg;
-};
-
-static void *completion_thread(void *arg)
-{
-    struct ck_completion *ckc = (struct ck_completion *)arg;
-
-    ckc->fn(ckc->fnarg);
-    cksem_post(&ckc->sem);
-
-    return NULL;
-}
-
 int _cond_wait(pthread_cond_t *cond, mutex_t *lock, const char *file, const char *func, const int line)
 {
     int ret;
@@ -163,7 +147,7 @@ retry:
                 goto retry;
             quitfrom(1, file, func, line, "FAILED TO GRAB MUTEX!");
         }
-        quitfrom(1, file, func, line, "WTF MUTEX ERROR ON LOCK!");
+        quitfrom(1, file, func, line, "MUTEX ERROR %d ON LOCK 0x%p: (%s)", ret, (void *)&lock->mutex, strerror(ret));
     }
 }
 
@@ -375,45 +359,6 @@ void cklock_destroy(cklock_t *lock)
 {
     pthread_rwlock_destroy(&lock->rwlock.rwlock);
     pthread_mutex_destroy(&lock->mutex.mutex);
-}
-
-
-void _cksem_init(sem_t *sem, const char *file, const char *func, const int line)
-{
-    int ret;
-    if ((ret = sem_init(sem, 0, 0)))
-        quitfrom(1, file, func, line, "Failed to sem_init ret=%d errno=%d (%s)", ret, errno, strerror(errno));
-}
-
-void _cksem_post(sem_t *sem, const char *file, const char *func, const int line)
-{
-    if (unlikely(sem_post(sem)))
-        quitfrom(1, file, func, line, "Failed to sem_post errno=%d sem=0x%p", errno, sem);
-}
-
-void _cksem_wait(sem_t *sem, const char *file, const char *func, const int line)
-{
-    if (unlikely(sem_wait(sem))) {
-        if (errno == EINTR)
-            return;
-        quitfrom(1, file, func, line, "Failed to sem_wait errno=%d sem=0x%p", errno, sem);
-    }
-}
-
-int _cksem_trywait(sem_t *sem, const char *file, const char *func, const int line)
-{
-    int ret = sem_trywait(sem);
-
-    if (unlikely(ret && errno != EAGAIN && errno != EINTR))
-        quitfrom(1, file, func, line, "Failed to sem_trywait errno=%d sem=0x%p", errno, sem);
-    return ret;
-}
-
-void _cksem_destroy(sem_t *sem, const char *file, const char *func, const int line)
-{
-
-    if (unlikely(sem_destroy(sem)))
-        quitfrom(1, file, func, line, "Failed to sem_destroy errno=%d sem=0x%p", errno, sem);
 }
 
 bool extract_zmq_proto_port(const char *z, char **proto, char **port, char **middle)

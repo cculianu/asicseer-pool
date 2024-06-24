@@ -6,8 +6,10 @@
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string_view>
+#include <semaphore>
 #include <vector>
 
 namespace {
@@ -209,4 +211,76 @@ extern "C" void sha256_selftest(void)
         LOGEMERG("SHA256 self-test failed: %s", e.what());
         std::exit(1);
     }
+}
+
+struct OpaqueSem {
+    using SemType = std::counting_semaphore<>;
+#ifdef _POSIX_SEM_VALUE_MAX
+    static_assert(SemType::max() >= _POSIX_SEM_VALUE_MAX);
+#else
+    static_assert(SemType::max() >= 1024);
+#endif
+    SemType sem;
+
+    OpaqueSem(unsigned int value = 0) : sem(value) {}
+};
+
+extern "C" void _cksem_init(cksem_t *sem, const char *file, const char *func, const int line)
+{
+    static_assert(OpaqueSem::SemType::max() > 0);
+    try {
+        auto uptr = std::make_unique<OpaqueSem>(0);
+        *sem = uptr.release();
+    } catch (const std::exception &e) {
+        quitfrom(1, file, func, line, "Failed to construct OpaqueSem (%s)", e.what());
+    }
+}
+
+extern "C" void _cksem_destroy(cksem_t *sem, const char *file, const char *func, const int line)
+{
+    if (const void *a[2] = {}; !(a[0] = sem) || !(a[1] = *sem)) {
+        quitfrom(1, file, func, line, "Failed to destroy OpaqueSem sem=0x%p *sem=0x%p", a[0], a[1]);
+        return; // not reached
+    }
+    // will auto-delete on scope end. we do this to avoid the `delete` keyword and for symmetry with above
+    std::unique_ptr<OpaqueSem> uptr(*sem);
+    *sem = nullptr;
+}
+
+extern "C" void _cksem_post(cksem_t *sem, const char *file, const char *func, const int line)
+{
+    const void *a[2] = {};
+    try {
+        if (!(a[0] = sem)) throw std::invalid_argument("nullptr `sem` argument");
+        if (!(a[1] = *sem)) throw std::invalid_argument("nullptr `*sem` argument");
+        (*sem)->sem.release(1);
+    } catch (const std::exception &e) {
+        quitfrom(1, file, func, line, "Failed to `post()` to OpaqueSem sem=0x%p *sem=0x%p (%s)", a[0], a[1], e.what());
+    }
+}
+
+extern "C" void _cksem_wait(cksem_t *sem, const char *file, const char *func, const int line)
+{
+    const void *a[2] = {};
+    try {
+        if (!(a[0] = sem)) throw std::invalid_argument("nullptr `sem` argument");
+        if (!(a[1] = *sem)) throw std::invalid_argument("nullptr `*sem` argument");
+        (*sem)->sem.acquire();
+    } catch (const std::exception &e) {
+        quitfrom(1, file, func, line, "Failed to `acquire()` from OpaqueSem sem=0x%p *sem=0x%p (%s)", a[0], a[1], e.what());
+    }
+}
+
+extern "C" int _cksem_trywait(cksem_t *sem, const char *file, const char *func, const int line)
+{
+    const void *a[2] = {};
+    try {
+        if (!(a[0] = sem)) throw std::invalid_argument("nullptr `sem` argument");
+        if (!(a[1] = *sem)) throw std::invalid_argument("nullptr `*sem` argument");
+        if ((*sem)->sem.try_acquire())
+            return 0; // success
+    } catch (const std::exception &e) {
+        quitfrom(1, file, func, line, "Failed to `try_acquire()` from OpaqueSem sem=0x%p *sem=0x%p (%s)", a[0], a[1], e.what());
+    }
+    return -1; // failure
 }

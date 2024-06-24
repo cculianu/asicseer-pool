@@ -62,7 +62,7 @@ static const double nonces = 4294967296;
 #if PAYOUT_REWARDS * CBGENLEN > MAX_CB_SPACE
 #error Please set PAYOUT_REWARDS to fit inside a coinbase tx (MAX_CB_SPACE)!
 #endif
-#if defined(__clang__) && !defined(strdupa)
+#if !HAVE_STRDUPA
 // In case we are compiling with some compiler other than the GCC suite (strdupa is GCC only).
 #define strdupa(s) strcpy(alloca(strlen(s) + 1), s)
 #endif
@@ -502,7 +502,7 @@ struct stratifier_data {
     bool wbincomplete;
 
     /* Semaphore to serialise calls to add_base */
-    sem_t update_sem;
+    cksem_t update_sem;
     /* Time we last sent out a stratum update */
     time_t update_time;
     /* Time we last saw a new block in block_update. Will be 0 initially. */
@@ -552,6 +552,22 @@ struct stratifier_data {
     mutex_t proxy_lock; /* Protects all proxy data */
     proxy_t *subproxy; /* Which subproxy this sdata belongs to in proxy mode */
 };
+
+static sdata_t *stratifier_new(void)
+{
+    sdata_t *s = ckzalloc(sizeof(sdata_t));
+    mutex_init(&s->stats_lock);
+    mutex_init(&s->uastats_lock);
+    cklock_init(&s->txn_lock);
+    cklock_init(&s->workbase_lock);
+    cksem_init(&s->update_sem);
+    mutex_init(&s->update_time_lock);
+    mutex_init(&s->last_hash_lock);
+    cklock_init(&s->instance_lock);
+    mutex_init(&s->share_lock);
+    mutex_init(&s->proxy_lock);
+    return s;
+}
 
 /* Priority levels for generator messages */
 #define GEN_LAX 0
@@ -6138,6 +6154,7 @@ static user_instance_t *__create_user(sdata_t *sdata, const char *username)
 {
     user_instance_t *user = ckzalloc(sizeof(user_instance_t));
 
+    mutex_init(&user->stats_lock);
     user->auth_backoff = DEFAULT_AUTH_BACKOFF;
     strncpy(user->username, username, MAX_USERNAME);
     user->username[MAX_USERNAME] = 0; // ensure NUL
@@ -6162,7 +6179,6 @@ static user_instance_t *get_create_user(sdata_t *sdata, const char *username, bo
     ck_wunlock(&sdata->instance_lock);
 
     if (*new_user) {
-        mutex_init(&user->stats_lock);
         /* Sanity to save checking for / 0 */
         user->herp = user->lns = 0.1;
     }
@@ -9561,7 +9577,7 @@ void *stratifier(void *arg)
 
     rename_proc(pi->processname);
     LOGWARNING("%s stratifier starting", ckp->name);
-    sdata = ckzalloc(sizeof(sdata_t));
+    sdata = stratifier_new(); // properly initializes all locks and sems in this struct
     ckp->sdata = sdata;
     sdata->ckp = ckp;
     sdata->verbose = true;
@@ -9620,8 +9636,6 @@ void *stratifier(void *arg)
     if (!ckp->proxy)
         sdata->blockchange_id = sdata->workbase_id = randomiser;
 
-    cklock_init(&sdata->instance_lock);
-    cksem_init(&sdata->update_sem);
     cksem_post(&sdata->update_sem);
 
     /* Create half as many share processing and receiving threads as there
@@ -9645,23 +9659,11 @@ void *stratifier(void *arg)
     sdata->stats.herp_window = ~0ULL;
     sdata->stats.network_diff = ~0ULL;
 
-    cklock_init(&sdata->txn_lock);
-    cklock_init(&sdata->workbase_lock);
     if (!ckp->proxy)
         create_pthread(&pth_blockupdate, blockupdate, ckp);
-    else {
-        mutex_init(&sdata->proxy_lock);
-    }
 
-    mutex_init(&sdata->stats_lock);
-    mutex_init(&sdata->uastats_lock);
     if (!ckp->passthrough || ckp->node)
         create_pthread(&pth_statsupdate, statsupdate, ckp);
-
-    mutex_init(&sdata->share_lock);
-
-    mutex_init(&sdata->update_time_lock);
-    mutex_init(&sdata->last_hash_lock);
 
     if (ckp->n_zmq_btcds > 0 && !ckp->proxy) {
         create_pthread(&pth_zmqnotify, zmqnotify, ckp);

@@ -707,7 +707,7 @@ int read_socket_contentlen(connsock_t *cs, int contentlen, float *timeout)
             ret = -1;
             goto out;
         } else {
-            //LOGDEBUG("read: %d", ret);
+            //LOGDEBUG("read: %d (%d)", ret, cs->fd);
             nread += ret;
         }
         tv_time(&now);
@@ -800,6 +800,7 @@ int read_socket_line(connsock_t *cs, float *timeout)
             ret = -1;
             goto out;
         }
+        // LOGDEBUG("read: %d (%d)", ret, cs->fd);
         eom = memchr(cs->buf, '\n', cs->bufofs);
         tv_time(&now);
         diff = tvdiff(&now, &start);
@@ -819,6 +820,8 @@ out:
         empty_buffer(cs);
         dealloc(cs->buf);
     }
+    //LOGDEBUG("%s: fd: %d, ret: %d buflen: %d bufofs: %d bufsize: %d buf: \"%s\"", __func__,
+    //         cs->fd, ret, cs->buflen, cs->bufofs, cs->bufsize, cs->buf);
     return ret;
 }
 
@@ -2129,8 +2132,6 @@ int main(int argc, char **argv)
         }
     }
 
-    sha256_selftest(); // may exit if there is a problem
-
     if (ckp.daemon) {
         // Daemonize immediately. We must do this before any threads are started because
         // fork() stops all other threads besides the calling thread.  Code previous to v1.0.2
@@ -2161,6 +2162,8 @@ int main(int argc, char **argv)
             ckp.name = POOL_PROGNAME;
     }
     rename_proc(ckp.name);
+
+    sha256_selftest(); // may exit if there is a problem
 
     if (ckp.grpnam) {
         struct group *group = getgrnam(ckp.grpnam);

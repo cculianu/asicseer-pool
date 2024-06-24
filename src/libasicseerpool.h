@@ -32,7 +32,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <syslog.h>
-#include <semaphore.h>
 
 #if HAVE_BYTESWAP_H
 # include <byteswap.h>
@@ -476,11 +475,15 @@ void _ck_runlock(cklock_t *lock, const char *file, const char *func, const int l
 void _ck_wunlock(cklock_t *lock, const char *file, const char *func, const int line);
 void cklock_destroy(cklock_t *lock);
 
-void _cksem_init(sem_t *sem, const char *file, const char *func, const int line);
-void _cksem_post(sem_t *sem, const char *file, const char *func, const int line);
-void _cksem_wait(sem_t *sem, const char *file, const char *func, const int line);
-int _cksem_trywait(sem_t *sem, const char *file, const char *func, const int line);
-void _cksem_destroy(sem_t *sem, const char *file, const char *func, const int line);
+struct OpaqueSem; // opaque semaphore type, implemented on the C++ side
+typedef struct OpaqueSem *cksem_t;
+
+/* The below are implemented in the C++ part of this lib */
+void _cksem_init(cksem_t *sem, const char *file, const char *func, const int line);
+void _cksem_post(cksem_t *sem, const char *file, const char *func, const int line);
+void _cksem_wait(cksem_t *sem, const char *file, const char *func, const int line);
+int _cksem_trywait(cksem_t *sem, const char *file, const char *func, const int line);
+void _cksem_destroy(cksem_t *sem, const char *file, const char *func, const int line);
 
 #define cksem_init(SEM) _cksem_init(SEM, __FILE__, __func__, __LINE__)
 #define cksem_post(SEM) _cksem_post(SEM, __FILE__, __func__, __LINE__)

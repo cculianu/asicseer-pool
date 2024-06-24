@@ -96,7 +96,7 @@ struct connsock {
 
     pool_t *ckp;
     /* Semaphore used to serialise request/responses */
-    sem_t sem;
+    cksem_t sem;
 
     atomic_bool alive;
 };

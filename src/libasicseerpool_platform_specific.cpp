@@ -107,7 +107,8 @@ public:
     operator bool() const { return !disabled; }
 };
 
-double tsToSecs(const timespec &t) noexcept { return double(t.tv_sec) + double(t.tv_nsec / 1e9); };
+[[maybe_unused]]
+double tsToSecs(const timespec &t) noexcept { return double(t.tv_sec) + double(t.tv_nsec / 1e9); }
 
 std::timespec getMonotonicTime() noexcept {
     std::timespec t;
@@ -146,17 +147,17 @@ int emulate_epoll_using_kevent(KFilt kfilt, int sockd, float timeout, bool eof_o
     const int fflags = eof_only ? NOTE_LOWAT: 0;
     const int data = eof_only ? 262144 /* read "low water mark" */ : 0;
     EV_SET(&kev, sockd, filt, EV_ADD | EV_CLEAR, fflags, data, 0);
-    int r = kevent(kq, &kev, 1, nullptr, 0, nullptr);
-    LOGDEBUG("kevent(0) returned %d", r);
+    int r [[maybe_unused]] = kevent(kq, &kev, 1, nullptr, 0, nullptr);
+    //LOGDEBUG("kevent(0) returned %d", r);
     std::memset(&kev, 0, sizeof(kev));
     const std::timespec ttimeout{.tv_sec = long(timeout), .tv_nsec = long(std::fmod(timeout, 1.0) * 1e9)};
     const timespec tstart = getMonotonicTime();
     for (;;) {
         const timespec tnow = getMonotonicTime();
         const timespec ts = (tstart + ttimeout) - tnow;
-        LOGDEBUG("%s on %d, timeout: %1.3f", __func__, sockd, tsToSecs(ts));
+        //LOGDEBUG("%s on %d, mode: %s, timeout: %1.3f, eof_only: %d", __func__, sockd, verb, tsToSecs(ts), int(eof_only));
         r = kevent(kq, nullptr, 0, &kev, 1, &ts);
-        LOGDEBUG("kevent(1) returned %d", r);
+        //LOGDEBUG("kevent(1) returned %d (data: %lld)", r, static_cast<long long>(kev.data));
         if (r < 1) {
             if (unlikely(r == -1 && errno == EINTR)) {
                 LOGDEBUG("%s: got just a signal, continuing to wait ...", __func__);
@@ -200,7 +201,7 @@ extern "C" int wait_close(int sockd, int timeout)
 #else
 #error "Unsupported platform!"
 #endif
-    LOGDEBUG("%s: returning %d", __func__, ret);
+    //LOGDEBUG("%s: returning %d", __func__, ret);
     return ret;
 }
 
@@ -328,7 +329,7 @@ extern "C" int epfd_create(void)
 #error "Unsupported platform!"
 #endif
     }();
-    LOGDEBUG("%s: returning: %d", __func__, ret);
+    //LOGDEBUG("%s: returning: %d", __func__, ret);
     return ret;
 }
 
@@ -356,7 +357,7 @@ extern "C" int epfd_add(int epfd, int fd, uint64_t userdata, bool forRead, bool 
 #error "Unsupported platform!"
 #endif
     }();
-    LOGDEBUG("%s: epfd: %d, fd: %d, userdata: %llu, returning: %d", __func__, epfd, fd, (unsigned long long)userdata, ret);
+    //LOGDEBUG("%s: epfd: %d, fd: %d, userdata: %llu, returning: %d", __func__, epfd, fd, (unsigned long long)userdata, ret);
     return ret;
 }
 
@@ -398,8 +399,8 @@ extern "C" int epfd_wait(int epfd, aevt_t *event, int timeout_msec)
 #error "Unsupported platform!"
 #endif
     }();
-    LOGDEBUG("%s: epfd: %d, fd: %d, userdata: %llu, returning: %d", __func__, epfd, event->fd,
-             (unsigned long long)event->userdata, ret);
+    //LOGDEBUG("%s: epfd: %d, fd: %d, userdata: %llu, returning: %d", __func__, epfd, event->fd,
+    //         (unsigned long long)event->userdata, ret);
     return ret;
 }
 
@@ -417,6 +418,6 @@ extern "C" int epfd_rm(int epfd, int fd)
 #error "Unsupported platform!"
 #endif
     }();
-    LOGDEBUG("%s: epfd: %d, fd: %d, returning: %d", __func__, epfd, fd, ret);
+    //LOGDEBUG("%s: epfd: %d, fd: %d, returning: %d", __func__, epfd, fd, ret);
     return ret;
 }
