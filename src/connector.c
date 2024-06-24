@@ -737,7 +737,7 @@ static void *receiver(void *arg)
     }
 out:
     /* We shouldn't get here unless there's an error */
-    if (event) free(event), event = NULL;
+    if (event) dealloc(event);
     return NULL;
 }
 
