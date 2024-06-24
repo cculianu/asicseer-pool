@@ -42,7 +42,7 @@ add_yasm_custom_command("USE_AVX1" "sha256_avx1")
 add_yasm_custom_command("USE_SSE4" "sha256_sse4")
 
 add_library(asicseerpool libasicseerpool.c libasicseerpool_cxx.cpp libasicseerpool.h sha2.c sha2.h cashaddr.c cashaddr.h
-                         platform_specific.cpp
+                         libasicseerpool_platform_specific.cpp
                          ${EXTRA_OBJS})
 
 add_executable(asicseer-pool asicseer-pool.c asicseer-pool.h generator.c generator.h bitcoin.c bitcoin.h
