@@ -976,7 +976,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 {
     static const size_t COINB1_INITIAL_CAPACITY = 512;
     const int64_t t0 = time_micros();
-    char header[228];
+    char header[272];
     cb1_buffer_t cb1_buf;
     strbuffer_t *strbuf = &cb1_buf.buffer; // for convenience -- used below
     int len = 0;
@@ -1115,12 +1115,13 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
         quit(1, "INTERNAL ERROR: coinbase tx length exceeded %d bytes. FIXME!", (int)MAX_COINBASE_TX_LEN);
     }
 
-    snprintf(header, 225, "%s%s%s%s%s%s%s",
+    snprintf(header, 270, "%s%s%s%s%s%s%s",
              wb->bbversion, wb->prevhash,
              "0000000000000000000000000000000000000000000000000000000000000000",
              wb->ntime, wb->nbit,
              "00000000", /* nonce */
              workpadding);
+    header[224] = 0;
     LOGDEBUG("Header: %s", header);
     hex2bin(wb->headerbin, header, 112);
     LOGDEBUG("%s: took %0.6f secs", __func__, (time_micros()-t0)/1e6);
@@ -2385,7 +2386,7 @@ static void add_node_base(pool_t *ckp, json_t *val, bool trusted, int64_t client
     workbase_t *wb = ckzalloc(sizeof(workbase_t));
     sdata_t *sdata = ckp->sdata;
     bool new_block = false;
-    char header[228];
+    char header[272];
 
     wb->ckp = ckp;
     /* This is the client id if this workbase came from a remote trusted
@@ -2434,12 +2435,13 @@ static void add_node_base(pool_t *ckp, json_t *val, bool trusted, int64_t client
     json_intcpy(&wb->enonce2varlen, val, "enonce2varlen");
     ts_realtime(&wb->gentime);
 
-    snprintf(header, 225, "%s%s%s%s%s%s%s",
+    snprintf(header, 270, "%s%s%s%s%s%s%s",
          wb->bbversion, wb->prevhash,
          "0000000000000000000000000000000000000000000000000000000000000000",
          wb->ntime, wb->nbit,
          "00000000", /* nonce */
          workpadding);
+    header[224] = 0;
     LOGDEBUG("Header: %s", header);
     hex2bin(wb->headerbin, header, 112);
 
@@ -3578,7 +3580,7 @@ static void update_notify(pool_t *ckp, const char *cmd)
     sdata_t *sdata = ckp->sdata, *dsdata;
     bool new_block = false, clean;
     int i, id = 0, subid = 0;
-    char header[228];
+    char header[272];
     const char *buf;
     proxy_t *proxy;
     workbase_t *wb;
@@ -3638,12 +3640,13 @@ static void update_notify(pool_t *ckp, const char *cmd)
     sscanf(wb->ntime, "%x", &wb->ntime32);
     clean = json_is_true(json_object_get(val, "clean"));
     ts_realtime(&wb->gentime);
-    snprintf(header, 225, "%s%s%s%s%s%s%s",
+    snprintf(header, 270, "%s%s%s%s%s%s%s",
          wb->bbversion, wb->prevhash,
          "0000000000000000000000000000000000000000000000000000000000000000",
          wb->ntime, wb->nbit,
          "00000000", /* nonce */
          workpadding);
+    header[224] = 0;
     LOGDEBUG("Header: %s", header);
     hex2bin(wb->headerbin, header, 112);
     wb->txn_hashes = ckzalloc(1);
