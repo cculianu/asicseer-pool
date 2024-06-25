@@ -139,8 +139,8 @@ struct connector_data {
     /* Linked list of client structures we can reuse */
     client_instance_t *recycled_clients;
 
-    int clients_generated;
-    int dead_generated;
+    int64_t clients_generated;
+    int64_t dead_generated;
 
     int64_t client_ids;
 
@@ -1363,10 +1363,10 @@ char *connector_stats(void *data, const int runtime)
 {
     json_t *val = json_object(), *subval;
     client_instance_t *client;
-    int objects, generated;
+    int objects;
     cdata_t *cdata = data;
     sender_send_t *send;
-    int64_t memsize;
+    int64_t memsize, generated;
     char *buf;
 
     /* If called in passthrough mode we log stats instead of the stratifier */
@@ -1379,7 +1379,7 @@ char *connector_stats(void *data, const int runtime)
     generated = cdata->clients_generated;
     ck_runlock(&cdata->lock);
 
-    JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
+    JSON_CPACK(subval, "{si,sI,sI}", "count", objects, "memory", memsize, "generated", generated);
     json_steal_object(val, "clients", subval);
 
     ck_rlock(&cdata->lock);
@@ -1388,7 +1388,7 @@ char *connector_stats(void *data, const int runtime)
     ck_runlock(&cdata->lock);
 
     memsize = objects * sizeof(client_instance_t);
-    JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
+    JSON_CPACK(subval, "{si,sI,sI}", "count", objects, "memory", memsize, "generated", generated);
     json_steal_object(val, "dead", subval);
 
     objects = 0;
@@ -1399,10 +1399,10 @@ char *connector_stats(void *data, const int runtime)
         objects++;
         memsize += sizeof(sender_send_t) + send->len + 1;
     }
-    JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", cdata->sends_generated);
+    JSON_CPACK(subval, "{si,sI,sI}", "count", objects, "memory", memsize, "generated", cdata->sends_generated);
     json_steal_object(val, "sends", subval);
 
-    JSON_CPACK(subval, "{si,si,si}", "count", cdata->sends_queued, "memory", cdata->sends_size, "generated", cdata->sends_delayed);
+    JSON_CPACK(subval, "{sI,sI,sI}", "count", cdata->sends_queued, "memory", cdata->sends_size, "generated", cdata->sends_delayed);
     mutex_unlock(&cdata->sender_lock);
 
     json_steal_object(val, "delays", subval);
