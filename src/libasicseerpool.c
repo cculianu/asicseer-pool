@@ -2142,7 +2142,8 @@ double diff_from_nbits(const uchar *nbits)
     powdiff = (8 * (0x1d - 3)) - (8 * (pow - 3));
     if (unlikely(powdiff < 0)) // testnet only
         powdiff = 0;
-    diff32 = be32toh(*((uint32_t *)nbits)) & 0x00FFFFFF;
+    memcpy(&diff32, nbits, sizeof(diff32));
+    diff32 = be32toh(diff32) & 0x00FFFFFFu;
     numerator = 0xFFFFULL << powdiff;
     if (unlikely(diff32 == 0))
         // this should never happen, but prevent floating point exceptions

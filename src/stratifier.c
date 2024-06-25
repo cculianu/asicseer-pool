@@ -5539,7 +5539,32 @@ static void *zmqnotify(void *arg)
                                 break;
                             }
                             default:
-                                LOGWARNING("ZMQ: %s #%d message size error, size = %d!", endpoint, i+1, size);
+                                if (size > 0 && msg_data) {
+                                    int j;
+                                    const char *msg_chars = msg_data;
+                                    const int truncsize = size > 32 ? 32 : size;
+                                    for (j = 0; j < size; ++j) {
+                                        const uchar c = msg_chars[j];
+                                        if (c < 0x20u || c > 0x7e)
+                                            break;
+                                    }
+                                    if (j == size) {
+                                        // msg data was text ...
+                                        LOGWARNING("ZMQ: %s #%d message size error, size = %d (text data: \"%.*s%s\")!",
+                                                   endpoint, i+1, size, truncsize, msg_chars, truncsize < size ? "…" : "");
+                                    } else {
+                                        // msg data was binary ...
+                                        char *hexdata = bin2hex(msg_data, truncsize);
+                                        LOGWARNING("ZMQ: %s #%d message size error, size = %d (binary data: %s%s)!",
+                                                   endpoint, i+1, size, hexdata, truncsize < size ? "…" : "");
+                                        dealloc(hexdata);
+                                    }
+                                } else
+                                    LOGWARNING("ZMQ: %s #%d message size error, size = %d!", endpoint, i+1, size);
+                                /* drain this message since size is bad -- sometimes we get subtopic: 'hashtx' here! */
+                                while (zmq_msg_more(&message) && zmq_msg_recv(&message, zs, ZMQ_DONTWAIT) >= 0)
+                                {}
+                                keeptrying = false;
                                 break;
                             }
                             if (!zmq_msg_more(&message)) {
