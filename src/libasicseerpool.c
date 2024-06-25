@@ -807,14 +807,14 @@ out:
 
 void empty_socket(int fd)
 {
-    char buf[PAGESIZE];
+    char buf[512];
     int ret;
 
     if (fd < 1)
         return;
 
     do {
-        ret = recv(fd, buf, PAGESIZE - 1, MSG_DONTWAIT);
+        ret = recv(fd, buf, 511, MSG_DONTWAIT);
         if (ret > 0) {
             buf[ret] = 0;
             LOGDEBUG("Discarding: %s", buf);

@@ -6034,7 +6034,9 @@ static worker_instance_t *get_create_worker(sdata_t *sdata, user_instance_t *use
 /* Load the statistics of and create all known users at startup */
 static void read_userstats(pool_t *ckp, sdata_t *sdata, int tvsec_diff)
 {
-    char dnam[512], s[512], *username, *buf;
+    const size_t kDSize = 512;
+    const size_t kFullSize = kDSize + MAX_USERNAME + 2;
+    char dnam[kDSize], s[kFullSize], *username, *buf;
     int ret, users = 0, workers = 0;
     user_instance_t *user;
     struct dirent *dir;
@@ -6046,7 +6048,7 @@ static void read_userstats(pool_t *ckp, sdata_t *sdata, int tvsec_diff)
     DIR *d;
     int fd;
 
-    snprintf(dnam, 511, "%susers", ckp->logdir);
+    snprintf(dnam, kDSize - 1, "%susers", ckp->logdir);
     d = opendir(dnam);
     if (!d) {
         LOGNOTICE("No user directory found");
@@ -6075,7 +6077,8 @@ static void read_userstats(pool_t *ckp, sdata_t *sdata, int tvsec_diff)
             continue;
         }
         users++;
-        snprintf(s, 511, "%s/%s", dnam, username);
+        snprintf(s, kFullSize, "%s/%s", dnam, username);
+        s[kFullSize - 1] = 0;
         fp = fopen(s, "re");
         if (unlikely(!fp)) {
             /* Permission problems should be the only reason this happens */
