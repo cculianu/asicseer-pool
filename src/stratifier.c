@@ -7061,6 +7061,11 @@ no_stale:
 out_submit:
     if (sdiff >= wdiff)
         submit = true;
+    if (unlikely(sdiff >= sdata->current_workbase->network_diff)) {
+        /* Make sure we always submit any possible block solve */
+        LOGWARNING("Submitting possible block solve share diff %lf !", sdiff);
+        submit = true;
+    }
 out_put:
     put_workbase(sdata, wb);
 out_nowb:
@@ -7127,8 +7132,8 @@ out_nowb:
     json_set_string(val, "createinet", ckp->serverurl[client->server]);
     json_set_string(val, "workername", client->workername);
     json_set_string(val, "username", user->username);
-        json_set_string(val, "address", client->address);
-        json_set_string(val, "agent", client->useragent);
+    json_set_string(val, "address", client->address);
+    json_set_string(val, "agent", client->useragent);
 
     if (ckp->logshares) {
         fp = fopen(fname, "ae");
