@@ -50,7 +50,8 @@ $ mkdir build && cd build
 $ cmake ..
 $ make
 
-Compiled files will appear in the src/ subdirectory.
+Compiled files will appear in the src/ subdirectory relative to the build
+directory.
 
 ---
 
