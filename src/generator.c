@@ -50,7 +50,7 @@ typedef struct proxy_instance proxy_instance_t;
 
 struct share_msg {
     UT_hash_handle hh;
-    int id; // Our own id for submitting upstream
+    int64_t id; // Our own id for submitting upstream
 
     int64_t client_id;
     time_t submit_time;
@@ -162,8 +162,8 @@ struct generator_data {
     mutex_t lock; /* Lock protecting linked lists */
     proxy_instance_t *proxies; /* Hash list of all proxies */
     proxy_instance_t *dead_proxies; /* Disabled proxies */
-    int proxies_generated;
-    int subproxies_generated;
+    int64_t proxies_generated;
+    int64_t subproxies_generated;
 
     int proxy_notify_id;	// Globally increasing notify id
     server_instance_t *si;	/* Current server instance */
@@ -174,7 +174,7 @@ struct generator_data {
     pthread_cond_t psend_cond;
 
     stratum_msg_t *psends;
-    int psends_generated;
+    int64_t psends_generated;
 
     mutex_t notify_lock;
     notify_instance_t *notify_instances;
@@ -1110,6 +1110,7 @@ static proxy_instance_t *create_subproxy(pool_t *ckp, gdata_t *gdata, proxy_inst
     subproxy->pass = strdup(proxi->pass);
     subproxy->parent = proxi;
     subproxy->epfd = proxi->epfd;
+    if (subproxy->cs.sem) cksem_destroy(&subproxy->cs.sem);
     cksem_init(&subproxy->cs.sem);
     cksem_post(&subproxy->cs.sem);
     return subproxy;
@@ -1141,6 +1142,8 @@ static void store_proxy(gdata_t *gdata, proxy_instance_t *proxy)
     dealloc(proxy->baseurl);
     dealloc(proxy->auth);
     dealloc(proxy->pass);
+    // TODO (Calin): Should we: `cksem_destroy(&proxy->cs.sem);` here??!
+    //               We instead do it in `create_subproxy()` above :/.. ck was leaking that sem :(
     DL_APPEND(gdata->dead_proxies, proxy);
     mutex_unlock(&gdata->lock);
 }
@@ -1588,11 +1591,11 @@ static void stratifier_reconnect_client(pool_t *ckp, const int64_t id)
 }
 
 /* Add a share to the gdata share hashlist. Returns the share id */
-static int add_share(gdata_t *gdata, const int64_t client_id, const double diff)
+static int64_t add_share(gdata_t *gdata, const int64_t client_id, const double diff)
 {
     share_msg_t *share = ckzalloc(sizeof(share_msg_t)), *tmpshare;
     time_t now;
-    int ret;
+    int64_t ret;
 
     share->submit_time = now = time(NULL);
     share->client_id = client_id;
@@ -1603,8 +1606,10 @@ static int add_share(gdata_t *gdata, const int64_t client_id, const double diff)
     ret = share->id = gdata->share_id++;
     HASH_ADD_I64(gdata->shares, id, share);
     HASH_ITER(hh, gdata->shares, share, tmpshare) {
-        if (share->submit_time < now - 120)
+        if (share->submit_time < now - 120) {
             HASH_DEL(gdata->shares, share);
+            // TODO (Calin): are we leaking here? Shouldn't we dealloc(share)?!
+        }
     }
     mutex_unlock(&gdata->share_lock);
 
@@ -1615,10 +1620,10 @@ static void submit_share(gdata_t *gdata, json_t *val)
 {
     proxy_instance_t *proxy, *proxi;
     pool_t *ckp = gdata->ckp;
-    int id, subid, share_id;
+    int id, subid;
     bool success = false;
     stratum_msg_t *msg;
-    int64_t client_id;
+    int64_t client_id, share_id;
 
     /* Get the client id so we can tell the stratifier to drop it if the
      * proxy it's bound to is not functional */
@@ -1766,7 +1771,7 @@ static int parse_share(gdata_t *gdata, proxy_instance_t *proxi, const char *buf)
     account_shares(proxi, share->diff, result);
     LOGINFO("Proxy %d:%d share result %s from client %"PRId64, proxi->id, proxi->subid,
         buf, share->client_id);
-    free(share);
+    dealloc(share);
 out:
     if (val)
         json_decref(val);
@@ -1858,7 +1863,7 @@ static void *proxy_send(void *arg)
 
     while (42) {
         proxy_instance_t *proxy, *subproxy;
-        int proxyid = 0, subid = 0;
+        int proxyid = 0, subid = 0, id_int;
         int64_t client_id = 0, id;
         notify_instance_t *ni;
         json_t *jobid = NULL;
@@ -1918,8 +1923,9 @@ static void *proxy_send(void *arg)
             continue;
         }
 
+        id_int = id; // Grr.. mistmached types here, cast to int
         mutex_lock(&gdata->notify_lock);
-        HASH_FIND_INT(gdata->notify_instances, &id, ni);
+        HASH_FIND_INT(gdata->notify_instances, &id_int, ni);
         if (ni)
             jobid = json_copy(ni->jobid);
         mutex_unlock(&gdata->notify_lock);
@@ -2322,6 +2328,7 @@ static void *proxy_recv(void *arg)
         HASH_ITER(hh, gdata->shares, share, tmpshare) {
             if (share->submit_time < now - 120) {
                 HASH_DEL(gdata->shares, share);
+                // TODO (Calin): are we leaking 'share' here?! shouldn't we `dealloc(share)` ?!
             }
         }
         mutex_unlock(&gdata->share_lock);
@@ -2465,6 +2472,7 @@ static void *userproxy_recv(void *arg)
         HASH_ITER(hh, gdata->shares, share, tmpshare) {
             if (share->submit_time < now - 120) {
                 HASH_DEL(gdata->shares, share);
+                // TODO (Calin): Are we not leaking `share` here?!
             }
         }
         mutex_unlock(&gdata->share_lock);
@@ -2855,21 +2863,20 @@ out:
 static void send_stats(gdata_t *gdata, const int sockd)
 {
     json_t *val = json_object(), *subval;
-    int total_objects, objects, generated;
+    int64_t total_objects, objects, generated, memsize;
     proxy_instance_t *proxy;
     stratum_msg_t *msg;
-    int64_t memsize;
 
     mutex_lock(&gdata->lock);
     objects = HASH_COUNT(gdata->proxies);
     memsize = SAFE_HASH_OVERHEAD(gdata->proxies) + sizeof(proxy_instance_t) * objects;
     generated = gdata->proxies_generated;
-    JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
+    JSON_CPACK(subval, "{sI,sI,sI}", "count", objects, "memory", memsize, "generated", generated);
     json_steal_object(val, "proxies", subval);
 
     DL_COUNT(gdata->dead_proxies, proxy, objects);
     memsize = sizeof(proxy_instance_t) * objects;
-    JSON_CPACK(subval, "{si,si}", "count", objects, "memory", memsize);
+    JSON_CPACK(subval, "{sI,sI}", "count", objects, "memory", memsize);
     json_steal_object(val, "dead_proxies", subval);
 
     total_objects = memsize = 0;
@@ -2882,7 +2889,7 @@ static void send_stats(gdata_t *gdata, const int sockd)
     generated = gdata->subproxies_generated;
     mutex_unlock(&gdata->lock);
 
-    JSON_CPACK(subval, "{si,si,si}", "count", total_objects, "memory", memsize, "generated", generated);
+    JSON_CPACK(subval, "{sI,sI,sI}", "count", total_objects, "memory", memsize, "generated", generated);
     json_steal_object(val, "subproxies", subval);
 
     mutex_lock(&gdata->notify_lock);
@@ -2891,7 +2898,7 @@ static void send_stats(gdata_t *gdata, const int sockd)
     generated = gdata->proxy_notify_id;
     mutex_unlock(&gdata->notify_lock);
 
-    JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
+    JSON_CPACK(subval, "{sI,sI,sI}", "count", objects, "memory", memsize, "generated", generated);
     json_steal_object(val, "notifies", subval);
 
     mutex_lock(&gdata->share_lock);
@@ -2900,7 +2907,7 @@ static void send_stats(gdata_t *gdata, const int sockd)
     generated = gdata->share_id;
     mutex_unlock(&gdata->share_lock);
 
-    JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
+    JSON_CPACK(subval, "{sI,sI,sI}", "count", objects, "memory", memsize, "generated", generated);
     json_steal_object(val, "shares", subval);
 
     mutex_lock(&gdata->psend_lock);
@@ -2909,7 +2916,7 @@ static void send_stats(gdata_t *gdata, const int sockd)
     mutex_unlock(&gdata->psend_lock);
 
     memsize = sizeof(stratum_msg_t) * objects;
-    JSON_CPACK(subval, "{si,si,si}", "count", objects, "memory", memsize, "generated", generated);
+    JSON_CPACK(subval, "{sI,sI,sI}", "count", objects, "memory", memsize, "generated", generated);
     json_steal_object(val, "psends", subval);
 
     send_api_response(val, sockd);
