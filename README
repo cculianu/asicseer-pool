@@ -37,7 +37,7 @@ It has been updated and reworked to add features and to support Bitcoin Cash
   Linux
 * Added ZMQ support for new block notifications
 * Removed asicseer-db, removed all sql, HTML, & php files related to this.
-* Uupdated source tree to use cmake, removed autotools-based build.
+* Updated source tree to use cmake, removed autotools-based build.
 * Fixed bugs
 
 BUILDING
@@ -49,6 +49,8 @@ $ sudo apt-get install build-essential libzmq3-dev cmake
 $ mkdir build && cd build
 $ cmake ..
 $ make
+
+Compiled files will appear in the src/ subdirectory.
 
 ---
 
