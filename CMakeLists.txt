@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.8)
 
 project(asicseer-pool
         LANGUAGES C CXX
-        VERSION 1.5.0
+        VERSION 1.5.1
         DESCRIPTION "Fast, C-based, multithreaded mining pool software for Bitcoin Cash"
         HOMEPAGE_URL "https://github.com/cculianu/asicseer-pool")
 
