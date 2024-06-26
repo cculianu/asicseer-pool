@@ -2317,7 +2317,9 @@ int main(int argc, char **argv)
                 char getfd[16];
                 int sockd;
 
-                snprintf(getfd, 15, "getxfd%d", i);
+                const int nprt = snprintf(getfd, 15, "getxfd%d", i);
+                if (nprt >= 0) // we need to do check return of snprintf() to prevent compiler warning
+                    getfd[MIN(nprt, 15)] = '\0';
                 sockd = open_unix_client(path);
                 if (sockd < 1)
                     break;
