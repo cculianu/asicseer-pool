@@ -666,7 +666,7 @@ static void client_event_processor(pool_t *ckp, aevt_t *event)
 out:
     if (likely(!client->invalid)) {
         /* Rearm the fd in the epoll list if it's still active */
-        epfd_add(cdata->epfd, client->fd, id, true, true, false);
+        epfd_mod(cdata->epfd, client->fd, id, true, true, false);
     }
     dec_instance_ref(cdata, client);
 outnoclient:

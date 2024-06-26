@@ -332,7 +332,7 @@ extern "C" void nanosleep_abstime(const ts_t *ts_end)
 #endif
 }
 
-extern "C" int epfd_create(void)
+extern "C" int epfd_create_(const char *const file, const char *const func, int const line)
 {
     const int ret = []{
 #if USE_EPOLL /* Linux */
@@ -343,19 +343,22 @@ extern "C" int epfd_create(void)
 #error "Unsupported platform!"
 #endif
     }();
-    //LOGDEBUG("%s: returning: %d", __func__, ret);
+    if (ret < 0)
+        LOGDEBUG("%s: returning: %d (%s) [%s:%d in %s]", __func__, ret, std::strerror(errno), file, line, func);
     return ret;
 }
 
-extern "C" int epfd_add(int epfd, int fd, uint64_t userdata, bool forRead, bool oneShot, bool edgeTriggered)
+extern "C" int epfd_add_or_mod_(int epfd, int fd, uint64_t userdata, bool isAdd, bool forRead, bool oneShot, bool edgeTriggered,
+                                const char *const file, const char *const func, int const line)
 {
     const int ret = [&]{
 #if USE_EPOLL /* Linux */
+        const int op = isAdd ? EPOLL_CTL_ADD : EPOLL_CTL_MOD;
         struct epoll_event event;
         std::memset(&event, 0, sizeof(event));
         event.data.u64 = userdata;
         event.events = EPOLLRDHUP | (forRead ? EPOLLIN : EPOLLOUT) | (oneShot ? EPOLLONESHOT : 0) | (edgeTriggered ? EPOLLET : 0);
-        return epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &event);
+        return epoll_ctl(epfd, op, fd, &event);
 #elif USE_KEVENT /* macOS, BSD, etc */
         struct kevent kev;
         std::memset(&kev, 0, sizeof(kev));
@@ -371,11 +374,16 @@ extern "C" int epfd_add(int epfd, int fd, uint64_t userdata, bool forRead, bool 
 #error "Unsupported platform!"
 #endif
     }();
-    //LOGDEBUG("%s: epfd: %d, fd: %d, userdata: %llu, returning: %d", __func__, epfd, fd, (unsigned long long)userdata, ret);
+    if (ret < 0)
+        LOGDEBUG("%s: epfd: %d, fd: %d, op: %s, flags: %d%d%d, userdata: %llu, returning: %d (%s) [%s:%d in %s]",
+                 __func__, epfd, fd, isAdd ? "ADD" : "MOD", int(forRead), int(oneShot), int(edgeTriggered),
+                 static_cast<unsigned long long>(userdata), ret,
+                 std::strerror(errno), file, line, func);
     return ret;
 }
 
-extern "C" int epfd_wait(int epfd, aevt_t *event, int timeout_msec)
+extern "C" int epfd_wait_(int epfd, aevt_t *event, int timeout_msec,
+                          const char *const file, const char *const func, int const line)
 {
     const int ret = [&] {
         std::memset(event, 0, sizeof(*event));
@@ -413,12 +421,15 @@ extern "C" int epfd_wait(int epfd, aevt_t *event, int timeout_msec)
 #error "Unsupported platform!"
 #endif
     }();
-    //LOGDEBUG("%s: epfd: %d, fd: %d, userdata: %llu, returning: %d", __func__, epfd, event->fd,
-    //         (unsigned long long)event->userdata, ret);
+    if (ret < 0)
+        LOGDEBUG("%s: epfd: %d, fd: %d, userdata: %llu, returning: %d (%s) [%s:%d in %s]",
+                 __func__, epfd, event->fd, (unsigned long long)event->userdata, ret,
+                 std::strerror(errno), file, line, func);
     return ret;
 }
 
-extern "C" int epfd_rm(int epfd, int fd)
+extern "C" int epfd_rm_(int epfd, int fd,
+                        const char *const file, const char *const func, int const line)
 {
     const int ret = [&] {
 #ifdef USE_EPOLL /* Linux */
@@ -432,6 +443,9 @@ extern "C" int epfd_rm(int epfd, int fd)
 #error "Unsupported platform!"
 #endif
     }();
-    //LOGDEBUG("%s: epfd: %d, fd: %d, returning: %d", __func__, epfd, fd, ret);
+    if (ret < 0)
+        LOGDEBUG("%s: epfd: %d, fd: %d, returning: %d (%s) [%s:%d in %s]",
+                 __func__, epfd, fd, ret,
+                 std::strerror(errno), file, line, func);
     return ret;
 }

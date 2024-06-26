@@ -641,10 +641,15 @@ struct AbstractEvent {
 };
 typedef struct AbstractEvent aevt_t;
 
-int epfd_create(void); //< crate a new epfd .. close it using close()
-int epfd_add(int epfd, int fd, uint64_t userdata, bool forRead, bool oneShot, bool edgeTriggered);
-int epfd_rm(int epfd, int fd);
-int epfd_wait(int epfd, aevt_t *event, int timeout_msec);
+int epfd_create_(const char *file, const char *func, int line); //< crate a new epfd .. close it using close()
+int epfd_add_or_mod_(int epfd, int fd, uint64_t userdata, bool isAdd, bool forRead, bool oneShot, bool edgeTriggered, const char *file, const char *func, int line);
+int epfd_rm_(int epfd, int fd, const char *file, const char *func, int line);
+int epfd_wait_(int epfd, aevt_t *event, int timeout_msec, const char *file, const char *func, int line);
+#define epfd_create() epfd_create_(__FILE__, __func__, __LINE__)
+#define epfd_add(epfd, fd, ud, ro, os, et) epfd_add_or_mod_(epfd, fd, ud,  true, ro, os, et, __FILE__, __func__, __LINE__)
+#define epfd_mod(epfd, fd, ud, ro, os, et) epfd_add_or_mod_(epfd, fd, ud, false, ro, os, et, __FILE__, __func__, __LINE__)
+#define epfd_rm(epfd, fd) epfd_rm_(epfd, fd, __FILE__, __func__, __LINE__)
+#define epfd_wait(epfd, event, timeout_msec) epfd_wait_(epfd, event, timeout_msec, __FILE__, __func__, __LINE__)
 #ifdef  __cplusplus
 }
 #endif
