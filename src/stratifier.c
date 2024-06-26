@@ -4000,15 +4000,15 @@ static stratum_instance_t *stratum_add_instance__(pool_t *ckp, int64_t id, const
         if (remote && remote->node) {
             client->latency = remote->latency;
             LOGINFO("Client %s inherited node latency of %d",
-                client->identity, client->latency);
+                    client->identity, client->latency);
             sprintf(client->identity, "node:%"PRId64" subclient:%"PRId64,
-                pass_id, id);
+                    pass_id, id);
         } else if (remote && remote->trusted) {
             sprintf(client->identity, "remote:%"PRId64" subclient:%"PRId64,
-                pass_id, id);
+                    pass_id, id);
         } else { /* remote->passthrough remaining */
             sprintf(client->identity, "passthrough:%"PRId64" subclient:%"PRId64,
-                pass_id, id);
+                    pass_id, id);
         }
         client->virtualid = connector_newclientid(ckp);
     } else {
@@ -7043,7 +7043,7 @@ static json_t *parse_submit(stratum_instance_t *client, json_t *json_msg,
             latency = ms_tvdiff(&now_tv, &wb->retired);
             if (latency < client->latency) {
                 LOGDEBUG("Accepting %dms late share from client %s",
-                     latency, client->identity);
+                         latency, client->identity);
                 goto no_stale;
             }
         }
@@ -7354,10 +7354,10 @@ static void send_node_all_txns(sdata_t *sdata, const stratum_instance_t *client)
 
     if (client->trusted) {
         JSON_CPACK(val, "{ss,so}", "method", stratum_msgs[SM_TRANSACTIONS],
-               "transaction", txn_array);
+                   "transaction", txn_array);
     } else {
         JSON_CPACK(val, "{ss,so}", "node.method", stratum_msgs[SM_TRANSACTIONS],
-               "transaction", txn_array);
+                   "transaction", txn_array);
     }
     msg = ckzalloc(sizeof(smsg_t));
     msg->json_msg = val;
@@ -7374,7 +7374,7 @@ static void *setup_node(void *arg)
 
     client->latency = round_trip(client->address) / 2;
     LOGNOTICE("Node client %s %s latency set to %dms", client->identity,
-          client->address, client->latency);
+              client->address, client->latency);
     send_node_all_txns(client->sdata, client);
     dec_instance_ref(client->sdata, client);
     return NULL;

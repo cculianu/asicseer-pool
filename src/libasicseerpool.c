@@ -579,7 +579,7 @@ bool url_from_socket(const int sockd, char *url, char *port)
 void keep_sockalive(int fd)
 {
     const int tcp_one = 1;
-    const int tcp_keepidle = 45;
+    const int tcp_keepidle maybe_unused__ = 45;
     const int tcp_keepintvl = 30;
 #ifndef SOL_TCP
     const int SOL_TCP = 6; /* IANA protocol number */
@@ -775,9 +775,8 @@ int round_trip(char *url)
             ret = diff;
     }
     if (ret > 500) {
-        LOGINFO("Round trip to %s:%s greater than 500ms at %d, clamping to 500",
-            url, port, diff);
-        diff = 500;
+        LOGINFO("Round trip to %s:%s greater than 500ms at %d, clamping to 500", url, port, diff);
+        ret = 500;
     }
     LOGINFO("Minimum round trip to %s:%s calculated as %dms", url, port, ret);
 out:
@@ -936,8 +935,9 @@ out:
     return sockd;
 }
 
-int read_length(int sockd, void *buf, int len)
+int read_length(int sockd, void *vbuf, int len)
 {
+    char *buf = (char *)vbuf;
     int ret, ofs = 0;
 
     if (unlikely(len < 1)) {
@@ -1003,19 +1003,19 @@ out:
     return buf;
 }
 
-int write_length_(int sockd, const void *buf, int len, const char *file, const char *func, const int line)
+int write_length_(int sockd, const void *vbuf, int len, const char *file, const char *func, const int line)
 {
+    const char * const buf = (const char *)vbuf;
     int ret, ofs = 0, ern;
 
     if (unlikely(len < 1)) {
         LOGWARNING("Invalid write length of %d requested in write_length from %s %s:%d",
-               len, file, func, line);
+                   len, file, func, line);
         return -1;
     }
     if (unlikely(sockd < 0)) {
-        ern = errno;
         LOGWARNING("Attempt to write to invalidated sock in write_length from %s %s:%d",
-               file, func, line);
+                   file, func, line);
         return -1;
     }
     while (len) {
@@ -1625,60 +1625,58 @@ bool cmdmatch(const char *buf, const char *cmd)
 static const char base64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 /* Return a malloced string of *src encoded into mime base 64 */
-char *http_base64(const char *src)
+char *http_base64(const char *src_c)
 {
     char *str, *dst;
+    const uchar *src = (const uchar *)src_c;
     size_t l, hlen;
-    int t, r;
+    uint32_t t;
 
-    l = strlen((const char *)src);
-    hlen = ((l + 2) / 3) * 4 + 1;
-    str = ckalloc(hlen);
-    dst = str;
-    r = 0;
+    l = strlen(src_c);
+    hlen = ((l + 2u) / 3u) * 4u + 1u;
+    dst = str = ckalloc(hlen);
 
     while (l >= 3) {
-        t = (src[0] << 16) | (src[1] << 8) | src[2];
-        dst[0] = base64[(t >> 18) & 0x3f];
-        dst[1] = base64[(t >> 12) & 0x3f];
-        dst[2] = base64[(t >> 6) & 0x3f];
-        dst[3] = base64[(t >> 0) & 0x3f];
-        src += 3; l -= 3;
-        dst += 4; r += 4;
+        t = (src[0] << 16u) | (src[1] << 8u) | src[2];
+        dst[0] = base64[(t >> 18u) & 0x3fu];
+        dst[1] = base64[(t >> 12u) & 0x3fu];
+        dst[2] = base64[(t >>  6u) & 0x3fu];
+        dst[3] = base64[(t >>  0u) & 0x3fu];
+        src += 3u; l -= 3u;
+        dst += 4u;
     }
 
     switch (l) {
-        case 2:
-            t = (src[0] << 16) | (src[1] << 8);
-            dst[0] = base64[(t >> 18) & 0x3f];
-            dst[1] = base64[(t >> 12) & 0x3f];
-            dst[2] = base64[(t >> 6) & 0x3f];
+        case 2u:
+            t = (src[0] << 16u) | (src[1] << 8u);
+            dst[0] = base64[(t >> 18u) & 0x3fu];
+            dst[1] = base64[(t >> 12u) & 0x3fu];
+            dst[2] = base64[(t >>  6u) & 0x3fu];
             dst[3] = '=';
             dst += 4;
-            r += 4;
             break;
-        case 1:
+        case 1u:
             t = src[0] << 16;
-            dst[0] = base64[(t >> 18) & 0x3f];
-            dst[1] = base64[(t >> 12) & 0x3f];
+            dst[0] = base64[(t >> 18u) & 0x3fu];
+            dst[1] = base64[(t >> 12u) & 0x3fu];
             dst[2] = dst[3] = '=';
             dst += 4;
-            r += 4;
             break;
-        case 0:
+        case 0u:
             break;
     }
     *dst = 0;
-    return (str);
+    return str;
 }
 
 static const char *remove_any_cashaddr_prefix(const char *addr)
 {
     const char *ret = addr;
-    static const char *prefixes[] = {"bchtest:", "bitcoincash:"};
+    static const char *prefixes[] = {"bitcoincash:", "bchtest:", "bchreg:"};
     static const int N = sizeof(prefixes)/sizeof(*prefixes);
+    int i;
 
-    for (int i = 0; i < N; ++i) {
+    for (i = 0; i < N; ++i) {
         const char *prefix = prefixes[i];
         const int plen = strlen(prefix);
         if (safecasecmp(prefix, addr, plen) == 0) {
@@ -1691,7 +1689,7 @@ static const char *remove_any_cashaddr_prefix(const char *addr)
 
 static int p2pkh_address_to_script(uchar *pkh, const char *addr, const char *cashaddr_prefix)
 {
-    char b58bin[25] = {};
+    char b58bin[25] = {0};
     bool decoded_cashaddr = false;
 
     if (strlen(addr) > CASHADDR_HEURISTIC_LEN) {
@@ -1723,7 +1721,7 @@ static int p2pkh_address_to_script(uchar *pkh, const char *addr, const char *cas
 
 static int p2sh_address_to_script(uchar *psh, const char *addr, const char *cashaddr_prefix)
 {
-    char b58bin[25] = {};
+    char b58bin[25] = {0};
     bool decoded_cashaddr = false;
 
     if (strlen(addr) > CASHADDR_HEURISTIC_LEN) {
@@ -1759,42 +1757,6 @@ int address_to_script(uchar *p2h, const char *addr, bool is_p2sh, const char *ca
     return p2pkh_address_to_script(p2h, addr, cashaddr_prefix);
 }
 
-#if 0 // the below is wrong.  We instead use the BCHN sources as a guide. See libasicseerpool_cxx.cpp
-/*  For encoding nHeight into coinbase, return how many bytes were used */
-int ser_cbheight(void *outp, int32_t val)
-{
-    uchar *s = (uchar *)outp;
-    int32_t *i32 = (int32_t *)&s[1];
-    int len;
-
-    if (val < 128)
-        len = 1;
-    else if (val < 16512)
-        len = 2;
-    else if (val < 2113664)
-        len = 3;
-    else
-        len = 4;
-    const int32_t tmp = htole32(val);
-    memcpy(i32, &tmp, len);
-    s[0] = len++;
-    return len;
-}
-
-int deser_cbheight(const void *inp)
-{
-    const uchar *s = (uchar *)inp;
-    int32_t val = 0;
-    int len;
-
-    len = s[0];
-    if (unlikely(len < 1 || len > 4))
-        return 0;
-    memcpy(&val, &s[1], len);
-    return le32toh(val);
-}
-#endif
-
 int write_compact_size(void *dest, size_t nSize)
 {
     uint8_t *buf = (uint8_t *)dest;
@@ -1827,14 +1789,12 @@ int write_compact_size(void *dest, size_t nSize)
 /* For testing a le encoded 256 byte hash against a target */
 bool fulltest(const uchar *hash, const uchar *target)
 {
-    uint32_t *hash32 = (uint32_t *)hash;
-    uint32_t *target32 = (uint32_t *)target;
     bool ret = true;
     int i;
 
-    for (i = 28 / 4; i >= 0; i--) {
-        uint32_t h32tmp = le32toh(hash32[i]);
-        uint32_t t32tmp = le32toh(target32[i]);
+    for (i = 28; i >= 0; i -= 4) {
+        const uint32_t h32tmp = le32toh(read_i32(hash + i*4));
+        const uint32_t t32tmp = le32toh(read_i32(target + i*4));
 
         if (h32tmp > t32tmp) {
             ret = false;
