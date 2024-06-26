@@ -75,12 +75,16 @@ typedef unsigned char uchar;
 typedef struct timeval tv_t;
 typedef struct timespec ts_t;
 
+static inline uint32_t read_i32(const void *p) { uint32_t ret; memcpy(&ret, p, sizeof(uint32_t)); return ret; }
+static inline void write_i32(void *dest, uint32_t val) { memcpy(dest, &val, sizeof(uint32_t)); }
+
 maybe_unused__
 static inline void swap_256(void *dest_p, const void *src_p)
 {
-    uint32_t *dest = (uint32_t *)dest_p;
-    const uint32_t *src = (uint32_t *)src_p;
+    uchar *dest = (uchar *)dest_p;
+    const uchar *src = (const uchar *)src_p;
 
+    /* if dest and src were aligned uint32_t *, it would look like this:
     dest[0] = src[7];
     dest[1] = src[6];
     dest[2] = src[5];
@@ -89,14 +93,26 @@ static inline void swap_256(void *dest_p, const void *src_p)
     dest[5] = src[2];
     dest[6] = src[1];
     dest[7] = src[0];
+    */
+#define CPY32__(d, s) memcpy(d, s, 4)
+    CPY32__(dest + 0*4, src + 7*4);
+    CPY32__(dest + 1*4, src + 6*4);
+    CPY32__(dest + 2*4, src + 5*4);
+    CPY32__(dest + 3*4, src + 4*4);
+    CPY32__(dest + 4*4, src + 3*4);
+    CPY32__(dest + 5*4, src + 2*4);
+    CPY32__(dest + 6*4, src + 1*4);
+    CPY32__(dest + 7*4, src + 0*4);
+#undef CPY32__
 }
 
 maybe_unused__
 static inline void bswap_256(void *dest_p, const void *src_p)
 {
-    uint32_t *dest = (uint32_t *)dest_p;
-    const uint32_t *src = (uint32_t *)src_p;
+    uchar *dest = (uchar *)dest_p;
+    const uchar *src = (const uchar *)src_p;
 
+    /* if dest and src were aligned uint32_t *, it would look like this:
     dest[0] = bswap_32(src[7]);
     dest[1] = bswap_32(src[6]);
     dest[2] = bswap_32(src[5]);
@@ -105,29 +121,30 @@ static inline void bswap_256(void *dest_p, const void *src_p)
     dest[5] = bswap_32(src[2]);
     dest[6] = bswap_32(src[1]);
     dest[7] = bswap_32(src[0]);
+    */
+
+    write_i32(dest + 0*4, bswap_32(read_i32(src + 7*4)));
+    write_i32(dest + 1*4, bswap_32(read_i32(src + 6*4)));
+    write_i32(dest + 2*4, bswap_32(read_i32(src + 5*4)));
+    write_i32(dest + 3*4, bswap_32(read_i32(src + 4*4)));
+    write_i32(dest + 4*4, bswap_32(read_i32(src + 3*4)));
+    write_i32(dest + 5*4, bswap_32(read_i32(src + 2*4)));
+    write_i32(dest + 6*4, bswap_32(read_i32(src + 1*4)));
+    write_i32(dest + 7*4, bswap_32(read_i32(src + 0*4)));
 }
 
-maybe_unused__
-static inline void flip_32(void *dest_p, const void *src_p)
+static inline void flip_N(void *dest_p, const void *src_p, const int N)
 {
-    uint32_t *dest = (uint32_t *)dest_p;
-    const uint32_t *src = (uint32_t *)src_p;
-    int i;
+    uchar *dest = (uchar *)dest_p;
+    const uchar *src = (const uchar *)src_p;
+    int offset;
 
-    for (i = 0; i < 8; i++)
-        dest[i] = bswap_32(src[i]);
+    for (offset = 0; offset < N; offset += 4)
+        write_i32(dest + offset, bswap_32(read_i32(src + offset))); // dest_int[i] = bswap_32(src_int[i]);
 }
 
-maybe_unused__
-static inline void flip_80(void *dest_p, const void *src_p)
-{
-    uint32_t *dest = (uint32_t *)dest_p;
-    const uint32_t *src = (uint32_t *)src_p;
-    int i;
-
-    for (i = 0; i < 20; i++)
-        dest[i] = bswap_32(src[i]);
-}
+maybe_unused__ static inline void flip_32(void *dest_p, const void *src_p) { flip_N(dest_p, src_p, 32); }
+maybe_unused__ static inline void flip_80(void *dest_p, const void *src_p) { flip_N(dest_p, src_p, 80); }
 
 #define cond_wait(_cond, _lock) cond_wait_(_cond, _lock, __FILE__, __func__, __LINE__)
 #define cond_timedwait(_cond, _lock, _abstime) cond_timedwait_(_cond, _lock, _abstime, __FILE__, __func__, __LINE__)

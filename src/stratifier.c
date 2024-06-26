@@ -651,12 +651,12 @@ static void cb1_buffer_init(cb1_buffer_t *t, size_t capacity)
     t->buffer.size = capacity;
 }
 
-static void cb1_buffer_take(cb1_buffer_t *t, void **bufptr, size_t *pos, size_t *capacity)
+static void cb1_buffer_take(cb1_buffer_t *t, uchar **bufptr, size_t *pos, size_t *capacity)
 {
     assert(bufptr);
     if (pos) *pos = t->buffer.length;
     if (capacity) *capacity = t->buffer.size;
-    *bufptr = strbuffer_steal_value(&t->buffer);
+    *bufptr = (uchar *)strbuffer_steal_value(&t->buffer);
 }
 
 /// Add an amount[8 bytes],scriptbinlen[1 byte],scriptbin[scriptlen bytes] to cb1_buffer_t `buf`.
@@ -680,7 +680,8 @@ static size_t add_output_(cb1_buffer_t *buf, uint64_t amount, const void *script
              __func__, buf->buffer.size);
         // not reached
     }
-    assert(++buf->num_outs && "INTERNAL ERROR: integer overflow for cb1_buffer_t::num_outs!");
+    ++buf->num_outs;
+    assert(buf->num_outs && "INTERNAL ERROR: integer overflow for cb1_buffer_t::num_outs!");
     return ret;
 }
 
@@ -1067,11 +1068,11 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
         // note that we may have to move the data blob back by 2 bytes here if <253 outs.
         const size_t num_outs = cb1_buf.num_outs;
         size_t endpos, cap;
-        cb1_buffer_take(&cb1_buf, (void **)&wb->coinb1bin, &endpos, &cap);
+        cb1_buffer_take(&cb1_buf, &wb->coinb1bin, &endpos, &cap);
         LOGDEBUG("Coinb1 taken, endpos: %lu cap: %lu", endpos, cap);
         wb->coinb1len = (int)endpos;
         assert(((size_t)wb->coinb1len) == endpos && wb->coinb1len > -1 && "INTERNAL ERROR: integer overflow");
-        uint8_t *compact_size_buf = alloca(9);
+        uint8_t compact_size_buf[9];
         const int nb = write_compact_size(compact_size_buf, num_outs);
         if (unlikely(nb > compact_size_reserved)) {
             quit(1, "INTERNAL ERROR: Got %lu outs in coinbase! This is unsupported!", num_outs);
@@ -2463,10 +2464,10 @@ static void add_node_base(pool_t *ckp, json_t *val, bool trusted, int64_t client
 static double
 share_diff(char *coinbase, const uchar *enonce1bin, const workbase_t *wb, const char *nonce2,
        const uint32_t ntime32, uint32_t version_mask, const char *nonce,
-       uchar *hash, uchar *swap, int *cblen)
+       uchar *hash, uchar * const swap, int *cblen)
 {
     unsigned char merkle_root[32], merkle_sha[64];
-    uint32_t *data32, *swap32, benonce32;
+    uint32_t benonce32;
     char data[80];
     int i;
 
@@ -2486,9 +2487,7 @@ share_diff(char *coinbase, const uchar *enonce1bin, const workbase_t *wb, const 
         gen_hash(merkle_sha, merkle_root, 64);
         memcpy(merkle_sha, merkle_root, 32);
     }
-    data32 = (uint32_t *)merkle_sha;
-    swap32 = (uint32_t *)merkle_root;
-    flip_32(swap32, data32);
+    flip_32(merkle_root, merkle_sha);
 
     /* Copy the cached header binary and insert the merkle root */
     memcpy(data, wb->headerbin, 80);
@@ -2497,23 +2496,18 @@ share_diff(char *coinbase, const uchar *enonce1bin, const workbase_t *wb, const 
     /* Update nVersion when version_mask is in use */
     if (version_mask) {
         version_mask = htobe32(version_mask);
-        data32 = (uint32_t *)data;
-        *data32 |= version_mask;
+        write_i32(data, version_mask | read_i32(data)) ;
     }
 
     /* Insert the nonce value into the data */
     hex2bin(&benonce32, nonce, 4);
-    data32 = (uint32_t *)(data + 64 + 12);
-    *data32 = benonce32;
+    write_i32(data + 64 + 12, benonce32);
 
     /* Insert the ntime value into the data */
-    data32 = (uint32_t *)(data + 68);
-    *data32 = htobe32(ntime32);
+    write_i32(data + 68, htobe32(ntime32));
 
     /* Hash the share */
-    data32 = (uint32_t *)data;
-    swap32 = (uint32_t *)swap;
-    flip_80(swap32, data32);
+    flip_80(swap, data);
     gen_hash(swap, hash, 80);
 
     /* Calculate the diff of the share here */
@@ -6910,24 +6904,25 @@ static json_t *parse_submit(stratum_instance_t *client, json_t *json_msg,
     double diff = client->diff, wdiff = 0, sdiff = -1;
     char hexhash[68] = {0}, sharehash[32], cdfield[64];
     user_instance_t *user = client->user_instance;
-    uint32_t ntime32, version_mask32 = 0;
-    char *fname = NULL, *s, *nonce2;
+    uint32_t ntime32 = 0, version_mask32 = 0;
+    const char *nonce2;
+    char *fname = NULL, *s, *nonce2_freeme = NULL;
     sdata_t *sdata = client->sdata;
     enum share_err err = SE_NONE;
     pool_t *ckp = client->ckp;
     char idstring[24] = {0};
     workbase_t *wb = NULL;
     uchar hash[32];
-    int nlen, len;
+    size_t nlen, len;
     time_t now_t;
     json_t *val;
-    int64_t id;
+    int64_t id = 0;
     ts_t now;
     FILE *fp;
 
     ts_realtime(&now);
     now_t = now.tv_sec;
-    sprintf(cdfield, "%lu,%lu", now.tv_sec, now.tv_nsec);
+    sprintf(cdfield, "%llu,%llu", (unsigned long long)now.tv_sec, (unsigned long long)now.tv_nsec);
 
     if (unlikely(!json_is_array(params_val))) {
         err = SE_NOT_ARRAY;
@@ -6951,7 +6946,7 @@ static json_t *parse_submit(stratum_instance_t *client, json_t *json_msg,
         *err_val = JSON_ERR(err);
         goto out;
     }
-    nonce2 = (char *)json_string_value(json_array_get(params_val, 2));
+    nonce2 = json_string_value(json_array_get(params_val, 2));
     if (unlikely(!nonce2 || !strlen(nonce2) || !validhex(nonce2))) {
         err = SE_NO_NONCE2;
         *err_val = JSON_ERR(err);
@@ -7008,17 +7003,18 @@ static json_t *parse_submit(stratum_instance_t *client, json_t *json_msg,
     ASPRINTF(&fname, "%s.sharelog", wb->logdir);
     /* Fix broken clients sending too many chars. Nonce2 is part of the
      * read only json so use a temporary variable and modify it. */
-    len = wb->enonce2varlen * 2;
+    len = (size_t)MAX(0, wb->enonce2varlen) * 2u;
     nlen = strlen(nonce2);
-    if (nlen > len) {
-        nonce2 = strdupa(nonce2);
-        nonce2[len] = '\0';
-    } else if (nlen < len) {
-        char *tmp = nonce2;
-
-        nonce2 = strdupa("0000000000000000");
-        memcpy(nonce2, tmp, nlen);
-        nonce2[len] = '\0';
+    if (nlen != len) {
+        char *tmp = ckzalloc(len + 1u);
+        if (nlen > len) {
+            memcpy(tmp, nonce2, len);
+        } else if (nlen < len) {
+            memcpy(tmp, nonce2, nlen);
+            memset(tmp + nlen, '0', len - nlen); // pad remaining bytes with '0' characters
+        }
+        tmp[len] = '\0';
+        nonce2 = nonce2_freeme = tmp;
     }
     if (id < sdata->blockchange_id)
         stale = true;
@@ -7210,6 +7206,7 @@ out:
         LOGINFO("Invalid share from client %s: %s", client->identity, client->workername);
     }
     free(fname);
+    free(nonce2_freeme);
     return json_boolean(result);
 }
 
