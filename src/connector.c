@@ -183,7 +183,7 @@ void connector_upstream_msg(pool_t *ckp, char *msg)
 }
 
 /* Increase the reference count of instance */
-static void __inc_instance_ref(client_instance_t *client)
+static void inc_instance_ref__(client_instance_t *client)
 {
     client->ref++;
 }
@@ -191,12 +191,12 @@ static void __inc_instance_ref(client_instance_t *client)
 static void inc_instance_ref(cdata_t *cdata, client_instance_t *client)
 {
     ck_wlock(&cdata->lock);
-    __inc_instance_ref(client);
+    inc_instance_ref__(client);
     ck_wunlock(&cdata->lock);
 }
 
 /* Increase the reference count of instance */
-static void __dec_instance_ref(client_instance_t *client)
+static void dec_instance_ref__(client_instance_t *client)
 {
     client->ref--;
 }
@@ -204,7 +204,7 @@ static void __dec_instance_ref(client_instance_t *client)
 static void dec_instance_ref(cdata_t *cdata, client_instance_t *client)
 {
     ck_wlock(&cdata->lock);
-    __dec_instance_ref(client);
+    dec_instance_ref__(client);
     ck_wunlock(&cdata->lock);
 }
 
@@ -233,7 +233,7 @@ static client_instance_t *recruit_client(cdata_t *cdata)
     return client;
 }
 
-static void __recycle_client(cdata_t *cdata, client_instance_t *client)
+static void recycle_client__(cdata_t *cdata, client_instance_t *client)
 {
     dealloc(client->buf);
     memset(client, 0, sizeof(client_instance_t));
@@ -244,7 +244,7 @@ static void __recycle_client(cdata_t *cdata, client_instance_t *client)
 static void recycle_client(cdata_t *cdata, client_instance_t *client)
 {
     ck_wlock(&cdata->lock);
-    __recycle_client(cdata, client);
+    recycle_client__(cdata, client);
     ck_wunlock(&cdata->lock);
 }
 
@@ -336,7 +336,7 @@ static int accept_client(cdata_t *cdata, const int epfd, const uint64_t server)
     /* We increase the ref count on this client as epoll creates a pointer
      * to it. We drop that reference when the socket is closed which
      * removes it automatically from the epoll list. */
-    __inc_instance_ref(client);
+    inc_instance_ref__(client);
     client->fd = fd;
     optlen = sizeof(client->sendbufsize);
     getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &client->sendbufsize, &optlen);
@@ -351,7 +351,7 @@ static int accept_client(cdata_t *cdata, const int epfd, const uint64_t server)
     return 1;
 }
 
-static int __drop_client(cdata_t *cdata, client_instance_t *client)
+static int drop_client__(cdata_t *cdata, client_instance_t *client)
 {
     int ret = -1;
 
@@ -365,7 +365,7 @@ static int __drop_client(cdata_t *cdata, client_instance_t *client)
     DL_APPEND2(cdata->dead_clients, client, dead_prev, dead_next);
     /* This is the reference to this client's presence in the
      * epoll list. */
-    __dec_instance_ref(client);
+    dec_instance_ref__(client);
     cdata->dead_generated++;
 out:
     return ret;
@@ -389,7 +389,7 @@ static int drop_client(cdata_t *cdata, client_instance_t *client)
 
     strcpy(address_name, client->address_name);
     ck_wlock(&cdata->lock);
-    fd = __drop_client(cdata, client);
+    fd = drop_client__(cdata, client);
     ck_wunlock(&cdata->lock);
 
     if (fd > -1) {
@@ -450,7 +450,7 @@ static int invalidate_client(pool_t *ckp, cdata_t *cdata, client_instance_t *cli
              * reused on new and old clients. */
             nolinger_socket(client->fd);
             Close(client->fd);
-            __recycle_client(cdata, client);
+            recycle_client__(cdata, client);
         }
     }
     ck_wunlock(&cdata->lock);
@@ -464,7 +464,7 @@ static void drop_all_clients(cdata_t *cdata)
 
     ck_wlock(&cdata->lock);
     HASH_ITER(hh, cdata->clients, client, tmp) {
-        __drop_client(cdata, client);
+        drop_client__(cdata, client);
     }
     ck_wunlock(&cdata->lock);
 }
@@ -596,7 +596,7 @@ static client_instance_t *ref_client_by_id(cdata_t *cdata, int64_t id)
     HASH_FIND_I64(cdata->clients, &id, client);
     if (client) {
         if (!client->invalid)
-            __inc_instance_ref(client);
+            inc_instance_ref__(client);
         else
             client = NULL;
     }

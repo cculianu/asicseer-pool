@@ -358,7 +358,7 @@ enum stratum_msgtype {
     SM_NONE
 };
 
-static const char __maybe_unused *stratum_msgs[] = {
+static const char maybe_unused__ *stratum_msgs[] = {
     "reconnect",
     "diff",
     "message",
@@ -391,8 +391,8 @@ void get_timestamp(char *stamp);
 
 ckmsgq_t *create_ckmsgq(pool_t *ckp, const char *name, const void *func);
 ckmsgq_t *create_ckmsgqs(pool_t *ckp, const char *name, const void *func, const int count);
-bool _ckmsgq_add(ckmsgq_t *ckmsgq, void *data, const char *file, const char *func, const int line);
-#define ckmsgq_add(ckmsgq, data) _ckmsgq_add(ckmsgq, data, __FILE__, __func__, __LINE__)
+bool ckmsgq_add_(ckmsgq_t *ckmsgq, void *data, const char *file, const char *func, const int line);
+#define ckmsgq_add(ckmsgq, data) ckmsgq_add_(ckmsgq, data, __FILE__, __func__, __LINE__)
 bool ckmsgq_empty(ckmsgq_t *ckmsgq);
 unix_msg_t *get_unix_msg(proc_instance_t *pi);
 
@@ -407,11 +407,11 @@ int read_socket_line(connsock_t *cs, float *timeout);
  * http response content. Read from a socket into cs->buf up to contentlen bytes.
  */
 int read_socket_contentlen(connsock_t *cs, int contentlen, float *timeout);
-void _queue_proc(proc_instance_t *pi, const char *msg, const char *file, const char *func, const int line);
-#define send_proc(pi, msg) _queue_proc(&(pi), msg, __FILE__, __func__, __LINE__)
-char *_send_recv_proc(const proc_instance_t *pi, const char *msg, int writetimeout, int readtimedout,
-              const char *file, const char *func, const int line);
-#define send_recv_proc(pi, msg) _send_recv_proc(&(pi), msg, UNIX_WRITE_TIMEOUT, UNIX_READ_TIMEOUT, __FILE__, __func__, __LINE__)
+void queue_proc_(proc_instance_t *pi, const char *msg, const char *file, const char *func, const int line);
+#define send_proc(pi, msg) queue_proc_(&(pi), msg, __FILE__, __func__, __LINE__)
+char *send_recv_proc_(const proc_instance_t *pi, const char *msg, int writetimeout, int readtimedout,
+                      const char *file, const char *func, const int line);
+#define send_recv_proc(pi, msg) send_recv_proc_(&(pi), msg, UNIX_WRITE_TIMEOUT, UNIX_READ_TIMEOUT, __FILE__, __func__, __LINE__)
 
 struct rpc_req_part {
     const char *string;
@@ -442,10 +442,10 @@ struct apimsg {
     int sockd;
 };
 
-static inline void asicseer_pool_api(pool_t __maybe_unused *ckp, apimsg_t __maybe_unused *apimsg) {}
-static inline json_t *json_encode_errormsg(json_error_t __maybe_unused *err_val) { return NULL; }
-static inline json_t *json_errormsg(const char __maybe_unused *fmt, ...) { return NULL; }
-static inline void send_api_response(json_t __maybe_unused *val, const int __maybe_unused sockd) {}
+static inline void asicseer_pool_api(pool_t maybe_unused__ *ckp, apimsg_t maybe_unused__ *apimsg) {}
+static inline json_t *json_encode_errormsg(json_error_t maybe_unused__ *err_val) { return NULL; }
+static inline json_t *json_errormsg(const char maybe_unused__ *fmt, ...) { return NULL; }
+static inline void send_api_response(json_t maybe_unused__ *val, const int maybe_unused__ sockd) {}
 
 /* Subclients have client_ids in the high bits. Returns the value of the parent
  * client if one exists. */

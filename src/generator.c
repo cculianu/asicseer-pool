@@ -325,7 +325,7 @@ static void clear_unix_msg(unix_msg_t **umsg)
     }
 }
 
-static server_instance_t * _get_current_si_threadsafe(gdata_t *gdata)
+static server_instance_t * get_current_si_threadsafe(gdata_t *gdata)
 {
     mutex_lock(&gdata->current_si_lock);
     server_instance_t *ret = gdata->current_si;
@@ -340,7 +340,7 @@ bool generator_submitblock(pool_t *ckp, const char *buf, const size_t len)
     bool warn = false;
     connsock_t *cs;
 
-    while (unlikely(!(si = _get_current_si_threadsafe(gdata)))) {
+    while (unlikely(!(si = get_current_si_threadsafe(gdata)))) {
         if (!warn)
             LOGWARNING("No live current server in generator_blocksubmit! Resubmitting indefinitely!");
         warn = true;
@@ -371,7 +371,7 @@ bool generator_get_blockhash(pool_t *ckp, int height, char *hash)
     server_instance_t *si;
     connsock_t *cs;
 
-    if (unlikely(!(si = _get_current_si_threadsafe(gdata)))) {
+    if (unlikely(!(si = get_current_si_threadsafe(gdata)))) {
         LOGWARNING("No live current server in generator_get_blockhash");
         return false;
     }
@@ -852,7 +852,7 @@ struct genwork *generator_getbase(pool_t *ckp)
     connsock_t *cs;
 
     /* Use temporary variables to prevent deref while accessing */
-    si = _get_current_si_threadsafe(gdata);
+    si = get_current_si_threadsafe(gdata);
     if (unlikely(!si)) {
         LOGWARNING("No live current server in generator_genbase");
         goto out;
@@ -876,7 +876,7 @@ int generator_getbest(pool_t *ckp, char *hash, bool force)
     server_instance_t *si;
     connsock_t *cs;
 
-    si = _get_current_si_threadsafe(gdata);
+    si = get_current_si_threadsafe(gdata);
     if (unlikely(!si)) {
         LOGWARNING("No live current server in generator_getbest");
         goto out;
@@ -902,7 +902,7 @@ bool generator_get_chain(pool_t *ckp, char *chain)
     bool ret = false;
     connsock_t *cs;
 
-    si = _get_current_si_threadsafe(gdata);
+    si = get_current_si_threadsafe(gdata);
     if (unlikely(!si)) {
         LOGWARNING("No live current server in generator_get_chain");
         goto out;
@@ -921,7 +921,7 @@ int generator_checkaddr(pool_t *ckp, const char *addr, void *cscript_out)
     connsock_t *cs;
 
     assert(cscript_out);
-    si = _get_current_si_threadsafe(gdata);
+    si = get_current_si_threadsafe(gdata);
     if (unlikely(!si)) {
         LOGWARNING("No live current server in generator_checkaddr");
         goto out;
@@ -940,7 +940,7 @@ char *generator_get_txn(pool_t *ckp, const char *hash)
     char *ret = NULL;
     connsock_t *cs;
 
-    si = _get_current_si_threadsafe(gdata);
+    si = get_current_si_threadsafe(gdata);
     if (unlikely(!si)) {
         LOGWARNING("No live current server in generator_get_txn");
         goto out;
@@ -968,12 +968,12 @@ static bool parse_notify(pool_t *ckp, proxy_instance_t *proxi, json_t *val)
 
     merkles = json_array_size(arr);
     job_id = json_copy(json_array_get(val, 0));
-    prev_hash = __json_array_string(val, 1);
+    prev_hash = json_array_string__(val, 1);
     coinbase1 = json_array_string(val, 2);
     coinbase2 = json_array_string(val, 3);
-    bbversion = __json_array_string(val, 5);
-    nbit = __json_array_string(val, 6);
-    ntime = __json_array_string(val, 7);
+    bbversion = json_array_string__(val, 5);
+    nbit = json_array_string__(val, 6);
+    ntime = json_array_string__(val, 7);
     clean = json_is_true(json_array_get(val, 8));
     if (!job_id || !prev_hash || !coinbase1 || !coinbase2 || !bbversion || !nbit || !ntime) {
         if (job_id)
@@ -1007,7 +1007,7 @@ static bool parse_notify(pool_t *ckp, proxy_instance_t *proxi, json_t *val)
     LOGDEBUG("Clean %s", clean ? "true" : "false");
     LOGDEBUG("Merkles %d", merkles);
     for (i = 0; i < merkles; i++) {
-        const char *merkle = __json_array_string(arr, i);
+        const char *merkle = json_array_string__(arr, i);
 
         LOGDEBUG("Merkle %d %s", i, merkle);
         memcpy(&ni->merklehash[i][0], merkle, 65);
@@ -1123,7 +1123,7 @@ static void add_subproxy(proxy_instance_t *proxi, proxy_instance_t *subproxy)
     mutex_unlock(&proxi->proxy_lock);
 }
 
-static proxy_instance_t *__subproxy_by_id(proxy_instance_t *proxy, const int subid)
+static proxy_instance_t *subproxy_by_id__(proxy_instance_t *proxy, const int subid)
 {
     proxy_instance_t *subproxy;
 
@@ -1196,7 +1196,7 @@ static void disable_subproxy(gdata_t *gdata, proxy_instance_t *proxi, proxy_inst
 
     mutex_lock(&proxi->proxy_lock);
     /* Make sure subproxy is still in the list */
-    subproxy = __subproxy_by_id(proxi, subproxy->subid);
+    subproxy = subproxy_by_id__(proxi, subproxy->subid);
     if (likely(subproxy))
         HASH_DELETE(sh, proxi->subproxies, subproxy);
     mutex_unlock(&proxi->proxy_lock);
@@ -1552,7 +1552,7 @@ static proxy_instance_t *subproxy_by_id(proxy_instance_t *proxy, const int subid
     proxy_instance_t *subproxy;
 
     mutex_lock(&proxy->proxy_lock);
-    subproxy = __subproxy_by_id(proxy, subid);
+    subproxy = subproxy_by_id__(proxy, subid);
     mutex_unlock(&proxy->proxy_lock);
 
     return subproxy;
@@ -1688,7 +1688,7 @@ static void clear_notify(notify_instance_t *ni)
 }
 
 /* Entered with proxy_lock held */
-static void __decay_proxy(proxy_instance_t *proxy, proxy_instance_t * parent, const double diff)
+static void decay_proxy__(proxy_instance_t *proxy, proxy_instance_t * parent, const double diff)
 {
     double tdiff;
     tv_t now_t;
@@ -1717,11 +1717,11 @@ static void account_shares(proxy_instance_t *proxy, const double diff, const boo
     if (result) {
         proxy->diff_accepted += diff;
         parent->total_accepted += diff;
-        __decay_proxy(proxy, parent, diff);
+        decay_proxy__(proxy, parent, diff);
     } else {
         proxy->diff_rejected += diff;
         parent->total_rejected += diff;
-        __decay_proxy(proxy, parent, 0);
+        decay_proxy__(proxy, parent, 0);
     }
     mutex_unlock(&parent->proxy_lock);
 }
@@ -2643,9 +2643,9 @@ out:
     send_api_response(res, sockd);
 }
 
-static proxy_instance_t *__add_proxy(pool_t *ckp, gdata_t *gdata, const int num);
+static proxy_instance_t *add_proxy__(pool_t *ckp, gdata_t *gdata, const int num);
 
-static proxy_instance_t *__add_userproxy(pool_t *ckp, gdata_t *gdata, const int id,
+static proxy_instance_t *add_userproxy__(pool_t *ckp, gdata_t *gdata, const int id,
                      const int userid, char *url, char *auth, char *pass)
 {
     proxy_instance_t *proxy;
@@ -2676,7 +2676,7 @@ static void add_userproxy(pool_t *ckp, gdata_t *gdata, const int userid,
 
     mutex_lock(&gdata->lock);
     id = ckp->proxies++;
-    proxy = __add_userproxy(ckp, gdata, id, userid, newurl, newauth, newpass);
+    proxy = add_userproxy__(ckp, gdata, id, userid, newurl, newauth, newpass);
     mutex_unlock(&gdata->lock);
 
     LOGWARNING("Adding non global user %s, %d proxy %d:%s", auth, userid, id, url);
@@ -2739,9 +2739,9 @@ static void parse_addproxy(pool_t *ckp, gdata_t *gdata, const int sockd, const c
         ckp->proxyurl[id] = url;
         ckp->proxyauth[id] = auth;
         ckp->proxypass[id] = pass;
-        proxy = __add_proxy(ckp, gdata, id);
+        proxy = add_proxy__(ckp, gdata, id);
     } else
-        proxy = __add_userproxy(ckp, gdata, id, userid, url, auth, pass);
+        proxy = add_userproxy__(ckp, gdata, id, userid, url, auth, pass);
     mutex_unlock(&gdata->lock);
 
     if (global)
@@ -2930,7 +2930,7 @@ static json_t *proxystats(proxy_instance_t *proxy)
     mutex_lock(&parent->proxy_lock);
     /* Opportunity to update hashrate just before we report it without
      * needing to check on idle proxies regularly */
-    __decay_proxy(proxy, parent, 0);
+    decay_proxy__(proxy, parent, 0);
 
     json_set_int(val, "id", proxy->id);
     json_set_int(val, "userid", proxy->userid);
@@ -3231,7 +3231,7 @@ static void server_mode(pool_t *ckp, proc_instance_t *pi)
     dealloc(ckp->servers);
 }
 
-static proxy_instance_t *__add_proxy(pool_t *ckp, gdata_t *gdata, const int id)
+static proxy_instance_t *add_proxy__(pool_t *ckp, gdata_t *gdata, const int id)
 {
     proxy_instance_t *proxy;
     unsigned int i;
@@ -3273,7 +3273,7 @@ static proxy_instance_t *__add_proxy(pool_t *ckp, gdata_t *gdata, const int id)
     return proxy;
 }
 
-static void _init_mutexes(gdata_t *gdata)
+static void init_mutexes(gdata_t *gdata)
 {
     mutex_init(&gdata->lock);
     mutex_init(&gdata->notify_lock);
@@ -3281,7 +3281,7 @@ static void _init_mutexes(gdata_t *gdata)
     mutex_init(&gdata->current_si_lock);
 }
 
-static void _destroy_mutexes(gdata_t *gdata)
+static void destroy_mutexes(gdata_t *gdata)
 {
     mutex_destroy(&gdata->current_si_lock);
     mutex_destroy(&gdata->share_lock);
@@ -3300,7 +3300,7 @@ static void proxy_mode(pool_t *ckp, proc_instance_t *pi)
 
     /* Create all our proxy structures and pointers */
     for (i = 0; i < ckp->proxies; i++) {
-        proxy = __add_proxy(ckp, gdata, i);
+        proxy = add_proxy__(ckp, gdata, i);
         if (ckp->passthrough) {
             create_pthread(&proxy->pth_precv, passthrough_recv, proxy);
             proxy->passsends = create_ckmsgq(ckp, "passsend", &passthrough_send);
@@ -3329,7 +3329,7 @@ void *generator(void *arg)
     ckp->gdata = gdata;
     gdata->ckp = ckp;
 
-    _init_mutexes(gdata);
+    init_mutexes(gdata);
 
     if (ckp->proxy) {
         /* Wait for the stratifier to be ready for us */
@@ -3341,7 +3341,7 @@ void *generator(void *arg)
     /* We should never get here unless there's a fatal error */
     LOGEMERG("Generator failure, shutting down");
 
-    _destroy_mutexes(gdata);
+    destroy_mutexes(gdata);
     exit(1);
     return NULL;
 }

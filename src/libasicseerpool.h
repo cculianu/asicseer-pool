@@ -55,7 +55,7 @@ extern "C" {
 
 #define unlikely(expr) (__builtin_expect(!!(expr), 0))
 #define likely(expr) (__builtin_expect(!!(expr), 1))
-#define __maybe_unused __attribute__((unused))
+#define maybe_unused__ __attribute__((unused))
 #define uninitialised_var(x) x = x
 
 #ifndef MAX
@@ -76,7 +76,7 @@ typedef unsigned char uchar;
 typedef struct timeval tv_t;
 typedef struct timespec ts_t;
 
-__maybe_unused
+maybe_unused__
 static inline void swap_256(void *dest_p, const void *src_p)
 {
     uint32_t *dest = (uint32_t *)dest_p;
@@ -92,7 +92,7 @@ static inline void swap_256(void *dest_p, const void *src_p)
     dest[7] = src[0];
 }
 
-__maybe_unused
+maybe_unused__
 static inline void bswap_256(void *dest_p, const void *src_p)
 {
     uint32_t *dest = (uint32_t *)dest_p;
@@ -108,7 +108,7 @@ static inline void bswap_256(void *dest_p, const void *src_p)
     dest[7] = bswap_32(src[0]);
 }
 
-__maybe_unused
+maybe_unused__
 static inline void flip_32(void *dest_p, const void *src_p)
 {
     uint32_t *dest = (uint32_t *)dest_p;
@@ -119,7 +119,7 @@ static inline void flip_32(void *dest_p, const void *src_p)
         dest[i] = bswap_32(src[i]);
 }
 
-__maybe_unused
+maybe_unused__
 static inline void flip_80(void *dest_p, const void *src_p)
 {
     uint32_t *dest = (uint32_t *)dest_p;
@@ -130,39 +130,35 @@ static inline void flip_80(void *dest_p, const void *src_p)
         dest[i] = bswap_32(src[i]);
 }
 
-#define cond_wait(_cond, _lock) _cond_wait(_cond, _lock, __FILE__, __func__, __LINE__)
-#define cond_timedwait(_cond, _lock, _abstime) _cond_timedwait(_cond, _lock, _abstime, __FILE__, __func__, __LINE__)
+#define cond_wait(_cond, _lock) cond_wait_(_cond, _lock, __FILE__, __func__, __LINE__)
+#define cond_timedwait(_cond, _lock, _abstime) cond_timedwait_(_cond, _lock, _abstime, __FILE__, __func__, __LINE__)
 #if HAVE_PTHREAD_MUTEX_TIMEDLOCK
-#define mutex_timedlock(_lock, _timeout) _mutex_timedlock(_lock, _timeout, __FILE__, __func__, __LINE__)
+#define mutex_timedlock(_lock, _timeout) mutex_timedlock_(_lock, _timeout, __FILE__, __func__, __LINE__)
 #endif
-#define mutex_lock(_lock) _mutex_lock(_lock, __FILE__, __func__, __LINE__)
-#define mutex_unlock_noyield(_lock) _mutex_unlock_noyield(_lock, __FILE__, __func__, __LINE__)
-#define mutex_unlock(_lock) _mutex_unlock(_lock, __FILE__, __func__, __LINE__)
-#define mutex_trylock(_lock) _mutex_trylock(_lock, __FILE__, __func__, __LINE__)
-#define wr_lock(_lock) _wr_lock(_lock, __FILE__, __func__, __LINE__)
-#define wr_trylock(_lock) _wr_trylock(_lock, __FILE__, __func__, __LINE__)
-#define rd_lock(_lock) _rd_lock(_lock, __FILE__, __func__, __LINE__)
-#define rw_unlock(_lock) _rw_unlock(_lock, __FILE__, __func__, __LINE__)
-#define rd_unlock_noyield(_lock) _rd_unlock_noyield(_lock, __FILE__, __func__, __LINE__)
-#define wr_unlock_noyield(_lock) _wr_unlock_noyield(_lock, __FILE__, __func__, __LINE__)
-#define rd_unlock(_lock) _rd_unlock(_lock, __FILE__, __func__, __LINE__)
-#define wr_unlock(_lock) _wr_unlock(_lock, __FILE__, __func__, __LINE__)
-#define mutex_init(_lock) _mutex_init(_lock, __FILE__, __func__, __LINE__)
-#define rwlock_init(_lock) _rwlock_init(_lock, __FILE__, __func__, __LINE__)
-#define cond_init(_cond) _cond_init(_cond, __FILE__, __func__, __LINE__)
+#define mutex_lock(_lock) mutex_lock_(_lock, __FILE__, __func__, __LINE__)
+#define mutex_unlock(_lock) mutex_unlock_(_lock, __FILE__, __func__, __LINE__)
+#define mutex_trylock(_lock) mutex_trylock_(_lock, __FILE__, __func__, __LINE__)
+#define wr_lock(_lock) wr_lock_(_lock, __FILE__, __func__, __LINE__)
+#define wr_trylock(_lock) wr_trylock_(_lock, __FILE__, __func__, __LINE__)
+#define rd_lock(_lock) rd_lock_(_lock, __FILE__, __func__, __LINE__)
+#define rw_unlock(_lock) rw_unlock_(_lock, __FILE__, __func__, __LINE__)
+#define rd_unlock(_lock) rd_unlock_(_lock, __FILE__, __func__, __LINE__)
+#define wr_unlock(_lock) wr_unlock_(_lock, __FILE__, __func__, __LINE__)
+#define mutex_init(_lock) mutex_init_(_lock, __FILE__, __func__, __LINE__)
+#define rwlock_init(_lock) rwlock_init_(_lock, __FILE__, __func__, __LINE__)
+#define cond_init(_cond) cond_init_(_cond, __FILE__, __func__, __LINE__)
 
-#define cklock_init(_lock) _cklock_init(_lock, __FILE__, __func__, __LINE__)
-#define ck_rlock(_lock) _ck_rlock(_lock, __FILE__, __func__, __LINE__)
-#define ck_wlock(_lock) _ck_wlock(_lock, __FILE__, __func__, __LINE__)
-#define ck_dwlock(_lock) _ck_dwlock(_lock, __FILE__, __func__, __LINE__)
-#define ck_dlock(_lock) _ck_dlock(_lock, __FILE__, __func__, __LINE__)
-#define ck_runlock(_lock) _ck_runlock(_lock, __FILE__, __func__, __LINE__)
-#define ck_wunlock(_lock) _ck_wunlock(_lock, __FILE__, __func__, __LINE__)
+#define cklock_init(_lock) cklock_init_(_lock, __FILE__, __func__, __LINE__)
+#define ck_rlock(_lock) ck_rlock_(_lock, __FILE__, __func__, __LINE__)
+#define ck_wlock(_lock) ck_wlock_(_lock, __FILE__, __func__, __LINE__)
+#define ck_dwlock(_lock) ck_dwlock_(_lock, __FILE__, __func__, __LINE__)
+#define ck_runlock(_lock) ck_runlock_(_lock, __FILE__, __func__, __LINE__)
+#define ck_wunlock(_lock) ck_wunlock_(_lock, __FILE__, __func__, __LINE__)
 
-#define ckalloc(len) _ckzrealloc(NULL, len, false, __FILE__, __func__, __LINE__)
-#define ckzalloc(len) _ckzrealloc(NULL, len, true, __FILE__, __func__, __LINE__)
-#define ckrealloc(buf, len) _ckzrealloc(buf, len, false, __FILE__, __func__, __LINE__)
-#define ckzrealloc(buf, len) _ckzrealloc(buf, len, true, __FILE__, __func__, __LINE__)
+#define ckalloc(len) ckzrealloc_(NULL, len, false, __FILE__, __func__, __LINE__)
+#define ckzalloc(len) ckzrealloc_(NULL, len, true, __FILE__, __func__, __LINE__)
+#define ckrealloc(buf, len) ckzrealloc_(buf, len, false, __FILE__, __func__, __LINE__)
+#define ckzrealloc(buf, len) ckzrealloc_(buf, len, true, __FILE__, __func__, __LINE__)
 char *ckstrdup(const char *s);
 char *ckstrndup(const char *s, int len);
 
@@ -272,7 +268,7 @@ enum share_err {
     SE_INVALID_VERSION_MASK
 };
 
-static const char __maybe_unused *share_errs[] = {
+static const char maybe_unused__ *share_errs[] = {
     "Invalid nonce2 length",
     "Worker mismatch",
     "No nonce",
@@ -329,8 +325,8 @@ struct unixsock {
 
 typedef struct unixsock unixsock_t;
 
-void _json_check(json_t *val, json_error_t *err, const char *file, const char *func, const int line);
-#define json_check(VAL, ERR) _json_check(VAL, ERR,  __FILE__, __func__, __LINE__)
+void json_check_(json_t *val, json_error_t *err, const char *file, const char *func, const int line);
+#define json_check(VAL, ERR) json_check_(VAL, ERR,  __FILE__, __func__, __LINE__)
 
 /* Check and pack json */
 #define JSON_CPACK(VAL, ...) do { \
@@ -340,43 +336,43 @@ void _json_check(json_t *val, json_error_t *err, const char *file, const char *f
 } while (0)
 
 /* No error checking with these, make sure we know they're valid already! */
-__maybe_unused
+maybe_unused__
 static inline void json_strcpy(char *buf, json_t *val, const char *key)
 {
     strcpy(buf, json_string_value(json_object_get(val, key)) ? : "");
 }
 
-__maybe_unused
+maybe_unused__
 static inline void json_dblcpy(double *dbl, json_t *val, const char *key)
 {
     *dbl = json_real_value(json_object_get(val, key));
 }
 
-__maybe_unused
+maybe_unused__
 static inline void json_uintcpy(uint32_t *u32, json_t *val, const char *key)
 {
     *u32 = (uint32_t)json_integer_value(json_object_get(val, key));
 }
 
-__maybe_unused
+maybe_unused__
 static inline void json_uint64cpy(uint64_t *u64, json_t *val, const char *key)
 {
     *u64 = (uint64_t)json_integer_value(json_object_get(val, key));
 }
 
-__maybe_unused
+maybe_unused__
 static inline void json_int64cpy(int64_t *i64, json_t *val, const char *key)
 {
     *i64 = (int64_t)json_integer_value(json_object_get(val, key));
 }
 
-__maybe_unused
+maybe_unused__
 static inline void json_intcpy(int *i, json_t *val, const char *key)
 {
     *i = json_integer_value(json_object_get(val, key));
 }
 
-__maybe_unused
+maybe_unused__
 static inline void json_strdup(char **buf, json_t *val, const char *key)
 {
     *buf = strdup(json_string_value(json_object_get(val, key)) ? : "");
@@ -384,126 +380,119 @@ static inline void json_strdup(char **buf, json_t *val, const char *key)
 
 /* Helpers for setting a field will check for valid entry and print an error
  * if it is unsuccessfully set. */
-__maybe_unused
-static inline void _json_set_string(json_t *val, const char *key, const char *str,
+maybe_unused__
+static inline void json_set_string_(json_t *val, const char *key, const char *str,
                     const char *file, const char *func, const int line)
 {
     if (unlikely(json_object_set_new(val, key, json_string(str))))
         LOGERR("Failed to set json string from %s %s:%d", file, func, line);
 }
-#define json_set_string(val, key, str) _json_set_string(val, key, str, __FILE__, __func__, __LINE__)
+#define json_set_string(val, key, str) json_set_string_(val, key, str, __FILE__, __func__, __LINE__)
 
 /* Int is long long so will work for u32 and int64 */
-__maybe_unused
-static inline void _json_set_int(json_t *val, const char *key, int64_t integer,
+maybe_unused__
+static inline void json_set_int_(json_t *val, const char *key, int64_t integer,
                  const char *file, const char *func, const int line)
 {
     if (unlikely(json_object_set_new_nocheck(val, key, json_integer(integer))))
         LOGERR("Failed to set json int from %s %s:%d", file, func, line);
 }
-#define json_set_int(val, key, integer) _json_set_int(val, key, integer, __FILE__, __func__, __LINE__)
-#define json_set_uint32(val, key, u32) _json_set_int(val, key, u32, __FILE__, __func__, __LINE__)
-#define json_set_int64(val, key, i64) _json_set_int(val, key, i64, __FILE__, __func__, __LINE__)
+#define json_set_int(val, key, integer) json_set_int_(val, key, integer, __FILE__, __func__, __LINE__)
+#define json_set_uint32(val, key, u32) json_set_int_(val, key, u32, __FILE__, __func__, __LINE__)
+#define json_set_int64(val, key, i64) json_set_int_(val, key, i64, __FILE__, __func__, __LINE__)
 
-__maybe_unused
-static inline void _json_set_double(json_t *val, const char *key, double real,
+maybe_unused__
+static inline void json_set_double_(json_t *val, const char *key, double real,
                     const char *file, const char *func, const int line)
 {
     if (unlikely(json_object_set_new_nocheck(val, key, json_real(real))))
         LOGERR("Failed to set json double from %s %s:%d", file, func, line);
 }
-#define json_set_double(val, key, real) _json_set_double(val, key, real, __FILE__, __func__, __LINE__)
+#define json_set_double(val, key, real) json_set_double_(val, key, real, __FILE__, __func__, __LINE__)
 
-__maybe_unused
-static inline void _json_set_bool(json_t *val, const char *key, bool boolean,
+maybe_unused__
+static inline void json_set_bool_(json_t *val, const char *key, bool boolean,
                   const char *file, const char *func, const int line)
 {
     if (unlikely(json_object_set_new_nocheck(val, key, json_boolean(boolean))))
         LOGERR("Failed to set json bool from %s %s:%d", file, func, line);
 }
-#define json_set_bool(val, key, boolean) _json_set_bool(val, key, boolean, __FILE__, __func__, __LINE__)
+#define json_set_bool(val, key, boolean) json_set_bool_(val, key, boolean, __FILE__, __func__, __LINE__)
 
 /* Steals an object and NULLs original reference */
-__maybe_unused
-static inline void _json_steal_object(json_t *val, const char *key, json_t **object,
+maybe_unused__
+static inline void json_steal_object_(json_t *val, const char *key, json_t **object,
                   const char *file, const char *func, const int line)
 {
     if (unlikely(json_object_set_new_nocheck(val, key, *object)))
         LOGERR("Failed to set json object from %s %s:%d", file, func, line);
     *object = NULL;
 }
-#define json_steal_object(val, key, object) _json_steal_object(val, key, &(object), __FILE__, __func__, __LINE__)
+#define json_steal_object(val, key, object) json_steal_object_(val, key, &(object), __FILE__, __func__, __LINE__)
 
 const char *package_version(void); // returns the libasicseerpool compiled-in PACKAGE_VERSION string
 void rename_proc(const char *name);
 void create_pthread(pthread_t *thread, void *(*start_routine)(void *), void *arg);
 void join_pthread(pthread_t thread);
 
-int _cond_wait(pthread_cond_t *cond, mutex_t *lock, const char *file, const char *func, const int line);
-int _cond_timedwait(pthread_cond_t *cond, mutex_t *lock, const struct timespec *abstime, const char *file, const char *func, const int line);
+int cond_wait_(pthread_cond_t *cond, mutex_t *lock, const char *file, const char *func, const int line);
+int cond_timedwait_(pthread_cond_t *cond, mutex_t *lock, const struct timespec *abstime, const char *file, const char *func, const int line);
 #if HAVE_PTHREAD_MUTEX_TIMEDLOCK
-int _mutex_timedlock(mutex_t *lock, int timeout, const char *file, const char *func, const int line);
+int mutex_timedlock_(mutex_t *lock, int timeout, const char *file, const char *func, const int line);
 #endif
-void _mutex_lock(mutex_t *lock, const char *file, const char *func, const int line);
-void _mutex_unlock_noyield(mutex_t *lock, const char *file, const char *func, const int line);
-void _mutex_unlock(mutex_t *lock, const char *file, const char *func, const int line);
-int _mutex_trylock(mutex_t *lock, __maybe_unused const char *file, __maybe_unused const char *func, __maybe_unused const int line);
+void mutex_lock_(mutex_t *lock, const char *file, const char *func, const int line);
+void mutex_unlock_(mutex_t *lock, const char *file, const char *func, const int line);
+int mutex_trylock_(mutex_t *lock, maybe_unused__ const char *file, maybe_unused__ const char *func, maybe_unused__ const int line);
 void mutex_destroy(mutex_t *lock);
 
-void _wr_lock(rwlock_t *lock, const char *file, const char *func, const int line);
-int _wr_trylock(rwlock_t *lock, __maybe_unused const char *file, __maybe_unused const char *func, __maybe_unused const int line);
-void _rd_lock(rwlock_t *lock, const char *file, const char *func, const int line);
-void _rw_unlock(rwlock_t *lock, const char *file, const char *func, const int line);
-void _rd_unlock_noyield(rwlock_t *lock, const char *file, const char *func, const int line);
-void _wr_unlock_noyield(rwlock_t *lock, const char *file, const char *func, const int line);
-void _rd_unlock(rwlock_t *lock, const char *file, const char *func, const int line);
-void _wr_unlock(rwlock_t *lock, const char *file, const char *func, const int line);
-void _mutex_init(mutex_t *lock, const char *file, const char *func, const int line);
-void _rwlock_init(rwlock_t *lock, const char *file, const char *func, const int line);
-void _cond_init(pthread_cond_t *cond, const char *file, const char *func, const int line);
+void wr_lock_(rwlock_t *lock, const char *file, const char *func, const int line);
+int wr_trylock_(rwlock_t *lock, maybe_unused__ const char *file, maybe_unused__ const char *func, maybe_unused__ const int line);
+void rd_lock_(rwlock_t *lock, const char *file, const char *func, const int line);
+void rw_unlock_(rwlock_t *lock, const char *file, const char *func, const int line);
+void rd_unlock_(rwlock_t *lock, const char *file, const char *func, const int line);
+void wr_unlock_(rwlock_t *lock, const char *file, const char *func, const int line);
+void mutex_init_(mutex_t *lock, const char *file, const char *func, const int line);
+void rwlock_init_(rwlock_t *lock, const char *file, const char *func, const int line);
+void cond_init_(pthread_cond_t *cond, const char *file, const char *func, const int line);
 
-void _cklock_init(cklock_t *lock, const char *file, const char *func, const int line);
-void _ck_rlock(cklock_t *lock, const char *file, const char *func, const int line);
-void _ck_ilock(cklock_t *lock, const char *file, const char *func, const int line);
-void _ck_uilock(cklock_t *lock, const char *file, const char *func, const int line);
-void _ck_ulock(cklock_t *lock, const char *file, const char *func, const int line);
-void _ck_wlock(cklock_t *lock, const char *file, const char *func, const int line);
-void _ck_dwlock(cklock_t *lock, const char *file, const char *func, const int line);
-void _ck_dwilock(cklock_t *lock, const char *file, const char *func, const int line);
-void _ck_dlock(cklock_t *lock, const char *file, const char *func, const int line);
-void _ck_runlock(cklock_t *lock, const char *file, const char *func, const int line);
-void _ck_wunlock(cklock_t *lock, const char *file, const char *func, const int line);
+void cklock_init_(cklock_t *lock, const char *file, const char *func, const int line);
+void ck_rlock_(cklock_t *lock, const char *file, const char *func, const int line);
+void ck_wlock_(cklock_t *lock, const char *file, const char *func, const int line);
+void ck_dwlock_(cklock_t *lock, const char *file, const char *func, const int line);
+void ck_dwilock_(cklock_t *lock, const char *file, const char *func, const int line);
+void ck_runlock_(cklock_t *lock, const char *file, const char *func, const int line);
+void ck_wunlock_(cklock_t *lock, const char *file, const char *func, const int line);
 void cklock_destroy(cklock_t *lock);
 
 struct OpaqueSem; // opaque semaphore type, implemented on the C++ side
 typedef struct OpaqueSem *cksem_t;
 
 /* The below are implemented in the C++ part of this lib */
-void _cksem_init(cksem_t *sem, const char *file, const char *func, const int line);
-void _cksem_post(cksem_t *sem, const char *file, const char *func, const int line);
-void _cksem_wait(cksem_t *sem, const char *file, const char *func, const int line);
-int _cksem_trywait(cksem_t *sem, const char *file, const char *func, const int line);
-void _cksem_destroy(cksem_t *sem, const char *file, const char *func, const int line);
+void cksem_init_(cksem_t *sem, const char *file, const char *func, const int line);
+void cksem_post_(cksem_t *sem, const char *file, const char *func, const int line);
+void cksem_wait_(cksem_t *sem, const char *file, const char *func, const int line);
+int cksem_trywait_(cksem_t *sem, const char *file, const char *func, const int line);
+void cksem_destroy_(cksem_t *sem, const char *file, const char *func, const int line);
 
-#define cksem_init(SEM) _cksem_init(SEM, __FILE__, __func__, __LINE__)
-#define cksem_post(SEM) _cksem_post(SEM, __FILE__, __func__, __LINE__)
-#define cksem_wait(SEM) _cksem_wait(SEM, __FILE__, __func__, __LINE__)
-#define cksem_trywait(SEM) _cksem_trywait(SEM, __FILE__, __func__, __LINE__)
-#define cksem_destroy(SEM) _cksem_destroy(SEM, __FILE__, __func__, __LINE__)
+#define cksem_init(SEM) cksem_init_(SEM, __FILE__, __func__, __LINE__)
+#define cksem_post(SEM) cksem_post_(SEM, __FILE__, __func__, __LINE__)
+#define cksem_wait(SEM) cksem_wait_(SEM, __FILE__, __func__, __LINE__)
+#define cksem_trywait(SEM) cksem_trywait_(SEM, __FILE__, __func__, __LINE__)
+#define cksem_destroy(SEM) cksem_destroy_(SEM, __FILE__, __func__, __LINE__)
 
-__maybe_unused
+maybe_unused__
 static inline bool sock_connecting(void)
 {
     return errno == EINPROGRESS;
 }
 
-__maybe_unused
+maybe_unused__
 static inline bool sock_blocks(void)
 {
     return (errno == EAGAIN || errno == EWOULDBLOCK);
 }
 
-__maybe_unused
+maybe_unused__
 static inline bool sock_timeout(void)
 {
     return (errno == ETIMEDOUT);
@@ -525,44 +514,44 @@ void keep_sockalive(int fd);
 void nolinger_socket(int fd);
 void noblock_socket(int fd);
 void block_socket(int fd);
-void _close(int *fd, const char *file, const char *func, const int line);
-#define _Close(FD) _close(FD, __FILE__, __func__, __LINE__)
-#define Close(FD) _close(&FD, __FILE__, __func__, __LINE__)
+void close_helper(int *fd, const char *file, const char *func, const int line);
+#define Close_(FD) close_helper(FD, __FILE__, __func__, __LINE__)
+#define Close(FD) close_helper(&FD, __FILE__, __func__, __LINE__)
 int bind_socket(char *url, char *port);
 int connect_socket(char *url, char *port);
 int round_trip(char *url);
 int write_socket(int fd, const void *buf, size_t nbyte);
 void empty_socket(int fd);
-void _close_unix_socket(int *sockd, const char *server_path);
-#define close_unix_socket(sockd, server_path) _close_unix_socket(&sockd, server_path)
-int _open_unix_server(const char *server_path, const char *file, const char *func, const int line);
-#define open_unix_server(server_path) _open_unix_server(server_path, __FILE__, __func__, __LINE__)
-int _open_unix_client(const char *server_path, const char *file, const char *func, const int line);
-#define open_unix_client(server_path) _open_unix_client(server_path, __FILE__, __func__, __LINE__)
+void close_unix_socket_(int *sockd, const char *server_path);
+#define close_unix_socket(sockd, server_path) close_unix_socket_(&sockd, server_path)
+int open_unix_server_(const char *server_path, const char *file, const char *func, const int line);
+#define open_unix_server(server_path) open_unix_server_(server_path, __FILE__, __func__, __LINE__)
+int open_unix_client_(const char *server_path, const char *file, const char *func, const int line);
+#define open_unix_client(server_path) open_unix_client_(server_path, __FILE__, __func__, __LINE__)
 int wait_close(int sockd, int timeout);
 int wait_read_select(int sockd, float timeout);
 int read_length(int sockd, void *buf, int len);
-char *_recv_unix_msg(int sockd, int timeout1, int timeout2, const char *file, const char *func, const int line);
+char *recv_unix_msg_(int sockd, int timeout1, int timeout2, const char *file, const char *func, const int line);
 #define RECV_UNIX_TIMEOUT1 30
 #define RECV_UNIX_TIMEOUT2 5
-#define recv_unix_msg(sockd) _recv_unix_msg(sockd, UNIX_READ_TIMEOUT, UNIX_READ_TIMEOUT, __FILE__, __func__, __LINE__)
-#define recv_unix_msg_tmo(sockd, tmo) _recv_unix_msg(sockd, tmo, UNIX_READ_TIMEOUT, __FILE__, __func__, __LINE__)
-#define recv_unix_msg_tmo2(sockd, tmo1, tmo2) _recv_unix_msg(sockd, tmo1, tmo2, __FILE__, __func__, __LINE__)
+#define recv_unix_msg(sockd) recv_unix_msg_(sockd, UNIX_READ_TIMEOUT, UNIX_READ_TIMEOUT, __FILE__, __func__, __LINE__)
+#define recv_unix_msg_tmo(sockd, tmo) recv_unix_msg_(sockd, tmo, UNIX_READ_TIMEOUT, __FILE__, __func__, __LINE__)
+#define recv_unix_msg_tmo2(sockd, tmo1, tmo2) recv_unix_msg_(sockd, tmo1, tmo2, __FILE__, __func__, __LINE__)
 int wait_write_select(int sockd, float timeout);
-#define write_length(sockd, buf, len) _write_length(sockd, buf, len, __FILE__, __func__, __LINE__)
-int _write_length(int sockd, const void *buf, int len, const char *file, const char *func, const int line);
-bool _send_unix_msg(int sockd, const char *buf, int timeout, const char *file, const char *func, const int line);
-#define send_unix_msg(sockd, buf) _send_unix_msg(sockd, buf, UNIX_WRITE_TIMEOUT, __FILE__, __func__, __LINE__)
-bool _send_unix_data(int sockd, const struct msghdr *msg, const char *file, const char *func, const int line);
-#define send_unix_data(sockd, msg) _send_unix_data(sockd, msg, __FILE__, __func__, __LINE__)
-bool _recv_unix_data(int sockd, struct msghdr *msg, const char *file, const char *func, const int line);
-#define recv_unix_data(sockd, msg) _recv_unix_data(sockd, msg, __FILE__, __func__, __LINE__)
-bool _send_fd(int fd, int sockd, const char *file, const char *func, const int line);
-#define send_fd(fd, sockd) _send_fd(fd, sockd, __FILE__, __func__, __LINE__)
-int _get_fd(int sockd, const char *file, const char *func, const int line);
-#define get_fd(sockd) _get_fd(sockd, __FILE__, __func__, __LINE__)
+#define write_length(sockd, buf, len) write_length_(sockd, buf, len, __FILE__, __func__, __LINE__)
+int write_length_(int sockd, const void *buf, int len, const char *file, const char *func, const int line);
+bool send_unix_msg_(int sockd, const char *buf, int timeout, const char *file, const char *func, const int line);
+#define send_unix_msg(sockd, buf) send_unix_msg_(sockd, buf, UNIX_WRITE_TIMEOUT, __FILE__, __func__, __LINE__)
+bool send_unix_data_(int sockd, const struct msghdr *msg, const char *file, const char *func, const int line);
+#define send_unix_data(sockd, msg) send_unix_data_(sockd, msg, __FILE__, __func__, __LINE__)
+bool recv_unix_data_(int sockd, struct msghdr *msg, const char *file, const char *func, const int line);
+#define recv_unix_data(sockd, msg) recv_unix_data_(sockd, msg, __FILE__, __func__, __LINE__)
+bool send_fd_(int fd, int sockd, const char *file, const char *func, const int line);
+#define send_fd(fd, sockd) send_fd_(fd, sockd, __FILE__, __func__, __LINE__)
+int get_fd_(int sockd, const char *file, const char *func, const int line);
+#define get_fd(sockd) get_fd_(sockd, __FILE__, __func__, __LINE__)
 
-const char *__json_array_string(json_t *val, unsigned int entry);
+const char *json_array_string__(json_t *val, unsigned int entry);
 char *json_array_string(json_t *val, unsigned int entry);
 json_t *json_object_dup(json_t *val, const char *entry);
 
@@ -573,16 +562,16 @@ void align_len(size_t *len);
 void realloc_strcat(char **ptr, const char *s);
 void trail_slash(char **buf);
 void *json_ckalloc(size_t size);
-void *_ckzrealloc(void *old, size_t len, bool zeromem, const char *file, const char *func, const int line);
+void *ckzrealloc_(void *old, size_t len, bool zeromem, const char *file, const char *func, const int line);
 size_t round_up_page(size_t len);
 
 extern const int hex2bin_tbl[];
-size_t __bin2hex(void *vs, const void *vp, size_t len);
+size_t bin2hex__(void *vs, const void *vp, size_t len);
 void *bin2hex(const void *vp, size_t len);
-bool _validhex(const char *buf, const char *file, const char *func, const int line);
-#define validhex(buf) _validhex(buf, __FILE__, __func__, __LINE__)
-bool _hex2bin(void *p, const void *vhexstr, size_t len, const char *file, const char *func, const int line);
-#define hex2bin(p, vhexstr, len) _hex2bin(p, vhexstr, len, __FILE__, __func__, __LINE__)
+bool validhex__(const char *buf, const char *file, const char *func, const int line);
+#define validhex(buf) validhex__(buf, __FILE__, __func__, __LINE__)
+bool hex2bin__(void *p, const void *vhexstr, size_t len, const char *file, const char *func, const int line);
+#define hex2bin(p, vhexstr, len) hex2bin__(p, vhexstr, len, __FILE__, __func__, __LINE__)
 char *http_base64(const char *src);
 void b58tobin(char *b58bin, const char *b58);
 /* Does no checksum checks but returns false if the characters in b58 source are invalid, or if b58 is > 35 characters, true otherwise. */
