@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cmath>
 #include <concepts>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
@@ -27,13 +28,12 @@
 
 #include "libasicseerpool.h"
 
-#if HAVE_SYS_EPOLL_H
+#if HAVE_SYS_EPOLL_H && HAVE_EPOLL
 #include <sys/epoll.h>
-#define USE_EPOLL 1
-#define LINUX 1
-#elif HAVE_SYS_EVENT_H
-#define USE_KEVENT 1
+#  define USE_EPOLL 1
+#elif HAVE_SYS_EVENT_H && HAVE_KEVENT
 #include <sys/event.h>
+#  define USE_KEVENT 1
 #else
 #  error "Unsupported platform! FIXME!"
 #endif
@@ -50,6 +50,10 @@
 #endif
 
 #include <pthread.h>
+
+#if HAVE_PTHREAD_NP_H
+#include <pthread_np.h> // for pthread_*_np
+#endif
 
 namespace {
 timespec normalize(timespec ret) noexcept
@@ -122,7 +126,7 @@ std::timespec getMonotonicTime() noexcept {
     return t;
 }
 
-#ifdef USE_KEVENT
+#if USE_KEVENT
 enum class KFilt { Read, Write };
 int emulate_epoll_using_kevent(KFilt kfilt, int sockd, float timeout, bool eof_only)
 {
@@ -147,7 +151,7 @@ int emulate_epoll_using_kevent(KFilt kfilt, int sockd, float timeout, bool eof_o
     struct kevent kev;
     const int fflags = eof_only ? NOTE_LOWAT: 0;
     const int data = eof_only ? 262144 /* read "low water mark" */ : 0;
-    EV_SET(&kev, sockd, filt, EV_ADD | EV_CLEAR, fflags, data, 0);
+    EV_SET(&kev, sockd, filt, EV_ADD | EV_CLEAR, fflags, data, nullptr);
     int r [[maybe_unused]] = kevent(kq, &kev, 1, nullptr, 0, nullptr);
     //LOGDEBUG("kevent(0) returned %d", r);
     std::memset(&kev, 0, sizeof(kev));
@@ -183,7 +187,7 @@ int emulate_epoll_using_kevent(KFilt kfilt, int sockd, float timeout, bool eof_o
 extern "C" int wait_close(int sockd, int timeout)
 {
     int ret;
-#ifdef USE_KEVENT /* macOS, BSD, etc */
+#if USE_KEVENT /* macOS, BSD, etc */
     ret = emulate_epoll_using_kevent(KFilt::Read, sockd, timeout, true);
 #elif USE_EPOLL /* Linux */
     struct pollfd sfd;
@@ -209,7 +213,7 @@ extern "C" int wait_close(int sockd, int timeout)
 /* Emulate a select read wait for high fds that select doesn't support. */
 extern "C" int wait_read_select(int sockd, float timeout)
 {
-#ifdef USE_EPOLL /* Linux */
+#if USE_EPOLL /* Linux */
     struct epoll_event event = {0, {NULL}};
     int epfd, ret;
 
@@ -235,7 +239,7 @@ extern "C" int wait_read_select(int sockd, float timeout)
 /* Emulate a select write wait for high fds that select doesn't support */
 extern "C" int wait_write_select(int sockd, float timeout)
 {
-#ifdef USE_EPOLL /* Linux */
+#if USE_EPOLL /* Linux */
     struct epoll_event event = {0, {NULL}};
     int epfd, ret;
 
@@ -331,7 +335,7 @@ extern "C" void nanosleep_abstime(const ts_t *ts_end)
 extern "C" int epfd_create(void)
 {
     const int ret = []{
-#ifdef USE_EPOLL /* Linux */
+#if USE_EPOLL /* Linux */
         return epoll_create1(EPOLL_CLOEXEC);
 #elif USE_KEVENT /* macOS, BSD, etc */
         return kqueue();
@@ -346,14 +350,14 @@ extern "C" int epfd_create(void)
 extern "C" int epfd_add(int epfd, int fd, uint64_t userdata, bool forRead, bool oneShot, bool edgeTriggered)
 {
     const int ret = [&]{
-#ifdef USE_EPOLL /* Linux */
+#if USE_EPOLL /* Linux */
         struct epoll_event event;
         std::memset(&event, 0, sizeof(event));
         event.data.u64 = userdata;
         event.events = EPOLLRDHUP | (forRead ? EPOLLIN : EPOLLOUT) | (oneShot ? EPOLLONESHOT : 0) | (edgeTriggered ? EPOLLET : 0);
         return epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &event);
 #elif USE_KEVENT /* macOS, BSD, etc */
-        struct kevent64_s kev;
+        struct kevent kev;
         std::memset(&kev, 0, sizeof(kev));
         int16_t filter = 0;
         uint16_t flags = EV_ADD;
@@ -361,8 +365,8 @@ extern "C" int epfd_add(int epfd, int fd, uint64_t userdata, bool forRead, bool 
         else filter = EVFILT_WRITE;
         if (edgeTriggered) flags |= EV_CLEAR;
         if (oneShot) flags |= EV_ONESHOT;
-        EV_SET64(&kev, fd, filter, flags, 0, 0, userdata, 0, 0);
-        return kevent64(epfd, &kev, 1, nullptr, 0, 0, nullptr);
+        EV_SET(&kev, fd, filter, flags, 0, 0, reinterpret_cast<void *>(static_cast<uintptr_t>(userdata)) /* paranoia for 32-bit */);
+        return kevent(epfd, &kev, 1, nullptr, 0, nullptr);
 #else
 #error "Unsupported platform!"
 #endif
@@ -390,13 +394,13 @@ extern "C" int epfd_wait(int epfd, aevt_t *event, int timeout_msec)
         }
         return r;
 #elif USE_KEVENT /* macOS, BSD, etc */
-        struct kevent64_s kev;
+        struct kevent kev;
         std::memset(&kev, 0, sizeof(kev));
         struct timespec ts{.tv_sec = timeout_msec / 1000, .tv_nsec = (timeout_msec % 1000) * 1'000'000L};
-        int r = kevent64(epfd, nullptr, 0, &kev, 1, 0, &ts);
+        int r = kevent(epfd, nullptr, 0, &kev, 1, &ts);
         if (r >= 1) {
             event->fd = kev.ident;
-            event->userdata = kev.udata;
+            event->userdata = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(kev.udata));
             event->data = kev.data;
             event->rdhup = event->hup = kev.flags & EV_EOF;
             event->in = kev.filter == EVFILT_READ;
@@ -420,10 +424,10 @@ extern "C" int epfd_rm(int epfd, int fd)
 #ifdef USE_EPOLL /* Linux */
         return epoll_ctl(epfd, EPOLL_CTL_DEL, fd, nullptr);
 #elif USE_KEVENT /* macOS, BSD, etc */
-        struct kevent64_s kev;
+        struct kevent kev;
         std::memset(&kev, 0, sizeof(kev));
-        EV_SET64(&kev, fd, 0, EV_DELETE, 0, 0, 0, 0, 0);
-        return kevent64(epfd, &kev, 1, nullptr, 0, 0, nullptr);
+        EV_SET(&kev, fd, 0, EV_DELETE, 0, 0, nullptr);
+        return kevent(epfd, &kev, 1, nullptr, 0, nullptr);
 #else
 #error "Unsupported platform!"
 #endif

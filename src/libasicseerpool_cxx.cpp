@@ -33,14 +33,14 @@ void pushVec(std::vector<uchar> &v, const std::vector<uchar> &b) {
          v.insert(v.end(), uint8_t(b.size()));
      } else if (b.size() <= 0xffff) {
          v.insert(v.end(), OP_PUSHDATA2);
-         uint8_t _data[2];
-         WriteLE16(_data, b.size());
-         v.insert(v.end(), _data, _data + sizeof(_data));
+         uint8_t data[2];
+         WriteLE16(data, b.size());
+         v.insert(v.end(), data, data + sizeof(data));
      } else {
          v.insert(v.end(), OP_PUSHDATA4);
-         uint8_t _data[4];
-         WriteLE32(_data, b.size());
-         v.insert(v.end(), _data, _data + sizeof(_data));
+         uint8_t data[4];
+         WriteLE32(data, b.size());
+         v.insert(v.end(), data, data + sizeof(data));
      }
      v.insert(v.end(), b.begin(), b.end());
 }
@@ -225,7 +225,7 @@ struct OpaqueSem {
     OpaqueSem(unsigned int value = 0) : sem(value) {}
 };
 
-extern "C" void _cksem_init(cksem_t *sem, const char *file, const char *func, const int line)
+extern "C" void cksem_init_(cksem_t *sem, const char *file, const char *func, const int line)
 {
     static_assert(OpaqueSem::SemType::max() > 0);
     try {
@@ -236,7 +236,7 @@ extern "C" void _cksem_init(cksem_t *sem, const char *file, const char *func, co
     }
 }
 
-extern "C" void _cksem_destroy(cksem_t *sem, const char *file, const char *func, const int line)
+extern "C" void cksem_destroy_(cksem_t *sem, const char *file, const char *func, const int line)
 {
     if (const void *a[2] = {}; !(a[0] = sem) || !(a[1] = *sem)) {
         quitfrom(1, file, func, line, "Failed to destroy OpaqueSem sem=0x%p *sem=0x%p", a[0], a[1]);
@@ -247,7 +247,7 @@ extern "C" void _cksem_destroy(cksem_t *sem, const char *file, const char *func,
     *sem = nullptr;
 }
 
-extern "C" void _cksem_post(cksem_t *sem, const char *file, const char *func, const int line)
+extern "C" void cksem_post_(cksem_t *sem, const char *file, const char *func, const int line)
 {
     const void *a[2] = {};
     try {
@@ -259,7 +259,7 @@ extern "C" void _cksem_post(cksem_t *sem, const char *file, const char *func, co
     }
 }
 
-extern "C" void _cksem_wait(cksem_t *sem, const char *file, const char *func, const int line)
+extern "C" void cksem_wait_(cksem_t *sem, const char *file, const char *func, const int line)
 {
     const void *a[2] = {};
     try {
@@ -271,7 +271,7 @@ extern "C" void _cksem_wait(cksem_t *sem, const char *file, const char *func, co
     }
 }
 
-extern "C" int _cksem_trywait(cksem_t *sem, const char *file, const char *func, const int line)
+extern "C" int cksem_trywait_(cksem_t *sem, const char *file, const char *func, const int line)
 {
     const void *a[2] = {};
     try {

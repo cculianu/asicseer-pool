@@ -18,7 +18,7 @@
 #include "bitcoin.h"
 #include "stratifier.h"
 
-static bool check_required_rule(const char __maybe_unused * rule)
+static bool check_required_rule(const char maybe_unused__ * rule)
 {
     return false;
 }
@@ -175,7 +175,7 @@ bool gen_gbtbase(connsock_t *cs, gbtbase_t *gbt)
 
     hex2bin(hash_swap, previousblockhash, 32);
     swap_256(tmp, hash_swap);
-    __bin2hex(gbt->prevhash, tmp, 32);
+    bin2hex__(gbt->prevhash, tmp, 32);
 
     strncpy(gbt->target, target, 65);
 

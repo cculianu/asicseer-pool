@@ -663,7 +663,7 @@ static void cb1_buffer_take(cb1_buffer_t *t, void **bufptr, size_t *pos, size_t 
 /// Returns an index into the buffer where the amount data begins on success.
 /// On failure (which is unlikely) this function will call quit().  So this always returns on success.
 /// IMPORTANT: scriptlen must be <253 bytes otherwise this will always fail.
-static size_t _add_output(cb1_buffer_t *buf, uint64_t amount, const void *scriptbin, size_t scriptlen)
+static size_t add_output_(cb1_buffer_t *buf, uint64_t amount, const void *scriptbin, size_t scriptlen)
 {
     if (unlikely(scriptlen >= 253)) {
         quit(1, "INTERNAL ERROR: %s: scriptlen must be <253 bytes!", __func__);
@@ -731,7 +731,7 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, cb1_buffer_t 
         // single payout override mode -- just add g64 (total) as a single output and skip the json generation
         // and the per-user payouts altogether
         if (g64 >= DUST_LIMIT_SATS) {
-            amt_pos = _add_output(cb_buf, g64, sdata->single_payout_override_scriptbin, sdata->single_payout_override_scriptlen);
+            amt_pos = add_output_(cb_buf, g64, sdata->single_payout_override_scriptbin, sdata->single_payout_override_scriptlen);
             total = 0;
         }
         LOGDEBUG("Single payout override: entire reward of %"PRId64" will go to the override address", g64);
@@ -788,7 +788,7 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, cb1_buffer_t 
             for (int i = 0; i < N; ++i) {
                 const uint64_t rew = per_out + ( i+1 == N ? rem : 0 );
                 total -= rew;
-                amt_pos = _add_output(cb_buf, rew, user->scriptbin, user->scriptlen);
+                amt_pos = add_output_(cb_buf, rew, user->scriptbin, user->scriptlen);
                 LOGDEBUG("User %s outp %d reward %"PRIu64, user->username, 1 + i + payouts, rew);
             }
             break; // exit loop. done faking payouts
@@ -801,7 +801,7 @@ static int64_t add_user_generation(sdata_t *sdata, workbase_t *wb, cb1_buffer_t 
         else
             LOGINFO("User %s reward %1.8f", user->username, total_reward / (double)SATOSHIS);
         /* Add the user's coinbase reward, using the cached cscript */
-        amt_pos = _add_output(cb_buf, total_reward, user->scriptbin, user->scriptlen);
+        amt_pos = add_output_(cb_buf, total_reward, user->scriptbin, user->scriptlen);
 #endif
 
         if (!pf64 && total_reward > max_payee.reward) {
@@ -873,7 +873,7 @@ static void add_coinbase_payouts(const pool_t *ckp, workbase_t *wb, cb1_buffer_t
             pf64 = f64 - df64;
 
             // add pool net fee
-            pool_amt_pos = _add_output(cb1_buf, pf64, sdata->scriptbin, sdata->scriptlen);
+            pool_amt_pos = add_output_(cb1_buf, pf64, sdata->scriptbin, sdata->scriptlen);
             pool_has_amt = true;
             const double fee = pf64 / (double)SATOSHIS;
             LOGDEBUG("%1.8f pool fee to pool address: %s", fee, ckp->bchaddress);
@@ -883,7 +883,7 @@ static void add_coinbase_payouts(const pool_t *ckp, workbase_t *wb, cb1_buffer_t
                 for (int i = 0; i < DONATION_NUM_ADDRESSES && leftover > 0; ++i) {
                     if (sdata->donation_data[i].scriptlen && ckp->dev_donations[i].valid) {
                         // good address
-                        _add_output(cb1_buf, don_each, sdata->donation_data[i].scriptbin, sdata->donation_data[i].scriptlen);
+                        add_output_(cb1_buf, don_each, sdata->donation_data[i].scriptbin, sdata->donation_data[i].scriptlen);
                         leftover -= (int64_t)don_each;
                         const double d = don_each / (double)SATOSHIS;
                         LOGDEBUG("%f dev donation to address: %s", d, ckp->dev_donations[i].address);
@@ -924,7 +924,7 @@ static void add_coinbase_payouts(const pool_t *ckp, workbase_t *wb, cb1_buffer_t
             pf64 = (uint64_t)(((int64_t)pf64) + c64); // add or deduct modifiction returned from add_user_generation
             if (!pool_has_amt && pf64 >= DUST_LIMIT_SATS) {
                 // pay extra change > dust limit back to pool, new output at end
-                pool_amt_pos = _add_output(cb1_buf, pf64, sdata->scriptbin, sdata->scriptlen);
+                pool_amt_pos = add_output_(cb1_buf, pf64, sdata->scriptbin, sdata->scriptlen);
                 pool_has_amt = true;
                 ok = true;
             } else if (pool_has_amt && pf64 >= DUST_LIMIT_SATS) {
@@ -965,7 +965,7 @@ static void add_coinbase_payouts(const pool_t *ckp, workbase_t *wb, cb1_buffer_t
     } else {
         // payout directly to pool in this mode (legacy asicseer-db mode);
         // this branch is never taken now but left here in case we want to resurrect a similar mechanism someday
-        pool_amt_pos = _add_output(cb1_buf, g64, sdata->scriptbin, sdata->scriptlen);
+        pool_amt_pos = add_output_(cb1_buf, g64, sdata->scriptbin, sdata->scriptlen);
         pool_has_amt = true;
     }
 #undef SET_POOL_AMT
@@ -1189,7 +1189,7 @@ static void age_share_hashtable(sdata_t *sdata, const int64_t wb_id)
 
 static char *status_chars = "|/-\\";
 
-static void _ckdbq_add(pool_t *ckp, const DatumID idtype, json_t *val, const char *file, const char *func, const int line)
+static void ckdbq_add_(pool_t *ckp, const DatumID idtype, json_t *val, const char *file, const char *func, const int line)
 {
     sdata_t *sdata = ckp->sdata;
     static time_t time_counter;
@@ -1224,7 +1224,7 @@ static void _ckdbq_add(pool_t *ckp, const DatumID idtype, json_t *val, const cha
     json_decref(val);
 }
 
-#define ckdbq_add(ckp, idtype, val) _ckdbq_add(ckp, idtype, val, __FILE__, __func__, __LINE__)
+#define ckdbq_add(ckp, idtype, val) ckdbq_add_(ckp, idtype, val, __FILE__, __func__, __LINE__)
 
 /* Append a bulk list already created to the ssends list */
 static void ssend_bulk_append(sdata_t *sdata, ckmsg_t *bulk_send, const int messages)
@@ -1298,7 +1298,7 @@ static void upstream_msgtype(pool_t *ckp, const json_t *val, const int msg_type)
 
 /// we use this function to only bother to build the potentially-heavy workinfo json
 /// object if the DL_FOREACH2 loop in send_node_workinfo actually iterates
-static void __lazy_init_node_workinfo(json_t **wb_val_in, const workbase_t *wb)
+static void lazy_init_node_workinfo__(json_t **wb_val_in, const workbase_t *wb)
 {
     json_t *wb_val = *wb_val_in;
     if (wb_val)
@@ -1339,7 +1339,7 @@ static void send_node_workinfo(pool_t *ckp, sdata_t *sdata, const workbase_t *wb
 
     ck_rlock(&sdata->instance_lock);
     DL_FOREACH2(sdata->node_instances, client, node_next) {
-        __lazy_init_node_workinfo(&wb_val, wb);
+        lazy_init_node_workinfo__(&wb_val, wb);
         ckmsg_t *client_msg;
         smsg_t *msg;
         json_t *json_msg = json_deep_copy(wb_val);
@@ -1354,7 +1354,7 @@ static void send_node_workinfo(pool_t *ckp, sdata_t *sdata, const workbase_t *wb
         messages++;
     }
     DL_FOREACH2(sdata->remote_instances, client, remote_next) {
-        __lazy_init_node_workinfo(&wb_val, wb);
+        lazy_init_node_workinfo__(&wb_val, wb);
         ckmsg_t *client_msg;
         smsg_t *msg;
         json_t *json_msg = json_deep_copy(wb_val);
@@ -1371,7 +1371,7 @@ static void send_node_workinfo(pool_t *ckp, sdata_t *sdata, const workbase_t *wb
     ck_runlock(&sdata->instance_lock);
 
     if (ckp->remote) {
-        __lazy_init_node_workinfo(&wb_val, wb);
+        lazy_init_node_workinfo__(&wb_val, wb);
         upstream_msgtype(ckp, wb_val, SM_WORKINFO);
     }
 
@@ -1479,7 +1479,7 @@ static void add_base(pool_t *ckp, sdata_t *sdata, workbase_t *wb, bool *new_bloc
         memcpy(sdata->lasthash, wb->prevhash, 65);
         hex2bin(sdata->lasthashbin, sdata->lasthash, 32);
         swap_256(sdata->lastswaphashbin, sdata->lasthashbin);
-        __bin2hex(sdata->lastswaphash, sdata->lastswaphashbin, 32);
+        bin2hex__(sdata->lastswaphash, sdata->lastswaphashbin, 32);
         sdata->blockchange_id = wb->id;
     }
     mutex_unlock(&sdata->last_hash_lock);
@@ -1806,7 +1806,7 @@ static txntable_t *wb_merkle_bin_txns(pool_t *ckp, sdata_t *sdata, workbase_t *w
             break;
         }
         memcpy(&wb->merklebin[wb->merkles][0], hashbin + 32L, 32);
-        __bin2hex(&wb->merklehash[wb->merkles][0], &wb->merklebin[wb->merkles][0], 32);
+        bin2hex__(&wb->merklehash[wb->merkles][0], &wb->merklebin[wb->merkles][0], 32);
         json_array_append_new(wb->merkle_array, json_string(&wb->merklehash[wb->merkles][0]));
         LOGDEBUG("MerkleHash %d %s", wb->merkles, &wb->merklehash[wb->merkles][0]);
         wb->merkles++;
@@ -1947,7 +1947,7 @@ static void check_unconfirmed(pool_t *ckp, sdata_t *sdata, const int height)
     dealloc(found);
 }
 
-static time_t _sdata_get_update_time_safe(sdata_t *sdata, time_t *last_newblock_time)
+static time_t sdata_get_update_time_safe(sdata_t *sdata, time_t *last_newblock_time)
 {
     time_t update_time;
     mutex_lock(&sdata->update_time_lock);
@@ -1980,7 +1980,7 @@ static void block_update(pool_t *ckp, int *prio)
     bool ret = false;
     txntable_t *txns;
     workbase_t *wb;
-    const time_t update_time = _sdata_get_update_time_safe(sdata, NULL);
+    const time_t update_time = sdata_get_update_time_safe(sdata, NULL);
     const int64_t t0 = time_micros();
 
     /* Skip update if we're getting stacked low priority updates too close
@@ -2227,7 +2227,7 @@ out:
 /* Remote workbases are keyed by the combined values of wb->id and
  * wb->client_id to prevent collisions in the unlikely event two remote
  * servers are generating the same workbase ids. */
-static void __add_to_remote_workbases(sdata_t *sdata, workbase_t *wb)
+static void add_to_remote_workbases(sdata_t *sdata, workbase_t *wb)
 {
     HASH_ADD(hh, sdata->remote_workbases, id, sizeof(int64_t) * 2, wb);
 }
@@ -2264,7 +2264,7 @@ static void check_incomplete_wbs(pool_t *ckp, sdata_t *sdata)
     /* Return all removed workbases to remote_workbase hashlist */
     HASH_ITER(hh, removed, wb, tmp) {
         HASH_DEL(removed, wb);
-        __add_to_remote_workbases(sdata, wb);
+        add_to_remote_workbases(sdata, wb);
     }
     ck_wunlock(&sdata->workbase_lock);
 
@@ -2310,7 +2310,7 @@ static void add_remote_base(pool_t *ckp, sdata_t *sdata, workbase_t *wb)
             ck_wlock(&sdata->workbase_lock);
         }
     }
-    __add_to_remote_workbases(sdata, wb);
+    add_to_remote_workbases(sdata, wb);
     ck_wunlock(&sdata->workbase_lock);
 
     val = generate_workinfo(ckp, wb, __func__);
@@ -2610,7 +2610,7 @@ process_block(const workbase_t *wb, const char *coinbase, const int cblen,
     size_t gbt_block_offset = 0;
 
     flip_32(flip32, hash);
-    __bin2hex(blockhash, flip32, 32);
+    bin2hex__(blockhash, flip32, 32);
 
     /* Message format: "data" */
     gbt_block = ckzalloc(
@@ -2620,22 +2620,22 @@ process_block(const workbase_t *wb, const char *coinbase, const int cblen,
         wb->txn_data_len + /* tx data */
         1                  /* zero termination */
         );
-    gbt_block_offset += __bin2hex(gbt_block + gbt_block_offset, data, 80);
+    gbt_block_offset += bin2hex__(gbt_block + gbt_block_offset, data, 80);
 
     if (txns < 0xfd) {
         uint8_t val8 = txns;
-        gbt_block_offset += __bin2hex(gbt_block + gbt_block_offset, (const unsigned char *)&val8, 1);
+        gbt_block_offset += bin2hex__(gbt_block + gbt_block_offset, (const unsigned char *)&val8, 1);
     } else if (txns <= 0xffff) {
         uint16_t val16 = htole16(txns);
         strcpy(gbt_block + gbt_block_offset, "fd"); gbt_block_offset += 2;
-        gbt_block_offset += __bin2hex(gbt_block + gbt_block_offset, (const unsigned char *)&val16, 2);
+        gbt_block_offset += bin2hex__(gbt_block + gbt_block_offset, (const unsigned char *)&val16, 2);
     } else {
         uint32_t val32 = htole32(txns);
         strcpy(gbt_block + gbt_block_offset, "fe"); gbt_block_offset += 2;
-        gbt_block_offset += __bin2hex(gbt_block + gbt_block_offset, (const unsigned char *)&val32, 4);
+        gbt_block_offset += bin2hex__(gbt_block + gbt_block_offset, (const unsigned char *)&val32, 4);
     }
 
-    gbt_block_offset += __bin2hex(gbt_block + gbt_block_offset, coinbase, cblen);
+    gbt_block_offset += bin2hex__(gbt_block + gbt_block_offset, coinbase, cblen);
 
     if (likely(wb->txns))
         strcpy(gbt_block + gbt_block_offset, wb->txn_data);
@@ -2655,7 +2655,7 @@ static bool local_block_submit(pool_t *ckp, char *gbt_block, const size_t gbt_bl
 
     free(gbt_block);
     swap_256(swap256, flip32);
-    __bin2hex(rhash, swap256, 32);
+    bin2hex__(rhash, swap256, 32);
     generator_preciousblock(ckp, rhash);
 
     /* Check failures that may be inconclusive but were submitted via other
@@ -2692,7 +2692,7 @@ static workbase_t *get_workbase(sdata_t *sdata, const int64_t id)
     return wb;
 }
 
-static workbase_t *__find_remote_workbase(sdata_t *sdata, const int64_t id, const int64_t client_id)
+static workbase_t *find_remote_workbase(sdata_t *sdata, const int64_t id, const int64_t client_id)
 {
     int64_t lookup[2] = {id, client_id};
     workbase_t *wb;
@@ -2706,7 +2706,7 @@ static workbase_t *get_remote_workbase(sdata_t *sdata, const int64_t id, const i
     workbase_t *wb;
 
     ck_wlock(&sdata->workbase_lock);
-    wb = __find_remote_workbase(sdata, id, client_id);
+    wb = find_remote_workbase(sdata, id, client_id);
     if (wb) {
         if (wb->incomplete)
             wb = NULL;
@@ -2869,7 +2869,7 @@ static void update_base(sdata_t *sdata, const int prio)
 
 /* Instead of removing the client instance, we add it to a list of recycled
  * clients allowing us to reuse it instead of callocing a new one */
-static void __kill_instance(sdata_t *sdata, stratum_instance_t *client)
+static void kill_instance__(sdata_t *sdata, stratum_instance_t *client)
 {
     if (client->proxy) {
         client->proxy->bound_clients--;
@@ -2884,7 +2884,7 @@ static void __kill_instance(sdata_t *sdata, stratum_instance_t *client)
 
 /* Called with instance_lock held. Note stats.users is protected by
  * instance lock to avoid recursive locking. */
-static void __inc_worker(sdata_t *sdata, user_instance_t *user, worker_instance_t *worker)
+static void inc_worker__(sdata_t *sdata, user_instance_t *user, worker_instance_t *worker)
 {
     sdata->stats.workers++;
     if (!user->workers++)
@@ -2892,7 +2892,7 @@ static void __inc_worker(sdata_t *sdata, user_instance_t *user, worker_instance_
     worker->instance_count++;
 }
 
-static void __dec_worker(sdata_t *sdata, user_instance_t *user, worker_instance_t *worker)
+static void dec_worker__(sdata_t *sdata, user_instance_t *user, worker_instance_t *worker)
 {
     sdata->stats.workers--;
     if (!--user->workers)
@@ -2900,7 +2900,7 @@ static void __dec_worker(sdata_t *sdata, user_instance_t *user, worker_instance_
     worker->instance_count--;
 }
 
-static void __disconnect_session(sdata_t *sdata, const stratum_instance_t *client)
+static void disconnect_session__(sdata_t *sdata, const stratum_instance_t *client)
 {
     time_t now_t = time(NULL);
     session_t *session, *tmp;
@@ -2933,14 +2933,14 @@ static void __disconnect_session(sdata_t *sdata, const stratum_instance_t *clien
 
 /* Removes a client instance we know is on the stratum_instances list and from
  * the user client list if it's been placed on it */
-static void __del_client(sdata_t *sdata, stratum_instance_t *client)
+static void del_client__(sdata_t *sdata, stratum_instance_t *client)
 {
     user_instance_t *user = client->user_instance;
 
     HASH_DEL(sdata->stratum_instances, client);
     if (user) {
         DL_DELETE2(user->clients, client, user_prev, user_next );
-        __dec_worker(sdata, user, client->worker_instance);
+        dec_worker__(sdata, user, client->worker_instance);
     }
 }
 
@@ -2964,8 +2964,8 @@ static void drop_allclients(pool_t *ckp)
         int64_t client_id = client->id;
 
         if (!client->ref) {
-            __del_client(sdata, client);
-            __kill_instance(sdata, client);
+            del_client__(sdata, client);
+            kill_instance__(sdata, client);
         } else
             client->dropped = true;
         kills++;
@@ -3027,7 +3027,7 @@ static int64_t masked_inc(int64_t value, int64_t mask)
 }
 
 /* Priority values can be sparse, they do not need to be sequential */
-static void __set_proxy_prio(sdata_t *sdata, proxy_t *proxy, int64_t priority)
+static void set_proxy_prio__(sdata_t *sdata, proxy_t *proxy, int64_t priority)
 {
     proxy_t *tmpa, *tmpb, *exists = NULL;
     int64_t mask, next_prio = 0;
@@ -3058,7 +3058,7 @@ static void __set_proxy_prio(sdata_t *sdata, proxy_t *proxy, int64_t priority)
     HASH_SORT(sdata->proxies, prio_sort);
 }
 
-static proxy_t *__generate_proxy(sdata_t *sdata, const int id)
+static proxy_t *generate_proxy__(sdata_t *sdata, const int id)
 {
     proxy_t *proxy = ckzalloc(sizeof(proxy_t));
 
@@ -3080,7 +3080,7 @@ static proxy_t *__generate_proxy(sdata_t *sdata, const int id)
     return proxy;
 }
 
-static proxy_t *__generate_subproxy(sdata_t *sdata, proxy_t *proxy, const int subid)
+static proxy_t *generate_subproxy__(sdata_t *sdata, proxy_t *proxy, const int subid)
 {
     proxy_t *subproxy = ckzalloc(sizeof(proxy_t));
 
@@ -3094,7 +3094,7 @@ static proxy_t *__generate_subproxy(sdata_t *sdata, proxy_t *proxy, const int su
     return subproxy;
 }
 
-static proxy_t *__existing_proxy(const sdata_t *sdata, const int id)
+static proxy_t *existing_proxy__(const sdata_t *sdata, const int id)
 {
     proxy_t *proxy;
 
@@ -3107,26 +3107,26 @@ static proxy_t *existing_proxy(sdata_t *sdata, const int id)
     proxy_t *proxy;
 
     mutex_lock(&sdata->proxy_lock);
-    proxy = __existing_proxy(sdata, id);
+    proxy = existing_proxy__(sdata, id);
     mutex_unlock(&sdata->proxy_lock);
 
     return proxy;
 }
 
 /* Find proxy by id number, generate one if none exist yet by that id */
-static proxy_t *__proxy_by_id(sdata_t *sdata, const int id)
+static proxy_t *proxy_by_id__(sdata_t *sdata, const int id)
 {
-    proxy_t *proxy = __existing_proxy(sdata, id);
+    proxy_t *proxy = existing_proxy__(sdata, id);
 
     if (unlikely(!proxy)) {
-        proxy = __generate_proxy(sdata, id);
+        proxy = generate_proxy__(sdata, id);
         LOGNOTICE("Stratifier added new proxy %d", id);
     }
 
     return proxy;
 }
 
-static proxy_t *__existing_subproxy(proxy_t *proxy, const int subid)
+static proxy_t *existing_subproxy__(proxy_t *proxy, const int subid)
 {
     proxy_t *subproxy;
 
@@ -3134,12 +3134,12 @@ static proxy_t *__existing_subproxy(proxy_t *proxy, const int subid)
     return subproxy;
 }
 
-static proxy_t *__subproxy_by_id(sdata_t *sdata, proxy_t *proxy, const int subid)
+static proxy_t *subproxy_by_id__(sdata_t *sdata, proxy_t *proxy, const int subid)
 {
-    proxy_t *subproxy = __existing_subproxy(proxy, subid);
+    proxy_t *subproxy = existing_subproxy__(proxy, subid);
 
     if (!subproxy) {
-        subproxy = __generate_subproxy(sdata, proxy, subid);
+        subproxy = generate_subproxy__(sdata, proxy, subid);
         LOGINFO("Stratifier added new subproxy %d:%d", proxy->id, subid);
     }
     return subproxy;
@@ -3150,8 +3150,8 @@ static proxy_t *subproxy_by_id(sdata_t *sdata, const int id, const int subid)
     proxy_t *proxy, *subproxy;
 
     mutex_lock(&sdata->proxy_lock);
-    proxy = __proxy_by_id(sdata, id);
-    subproxy = __subproxy_by_id(sdata, proxy, subid);
+    proxy = proxy_by_id__(sdata, id);
+    subproxy = subproxy_by_id__(sdata, proxy, subid);
     mutex_unlock(&sdata->proxy_lock);
 
     return subproxy;
@@ -3162,9 +3162,9 @@ static proxy_t *existing_subproxy(sdata_t *sdata, const int id, const int subid)
     proxy_t *proxy, *subproxy = NULL;
 
     mutex_lock(&sdata->proxy_lock);
-    proxy = __existing_proxy(sdata, id);
+    proxy = existing_proxy__(sdata, id);
     if (proxy)
-        subproxy = __existing_subproxy(proxy, subid);
+        subproxy = existing_subproxy__(proxy, subid);
     mutex_unlock(&sdata->proxy_lock);
 
     return subproxy;
@@ -3175,7 +3175,7 @@ static void check_userproxies(sdata_t *sdata, proxy_t *proxy, const int userid);
 static void set_proxy_prio(sdata_t *sdata, proxy_t *proxy, const int priority)
 {
     mutex_lock(&sdata->proxy_lock);
-    __set_proxy_prio(sdata, proxy, priority);
+    set_proxy_prio__(sdata, proxy, priority);
     mutex_unlock(&sdata->proxy_lock);
 
     if (!proxy->global)
@@ -3289,7 +3289,7 @@ static void reconnect_global_clients(sdata_t *sdata)
         generator_recruit(sdata->ckp, proxy->id, -headroom);
 }
 
-static bool __subproxies_alive(proxy_t *proxy)
+static bool subproxies_alive__(proxy_t *proxy)
 {
     proxy_t *subproxy, *tmp;
     bool alive = false;
@@ -3312,10 +3312,10 @@ static void check_bestproxy(sdata_t *sdata)
     int changed_id = -1;
 
     mutex_lock(&sdata->proxy_lock);
-    if (sdata->proxy && !__subproxies_alive(sdata->proxy))
+    if (sdata->proxy && !subproxies_alive__(sdata->proxy))
         sdata->proxy = NULL;
     HASH_ITER(hh, sdata->proxies, proxy, tmp) {
-        if (!__subproxies_alive(proxy))
+        if (!subproxies_alive__(proxy))
             continue;
         if (!proxy->global)
             break;
@@ -3850,7 +3850,7 @@ static void reap_proxies(pool_t *ckp, sdata_t *sdata)
 }
 
 /* Enter with instance_lock held */
-static stratum_instance_t *__instance_by_id(sdata_t *sdata, const int64_t id)
+static stratum_instance_t *instance_by_id__(sdata_t *sdata, const int64_t id)
 {
     stratum_instance_t *client;
 
@@ -3859,12 +3859,12 @@ static stratum_instance_t *__instance_by_id(sdata_t *sdata, const int64_t id)
 }
 
 /* Increase the reference count of instance */
-static void __inc_instance_ref(stratum_instance_t *client)
+static void inc_instance_ref__(stratum_instance_t *client)
 {
     client->ref++;
 }
 
-/* Find an __instance_by_id and increase its reference count allowing us to
+/* Find an instance_by_id__ and increase its reference count allowing us to
  * use this instance outside of instance_lock without fear of it being
  * dereferenced. Does not return dropped clients still on the list. */
 static inline stratum_instance_t *ref_instance_by_id(sdata_t *sdata, const int64_t id)
@@ -3872,19 +3872,19 @@ static inline stratum_instance_t *ref_instance_by_id(sdata_t *sdata, const int64
     stratum_instance_t *client;
 
     ck_wlock(&sdata->instance_lock);
-    client = __instance_by_id(sdata, id);
+    client = instance_by_id__(sdata, id);
     if (client) {
         if (unlikely(client->dropped))
             client = NULL;
         else
-            __inc_instance_ref(client);
+            inc_instance_ref__(client);
     }
     ck_wunlock(&sdata->instance_lock);
 
     return client;
 }
 
-static void __drop_client(sdata_t *sdata, stratum_instance_t *client, bool lazily, char **msg)
+static void drop_client__(sdata_t *sdata, stratum_instance_t *client, bool lazily, char **msg)
 {
     user_instance_t *user = client->user_instance;
     bool parent = false;
@@ -3917,18 +3917,18 @@ static void __drop_client(sdata_t *sdata, stratum_instance_t *client, bool lazil
         ASPRINTF(msg, "Dropped %sworkerless client %s %s %s", parent ? "parent " : "",
              client->identity, client->address, lazily ? "lazily" : "");
     }
-    __del_client(sdata, client);
-    __kill_instance(sdata, client);
+    del_client__(sdata, client);
+    kill_instance__(sdata, client);
 }
 
-static int __dec_instance_ref(stratum_instance_t *client)
+static int dec_instance_ref__(stratum_instance_t *client)
 {
     return --client->ref;
 }
 
 /* Decrease the reference count of instance. */
-static void _dec_instance_ref(sdata_t *sdata, stratum_instance_t *client, const char *file,
-                  const char *func, const int line)
+static void dec_instance_ref_(sdata_t *sdata, stratum_instance_t *client, const char *file,
+                              const char *func, const int line)
 {
     char_entry_t *entries = NULL;
     bool dropped = false;
@@ -3936,12 +3936,12 @@ static void _dec_instance_ref(sdata_t *sdata, stratum_instance_t *client, const 
     int ref;
 
     ck_wlock(&sdata->instance_lock);
-    ref = __dec_instance_ref(client);
+    ref = dec_instance_ref__(client);
     /* See if there are any instances that were dropped that could not be
      * moved due to holding a reference and drop them now. */
     if (unlikely(client->dropped && !ref)) {
         dropped = true;
-        __drop_client(sdata, client, true, &msg);
+        drop_client__(sdata, client, true, &msg);
         if (msg)
             add_msg_entry(&entries, &msg);
     }
@@ -3957,11 +3957,11 @@ static void _dec_instance_ref(sdata_t *sdata, stratum_instance_t *client, const 
         reap_proxies(sdata->ckp, sdata);
 }
 
-#define dec_instance_ref(sdata, instance) _dec_instance_ref(sdata, instance, __FILE__, __func__, __LINE__)
+#define dec_instance_ref(sdata, instance) dec_instance_ref_(sdata, instance, __FILE__, __func__, __LINE__)
 
 /* If we have a no longer used stratum instance in the recycled linked list,
  * use that, otherwise calloc a fresh one. */
-static stratum_instance_t *__recruit_stratum_instance(sdata_t *sdata)
+static stratum_instance_t *recruit_stratum_instance__(sdata_t *sdata)
 {
     stratum_instance_t *client = sdata->recycled_instances;
 
@@ -3975,14 +3975,14 @@ static stratum_instance_t *__recruit_stratum_instance(sdata_t *sdata)
 }
 
 /* Enter with write instance_lock held, drops and grabs it again */
-static stratum_instance_t *__stratum_add_instance(pool_t *ckp, int64_t id, const char *address,
+static stratum_instance_t *stratum_add_instance__(pool_t *ckp, int64_t id, const char *address,
                                                   int server)
 {
     sdata_t *sdata = ckp->sdata;
     stratum_instance_t *client;
     int64_t pass_id;
 
-    client = __recruit_stratum_instance(sdata);
+    client = recruit_stratum_instance__(sdata);
     ck_wunlock(&sdata->instance_lock);
 
     client->start_time = time(NULL);
@@ -4000,7 +4000,7 @@ static stratum_instance_t *__stratum_add_instance(pool_t *ckp, int64_t id, const
      * mode . */
     client->sdata = sdata;
     if ((pass_id = subclient(id))) {
-        stratum_instance_t *remote = __instance_by_id(sdata, pass_id);
+        stratum_instance_t *remote = instance_by_id__(sdata, pass_id);
 
         id &= 0xffffffffll;
         if (remote && remote->node) {
@@ -4027,8 +4027,7 @@ static stratum_instance_t *__stratum_add_instance(pool_t *ckp, int64_t id, const
     return client;
 }
 
-static uint64_t disconnected_sessionid_exists(sdata_t *sdata, const int session_id,
-                          const int64_t id)
+static uint64_t disconnected_sessionid_exists(sdata_t *sdata, const int session_id, const int64_t id)
 {
     session_t *session;
     int64_t old_id = 0;
@@ -4172,13 +4171,13 @@ static void drop_client(pool_t *ckp, sdata_t *sdata, const int64_t id)
     LOGINFO("Stratifier asked to drop client %"PRId64, id);
 
     ck_wlock(&sdata->instance_lock);
-    client = __instance_by_id(sdata, id);
+    client = instance_by_id__(sdata, id);
     if (client && !client->dropped) {
-        __disconnect_session(sdata, client);
+        disconnect_session__(sdata, client);
         /* If the client is still holding a reference, don't drop them
          * now but wait till the reference is dropped */
         if (!client->ref) {
-            __drop_client(sdata, client, false, &msg);
+            drop_client__(sdata, client, false, &msg);
             if (msg)
                 add_msg_entry(&entries, &msg);
         } else
@@ -4335,7 +4334,7 @@ static void remap_workinfo_id(sdata_t *sdata, json_t *val, const int64_t client_
     json_get_int64(&id, val, "workinfoid");
 
     ck_rlock(&sdata->workbase_lock);
-    wb = __find_remote_workbase(sdata, id, client_id);
+    wb = find_remote_workbase(sdata, id, client_id);
     if (likely(wb))
         mapped_id = wb->mapped_id;
     else
@@ -5305,7 +5304,7 @@ static void *blockupdate(void *arg)
     return NULL;
 }
 
-static bool _zmq_check_file_exists_if_ipc(const char *endpoint)
+static bool zmq_check_file_exists_if_ipc(const char *endpoint)
 {
     bool ret = true;
     char *proto = NULL, *port = NULL, *path = NULL;
@@ -5331,7 +5330,7 @@ static bool _zmq_check_file_exists_if_ipc(const char *endpoint)
     return ret;
 }
 
-static void *_zmq_create_sub_socket_with_backoff(void *context, const char *endpoint, const char *topic, int num)
+static void *zmq_create_sub_socket_with_backoff(void *context, const char *endpoint, const char *topic, int num)
 {
     void *zs = NULL;
     int64_t start = time_micros();
@@ -5436,7 +5435,7 @@ static void *zmqnotify(void *arg)
                     // this should never happen. It indicates a programming error if it does.
                     quit(1, "ZMQ: INTERNAL ERROR: Could not find the endpoint entry #%d in config!", i+1);
                 }
-                if (unlikely(!_zmq_check_file_exists_if_ipc(endpoint))) {
+                if (unlikely(!zmq_check_file_exists_if_ipc(endpoint))) {
                     // this is paranoia -- presumably if admin went to the trouble to set up ZMQ via IPC,
                     // they care about reliability. So,we need to make sure that we can access it.
                     quit(1, "ZMQ: IPC socket specified but failed to access it on the filesystem: %s", endpoint);
@@ -5448,7 +5447,7 @@ static void *zmqnotify(void *arg)
                 endpoint = endpoints[i];
             }
             memset(&poll_items[i], 0, sizeof(poll_items[i]));
-            poll_items[i].socket = _zmq_create_sub_socket_with_backoff(context, endpoint, subtopic, i);
+            poll_items[i].socket = zmq_create_sub_socket_with_backoff(context, endpoint, subtopic, i);
             poll_items[i].events = ZMQ_POLLIN;
             LOGNOTICE("ZMQ: socket #%d to %s for \"%s\" created", i+1, endpoint, subtopic);
         }
@@ -5468,7 +5467,7 @@ static void *zmqnotify(void *arg)
                 break;
             } else if (num_ready == 0) {
                 time_t last_newblock = 0;
-                _sdata_get_update_time_safe(sdata, &last_newblock);
+                sdata_get_update_time_safe(sdata, &last_newblock);
                 if ( ( (last_seen_zmq_block && labs(last_newblock - last_seen_zmq_block) > one_minute)
                        || (!last_seen_zmq_block && labs(time(NULL) - last_newblock) > 20 * one_minute))
                      && labs(time(NULL) - last_reset) > 2 * one_minute ) {
@@ -5533,7 +5532,7 @@ static void *zmqnotify(void *arg)
                                 if (is_new)
                                     memcpy(last_hash_seen, msg_data, 32);
                                 char hexhash[65];
-                                __bin2hex(hexhash, msg_data, 32);
+                                bin2hex__(hexhash, msg_data, 32);
                                 LOGNOTICE("ZMQ: %s #%d - block hash: %s - is_new: %s need_update: %s", endpoint, i+1, hexhash,
                                           is_new ? "yes" : "no", need_update ? "yes" : "no");
                                 if (need_update)
@@ -5593,15 +5592,15 @@ static void *zmqnotify(void *arg)
 
 
 /* Enter holding workbase_lock and client a ref count. */
-static void __fill_enonce1data(const workbase_t *wb, stratum_instance_t *client)
+static void fill_enonce1data(const workbase_t *wb, stratum_instance_t *client)
 {
     if (wb->enonce1constlen)
         memcpy(client->enonce1bin, wb->enonce1constbin, wb->enonce1constlen);
     if (wb->enonce1varlen) {
         memcpy(client->enonce1bin + wb->enonce1constlen, &client->enonce1_64, wb->enonce1varlen);
-        __bin2hex(client->enonce1var, &client->enonce1_64, wb->enonce1varlen);
+        bin2hex__(client->enonce1var, &client->enonce1_64, wb->enonce1varlen);
     }
-    __bin2hex(client->enonce1, client->enonce1bin, wb->enonce1constlen + wb->enonce1varlen);
+    bin2hex__(client->enonce1, client->enonce1bin, wb->enonce1constlen + wb->enonce1varlen);
 }
 
 /* Create a new enonce1 from the 64 bit enonce1_64 value, using only the number
@@ -5651,7 +5650,7 @@ static bool new_enonce1(pool_t *ckp, sdata_t *ckp_sdata, sdata_t *sdata, stratum
     ck_wunlock(&ckp_sdata->instance_lock);
 
     ck_rlock(&sdata->workbase_lock);
-    __fill_enonce1data(sdata->current_workbase, client);
+    fill_enonce1data(sdata->current_workbase, client);
     ck_runlock(&sdata->workbase_lock);
 
     return true;
@@ -5660,7 +5659,7 @@ static bool new_enonce1(pool_t *ckp, sdata_t *ckp_sdata, sdata_t *sdata, stratum
 static void stratum_send_message(sdata_t *sdata, const stratum_instance_t *client, const char *msg);
 
 /* Need to hold sdata->proxy_lock */
-static proxy_t *__best_subproxy(proxy_t *proxy)
+static proxy_t *best_subproxy__(proxy_t *proxy)
 {
     proxy_t *subproxy, *best = NULL, *tmp;
     int64_t max_headroom;
@@ -5707,7 +5706,7 @@ static sdata_t *select_sdata(pool_t *ckp, sdata_t *ckp_sdata, const int userid)
             continue;
         if (proxy->userid > userid)
             break;
-        best = __best_subproxy(proxy);
+        best = best_subproxy__(proxy);
         if (best)
             break;
     }
@@ -5794,7 +5793,7 @@ out_unlock:
     return ret;
 }
 
-static void __client_apply_mindiff_override(stratum_instance_t *client)
+static void client_apply_mindiff_override(stratum_instance_t *client)
 {
     pool_t *ckp = client->ckp;
 
@@ -5864,7 +5863,7 @@ static json_t *parse_subscribe(stratum_instance_t *client, const int64_t client_
                 old_match = true;
 
                 ck_rlock(&ckp_sdata->workbase_lock);
-                __fill_enonce1data(sdata->current_workbase, client);
+                fill_enonce1data(sdata->current_workbase, client);
                 ck_runlock(&ckp_sdata->workbase_lock);
             }
         }
@@ -5931,7 +5930,7 @@ static json_t *parse_subscribe(stratum_instance_t *client, const int64_t client_
     // Known issue here: It's assumed the client sends mining.subscribe after initial connect.
     // This call here won't spam a new difficulty change notification message, since the normal
     // call path will send the initial difficulty message in init_client() later anyway. -Calin
-    __client_apply_mindiff_override(client);
+    client_apply_mindiff_override(client);
 
     client->subscribed = true;
 
@@ -6201,7 +6200,7 @@ static void read_userstats(pool_t *ckp, sdata_t *sdata, int tvsec_diff)
 
 #define DEFAULT_AUTH_BACKOFF	(3)  /* Set initial backoff to 3 seconds */
 
-static user_instance_t *__create_user(sdata_t *sdata, const char *username)
+static user_instance_t *create_user__(sdata_t *sdata, const char *username)
 {
     user_instance_t *user = ckzalloc(sizeof(user_instance_t));
 
@@ -6224,7 +6223,7 @@ static user_instance_t *get_create_user(sdata_t *sdata, const char *username, bo
     ck_wlock(&sdata->instance_lock);
     HASH_FIND_STR(sdata->user_instances, username, user);
     if (unlikely(!user)) {
-        user = __create_user(sdata, username);
+        user = create_user__(sdata, username);
         *new_user = true;
     }
     ck_wunlock(&sdata->instance_lock);
@@ -6250,7 +6249,7 @@ static user_instance_t *get_user(sdata_t *sdata, const char *username)
     return get_create_user(sdata, username, &dummy);
 }
 
-static worker_instance_t *__create_worker(user_instance_t *user, const char *workername)
+static worker_instance_t *create_worker__(user_instance_t *user, const char *workername)
 {
     worker_instance_t *worker = ckzalloc(sizeof(worker_instance_t));
 
@@ -6261,7 +6260,7 @@ static worker_instance_t *__create_worker(user_instance_t *user, const char *wor
     return worker;
 }
 
-static worker_instance_t *__get_worker(user_instance_t *user, const char *workername)
+static worker_instance_t *get_worker__(user_instance_t *user, const char *workername)
 {
     worker_instance_t *worker = NULL, *tmp;
 
@@ -6282,9 +6281,9 @@ static worker_instance_t *get_create_worker(sdata_t *sdata, user_instance_t *use
     worker_instance_t *worker;
 
     ck_wlock(&sdata->instance_lock);
-    worker = __get_worker(user, workername);
+    worker = get_worker__(user, workername);
     if (!worker) {
-        worker = __create_worker(user, workername);
+        worker = create_worker__(user, workername);
         *new_worker = true;
     }
     ck_wunlock(&sdata->instance_lock);
@@ -6331,7 +6330,7 @@ static user_instance_t *generate_user(pool_t *ckp, stratum_instance_t *client,
     client->user_instance = user;
     client->worker_instance = worker;
     DL_APPEND2(user->clients, client, user_prev, user_next);
-    __inc_worker(sdata,user, worker);
+    inc_worker__(sdata,user, worker);
     ck_wunlock(&sdata->instance_lock);
 
     if (new_user) {
@@ -6777,7 +6776,7 @@ test_blocksolve(const stratum_instance_t *client, const workbase_t *wb, const uc
         get_timestamp(stamp);
         json_set_string(blockval, "date", stamp);
         swap_256(swap256, flip32);
-        __bin2hex(rhash, swap256, 32);
+        bin2hex__(rhash, swap256, 32);
         json_set_string(blockval, "hash", rhash);
 
         mutex_lock(&sdata->stats_lock);
@@ -7035,7 +7034,7 @@ static json_t *parse_submit(stratum_instance_t *client, json_t *json_msg,
         check_best_diff(ckp, sdata, user, worker, sdiff, client);
     }
     bswap_256(sharehash, hash);
-    __bin2hex(hexhash, sharehash, 32);
+    bin2hex__(hexhash, sharehash, 32);
 
     if (stale) {
         /* Accept shares if they're received on remote nodes before the
@@ -7215,7 +7214,7 @@ out:
 }
 
 /* Must enter with workbase_lock held */
-static json_t *__stratum_notify(const workbase_t *wb, const bool clean)
+static json_t *stratum_notify__(const workbase_t *wb, const bool clean)
 {
     json_t *val;
 
@@ -7240,7 +7239,7 @@ static void stratum_broadcast_update(sdata_t *sdata, const workbase_t *wb, const
     json_t *json_msg;
 
     ck_rlock(&sdata->workbase_lock);
-    json_msg = __stratum_notify(wb, clean);
+    json_msg = stratum_notify__(wb, clean);
     ck_runlock(&sdata->workbase_lock);
 
     stratum_broadcast(sdata, json_msg, SM_UPDATE);
@@ -7261,7 +7260,7 @@ static void stratum_send_update(sdata_t *sdata, const int64_t client_id, const b
     }
 
     ck_rlock(&sdata->workbase_lock);
-    json_msg = __stratum_notify(sdata->current_workbase, clean);
+    json_msg = stratum_notify__(sdata->current_workbase, clean);
     ck_runlock(&sdata->workbase_lock);
 
     stratum_add_send(sdata, json_msg, client_id, SM_UPDATE);
@@ -7395,7 +7394,7 @@ static void add_mining_node(pool_t *ckp, sdata_t *sdata, stratum_instance_t *cli
     ck_wlock(&sdata->instance_lock);
     client->node = true;
     DL_APPEND2(sdata->node_instances, client, node_prev, node_next);
-    __inc_instance_ref(client);
+    inc_instance_ref__(client);
     ck_wunlock(&sdata->instance_lock);
 
     LOGWARNING("Added client %s %s as mining node on server %d:%s", client->identity,
@@ -7409,7 +7408,7 @@ static void add_remote_server(sdata_t *sdata, stratum_instance_t *client)
     ck_wlock(&sdata->instance_lock);
     client->trusted = true;
     DL_APPEND2(sdata->remote_instances, client, remote_prev, remote_next);
-    __inc_instance_ref(client);
+    inc_instance_ref__(client);
     ck_wunlock(&sdata->instance_lock);
 
     send_node_all_txns(sdata, client);
@@ -7849,7 +7848,7 @@ static stratum_instance_t *ref_instance_by_virtualid(sdata_t *sdata, int64_t *cl
             continue;
         if (likely(!client->dropped)) {
             ret = client;
-            __inc_instance_ref(ret);
+            inc_instance_ref__(ret);
             /* Replace the client_id with the correct one, allowing
              * us to send the response to the correct client */
             *client_id = client->id;
@@ -7945,9 +7944,9 @@ static void parse_remote_auth(pool_t *ckp, sdata_t *sdata, json_t *val, stratum_
      * create a new stratum instance temporarily just for auth with a plan
      * to drop the client id locally once we finish with it */
     ck_wlock(&sdata->instance_lock);
-    client = __instance_by_id(sdata, client_id);
+    client = instance_by_id__(sdata, client_id);
     if (likely(!client))
-        client = __stratum_add_instance(ckp, client_id, remote->address, remote->server);
+        client = stratum_add_instance__(ckp, client_id, remote->address, remote->server);
     client->remote = true;
     json_strdup(&client->useragent, val, "useragent");
     json_strcpy(client->enonce1, val, "enonce1");
@@ -8404,15 +8403,15 @@ static void srecv_process(pool_t *ckp, json_t *val)
 
     /* Parse the message here */
     ck_wlock(&sdata->instance_lock);
-    client = __instance_by_id(sdata, msg->client_id);
+    client = instance_by_id__(sdata, msg->client_id);
     /* If client_id instance doesn't exist yet, create one */
     if (unlikely(!client)) {
         noid = true;
-        client = __stratum_add_instance(ckp, msg->client_id, address, server);
+        client = stratum_add_instance__(ckp, msg->client_id, address, server);
     } else if (unlikely(client->dropped))
         dropped = true;
     if (likely(!dropped))
-        __inc_instance_ref(client);
+        inc_instance_ref__(client);
     ck_wunlock(&sdata->instance_lock);
 
     if (unlikely(dropped)) {
@@ -8437,7 +8436,7 @@ out:
     free(buf);
 }
 
-void _stratifier_add_recv(pool_t *ckp, json_t *val, const char *file, const char *func, const int line)
+void stratifier_add_recv_(pool_t *ckp, json_t *val, const char *file, const char *func, const int line)
 {
     sdata_t *sdata;
 
@@ -8518,12 +8517,12 @@ static stratum_instance_t *preauth_ref_instance_by_id(sdata_t *sdata, const int6
     stratum_instance_t *client;
 
     ck_wlock(&sdata->instance_lock);
-    client = __instance_by_id(sdata, id);
+    client = instance_by_id__(sdata, id);
     if (client) {
         if (client->dropped || client->authorising || client->authorized)
             client = NULL;
         else {
-            __inc_instance_ref(client);
+            inc_instance_ref__(client);
             client->authorising = true;
         }
     }
@@ -9006,7 +9005,7 @@ static void *statsupdate(void *arg)
         /* Grab the first entry */
         client = sdata->stratum_instances;
         if (likely(client))
-            __inc_instance_ref(client);
+            inc_instance_ref__(client);
         ck_wunlock(&sdata->instance_lock);
 
         ASPRINTF(&fname, "%s/pool/pool.miners", ckp->logdir);
@@ -9045,12 +9044,12 @@ static void *statsupdate(void *arg)
             ck_wlock(&sdata->instance_lock);
             /* Drop the reference of the last entry we examined,
              * then grab the next client. */
-            __dec_instance_ref(client);
+           dec_instance_ref__(client);
             client = client->hh.next;
             /* Grab a reference to this client allowing us to examine
              * it without holding the lock */
             if (likely(client))
-                __inc_instance_ref(client);
+                inc_instance_ref__(client);
             ck_wunlock(&sdata->instance_lock);
         }
 

@@ -111,8 +111,8 @@ void parse_upstream_workinfo(pool_t *ckp, json_t *val);
 void parse_upstream_block(pool_t *ckp, json_t *val);
 void parse_upstream_reqtxns(pool_t *ckp, json_t *val);
 char *stratifier_stats(pool_t *ckp, void *data);
-void _stratifier_add_recv(pool_t *ckp, json_t *val, const char *file, const char *func, const int line);
-#define stratifier_add_recv(ckp, val) _stratifier_add_recv(ckp, val, __FILE__, __func__, __LINE__)
+void stratifier_add_recv_(pool_t *ckp, json_t *val, const char *file, const char *func, const int line);
+#define stratifier_add_recv(ckp, val) stratifier_add_recv_(ckp, val, __FILE__, __func__, __LINE__)
 
 // Limits the length of string str to MAX_USER_COINBASE_LEN (by inserting a NUL byte if the string is too long).
 // Postcondition: str is truncated to max MAX_USER_COINBASE_LEN bytes, and `str_len_out` is set to the length of `str`.

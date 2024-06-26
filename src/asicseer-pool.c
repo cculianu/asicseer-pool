@@ -22,6 +22,7 @@
 #include <getopt.h>
 #include <grp.h>
 #include <jansson.h>
+#include <netinet/in.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -60,7 +61,7 @@ static bool open_logfile(pool_t *ckp)
 
 /* Use ckmsgqs for logging to console and files to prevent logmsg from blocking
  * on any delays. */
-static void console_log(pool_t __maybe_unused *ckp, char *msg)
+static void console_log(pool_t maybe_unused__ *ckp, char *msg)
 {
     /* Add clear line only if stderr is going to console */
     if (isatty(fileno(stderr)))
@@ -227,7 +228,7 @@ ckmsgq_t *create_ckmsgqs(pool_t *ckp, const char *name, const void *func, const 
 
 /* Generic function for adding messages to a ckmsgq linked list and signal the
  * ckmsgq parsing thread(s) to wake up and process it. */
-bool _ckmsgq_add(ckmsgq_t *ckmsgq, void *data, const char *file, const char *func, const int line)
+bool ckmsgq_add_(ckmsgq_t *ckmsgq, void *data, const char *file, const char *func, const int line)
 {
     ckmsg_t *msg;
 
@@ -829,7 +830,7 @@ out:
  * asicseer-pool was a multi-process model but that is no longer required so we can
  * place the messages directly on the other proc_instance's queue until we
  * deprecate this mechanism. */
-void _queue_proc(proc_instance_t *pi, const char *msg, const char *file, const char *func, const int line)
+void queue_proc_(proc_instance_t *pi, const char *msg, const char *file, const char *func, const int line)
 {
     unix_msg_t *umsg;
 
@@ -849,8 +850,8 @@ void _queue_proc(proc_instance_t *pi, const char *msg, const char *file, const c
 
 /* Send a single message to a process instance and retrieve the response, then
  * close the socket. */
-char *_send_recv_proc(const proc_instance_t *pi, const char *msg, int writetimeout, int readtimedout,
-              const char *file, const char *func, const int line)
+char *send_recv_proc_(const proc_instance_t *pi, const char *msg, int writetimeout, int readtimedout,
+                      const char *file, const char *func, const int line)
 {
     char *path = pi->us.path, *buf = NULL;
     int sockd;
@@ -868,10 +869,10 @@ char *_send_recv_proc(const proc_instance_t *pi, const char *msg, int writetimeo
         LOGWARNING("Failed to open socket %s in send_recv_proc", path);
         goto out;
     }
-    if (unlikely(!_send_unix_msg(sockd, msg, writetimeout, file, func, line)))
+    if (unlikely(!send_unix_msg_(sockd, msg, writetimeout, file, func, line)))
         LOGWARNING("Failed to send %s to socket %s", msg, path);
     else
-        buf = _recv_unix_msg(sockd, readtimedout, readtimedout, file, func, line);
+        buf = recv_unix_msg_(sockd, readtimedout, readtimedout, file, func, line);
     Close(sockd);
 out:
     if (unlikely(!buf))
@@ -889,7 +890,7 @@ static const char *rpc_method(const char *rpc_req)
 
 /* All of these calls are made to bitcoind which prefers open/close instead
  * of persistent connections so cs->fd is always invalid. */
-static json_t *_json_rpc_call(connsock_t *cs, const struct rpc_req_part *rpc_req, const bool info_only)
+static json_t *my_json_rpc_call(connsock_t *cs, const struct rpc_req_part *rpc_req, const bool info_only)
 {
     float timeout = RPC_TIMEOUT;
     char *http_req = NULL;
@@ -1075,7 +1076,7 @@ out:
 
 json_t *json_rpc_call_parts(connsock_t *cs, const struct rpc_req_part *rpc_req)
 {
-    return _json_rpc_call(cs, rpc_req, false);
+    return my_json_rpc_call(cs, rpc_req, false);
 }
 
 json_t *json_rpc_call(connsock_t *cs, const char *rpc_req)
@@ -1084,7 +1085,7 @@ json_t *json_rpc_call(connsock_t *cs, const char *rpc_req)
         { rpc_req, strlen(rpc_req) },
         { NULL, 0 }
     };
-    return _json_rpc_call(cs, parts, false);
+    return my_json_rpc_call(cs, parts, false);
 }
 
 json_t *json_rpc_response(connsock_t *cs, const char *rpc_req)
@@ -1093,7 +1094,7 @@ json_t *json_rpc_response(connsock_t *cs, const char *rpc_req)
         { rpc_req, strlen(rpc_req) },
         { NULL, 0 }
     };
-    return _json_rpc_call(cs, parts, true);
+    return my_json_rpc_call(cs, parts, true);
 }
 
 /* For when we are submitting information that is not important and don't care
@@ -1104,7 +1105,7 @@ void json_rpc_msg(connsock_t *cs, const char *rpc_req)
         { rpc_req, strlen(rpc_req) },
         { NULL, 0 }
     };
-    json_t *val = _json_rpc_call(cs, parts, true);
+    json_t *val = my_json_rpc_call(cs, parts, true);
 
     /* We don't care about the result */
     json_decref(val);
@@ -1334,7 +1335,7 @@ static void sighandler(const int sig)
     pthread_kill(quitter_thread, SIGUSR2);
 }
 
-static bool _json_get_string(char **store, const json_t *entry, const char *res)
+static bool my_json_get_string(char **store, const json_t *entry, const char *res)
 {
     bool ret = false;
     const char *buf;
@@ -1358,7 +1359,7 @@ out:
 
 bool json_get_string(char **store, const json_t *val, const char *res)
 {
-    return _json_get_string(store, json_object_get(val, res), res);
+    return my_json_get_string(store, json_object_get(val, res), res);
 }
 
 bool json_get_int64(int64_t *store, const json_t *val, const char *res)
@@ -1565,7 +1566,7 @@ static bool parse_serverurls(pool_t *ckp, const json_t *arr_val)
     for (i = 0; i < arr_size; i++) {
         json_t *val = json_array_get(arr_val, i);
 
-        if (!_json_get_string(&ckp->serverurl[i], val, "serverurl"))
+        if (!my_json_get_string(&ckp->serverurl[i], val, "serverurl"))
             LOGWARNING("Invalid serverurl entry number %d", i);
     }
     ret = true;
@@ -1595,7 +1596,7 @@ static void parse_nodeservers(pool_t *ckp, const json_t *arr_val)
     for (i = 0, j = ckp->serverurls; j < total_urls; i++, j++) {
         json_t *val = json_array_get(arr_val, i);
 
-        if (!_json_get_string(&ckp->serverurl[j], val, "nodeserver"))
+        if (!my_json_get_string(&ckp->serverurl[j], val, "nodeserver"))
             LOGWARNING("Invalid nodeserver entry number %d", i);
         ckp->nodeserver[j] = true;
         ckp->nodeservers++;
@@ -1625,7 +1626,7 @@ static void parse_trusted(pool_t *ckp, const json_t *arr_val)
     for (i = 0, j = ckp->serverurls; j < total_urls; i++, j++) {
         json_t *val = json_array_get(arr_val, i);
 
-        if (!_json_get_string(&ckp->serverurl[j], val, "trusted"))
+        if (!my_json_get_string(&ckp->serverurl[j], val, "trusted"))
             LOGWARNING("Invalid trusted server entry number %d", i);
         ckp->trusted[j] = true;
     }
@@ -1766,7 +1767,7 @@ static void parse_bchsigs(pool_t *ckp, json_t *obj)
         // single item string
         ckp->n_bchsigs = 1;
         ckp->bchsigs = ckzalloc(sizeof(*ckp->bchsigs));
-        const bool res = _json_get_string(&ckp->bchsigs[0].sig, obj, "bchsig");
+        const bool res = my_json_get_string(&ckp->bchsigs[0].sig, obj, "bchsig");
         assert(res);
         normalize_bchsig(ckp->bchsigs[0].sig, &ckp->bchsigs[0].siglen); // modifies buffer in-place, noop if NULL
     } else if (json_is_array(obj)) {
@@ -1777,7 +1778,7 @@ static void parse_bchsigs(pool_t *ckp, json_t *obj)
             char namebuf[24];
             json_t *item = json_array_get(obj, i);
             snprintf(namebuf, 24, "bchsig[%d]", i);
-            if (!_json_get_string(&ckp->bchsigs[i].sig, item, namebuf)) {
+            if (!my_json_get_string(&ckp->bchsigs[i].sig, item, namebuf)) {
                 quit(1, "\"bchsig\" entry %d is invalid, expected string", i);
             }
             normalize_bchsig(ckp->bchsigs[i].sig, &ckp->bchsigs[i].siglen); // modifies buffer in-place, noop if NULL

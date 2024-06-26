@@ -48,7 +48,7 @@ const int *global_loglevel_ptr = NULL; /// used by macros if set
 
 /* We use a weak function as a simple printf within the library that can be
  * overridden by however the outside executable wishes to do its logging. */
-void __attribute__((weak)) logmsg(int __maybe_unused loglevel, const char *fmt, ...)
+void __attribute__((weak)) logmsg(int maybe_unused__ loglevel, const char *fmt, ...)
 {
     va_list ap;
     char *buf;
@@ -80,7 +80,7 @@ void join_pthread(pthread_t thread)
         pthread_join(thread, NULL);
 }
 
-int _cond_wait(pthread_cond_t *cond, mutex_t *lock, const char *file, const char *func, const int line)
+int cond_wait_(pthread_cond_t *cond, mutex_t *lock, const char *file, const char *func, const int line)
 {
     int ret;
 
@@ -91,7 +91,7 @@ int _cond_wait(pthread_cond_t *cond, mutex_t *lock, const char *file, const char
     return ret;
 }
 
-int _cond_timedwait(pthread_cond_t *cond, mutex_t *lock, const struct timespec *abstime, const char *file, const char *func, const int line)
+int cond_timedwait_(pthread_cond_t *cond, mutex_t *lock, const struct timespec *abstime, const char *file, const char *func, const int line)
 {
     int ret;
 
@@ -103,7 +103,7 @@ int _cond_timedwait(pthread_cond_t *cond, mutex_t *lock, const struct timespec *
 }
 
 #if HAVE_PTHREAD_MUTEX_TIMEDLOCK
-int _mutex_timedlock(mutex_t *lock, int timeout, const char *file, const char *func, const int line)
+int mutex_timedlock_(mutex_t *lock, int timeout, const char *file, const char *func, const int line)
 {
     tv_t now;
     ts_t abs;
@@ -129,13 +129,13 @@ int _mutex_timedlock(mutex_t *lock, int timeout, const char *file, const char *f
  *   than 10 seconds and fail if we can't get it for longer than a minute.
  * On other platforms: Just lock the mutex and quit app if error.
  */
-void _mutex_lock(mutex_t *lock, const char *file, const char *func, const int line)
+void mutex_lock_(mutex_t *lock, const char *file, const char *func, const int line)
 {
     int ret, retries = 0;
 
 retry:
 #if HAVE_PTHREAD_MUTEX_TIMEDLOCK
-    ret = _mutex_timedlock(lock, 10, file, func, line);
+    ret = mutex_timedlock_(lock, 10, file, func, line);
 #else
     ret = pthread_mutex_lock(&lock->mutex);
 #endif
@@ -152,13 +152,13 @@ retry:
 }
 
 /* Does not unset lock->file/func/line since they're only relevant when the lock is held */
-void _mutex_unlock(mutex_t *lock, const char *file, const char *func, const int line)
+void mutex_unlock_(mutex_t *lock, const char *file, const char *func, const int line)
 {
     if (unlikely(pthread_mutex_unlock(&lock->mutex)))
         quitfrom(1, file, func, line, "WTF MUTEX ERROR ON UNLOCK!");
 }
 
-int _mutex_trylock(mutex_t *lock, __maybe_unused const char *file, __maybe_unused const char *func, __maybe_unused const int line)
+int mutex_trylock_(mutex_t *lock, maybe_unused__ const char *file, maybe_unused__ const char *func, maybe_unused__ const int line)
 {
     int ret;
 
@@ -194,7 +194,7 @@ static int wr_timedlock(pthread_rwlock_t *lock, int timeout)
 }
 #endif
 
-void _wr_lock(rwlock_t *lock, const char *file, const char *func, const int line)
+void wr_lock_(rwlock_t *lock, const char *file, const char *func, const int line)
 {
     int ret, retries = 0;
 
@@ -219,7 +219,7 @@ retry:
     lock->line = line;
 }
 
-int _wr_trylock(rwlock_t *lock, __maybe_unused const char *file, __maybe_unused const char *func, __maybe_unused const int line)
+int wr_trylock_(rwlock_t *lock, maybe_unused__ const char *file, maybe_unused__ const char *func, maybe_unused__ const int line)
 {
     int ret = pthread_rwlock_trywrlock(&lock->rwlock);
 
@@ -248,7 +248,7 @@ static int rd_timedlock(pthread_rwlock_t *lock, int timeout)
 }
 #endif
 
-void _rd_lock(rwlock_t *lock, const char *file, const char *func, const int line)
+void rd_lock_(rwlock_t *lock, const char *file, const char *func, const int line)
 {
     int ret, retries = 0;
 
@@ -273,86 +273,86 @@ retry:
     lock->line = line;
 }
 
-void _rw_unlock(rwlock_t *lock, const char *file, const char *func, const int line)
+void rw_unlock_(rwlock_t *lock, const char *file, const char *func, const int line)
 {
     if (unlikely(pthread_rwlock_unlock(&lock->rwlock)))
         quitfrom(1, file, func, line, "WTF RWLOCK ERROR ON UNLOCK!");
 }
 
-void _rd_unlock(rwlock_t *lock, const char *file, const char *func, const int line)
+void rd_unlock_(rwlock_t *lock, const char *file, const char *func, const int line)
 {
-    _rw_unlock(lock, file, func, line);
+    rw_unlock_(lock, file, func, line);
 }
 
-void _wr_unlock(rwlock_t *lock, const char *file, const char *func, const int line)
+void wr_unlock_(rwlock_t *lock, const char *file, const char *func, const int line)
 {
-    _rw_unlock(lock, file, func, line);
+    rw_unlock_(lock, file, func, line);
 }
 
-void _mutex_init(mutex_t *lock, const char *file, const char *func, const int line)
+void mutex_init_(mutex_t *lock, const char *file, const char *func, const int line)
 {
     if (unlikely(pthread_mutex_init(&lock->mutex, NULL)))
         quitfrom(1, file, func, line, "Failed to pthread_mutex_init");
 }
 
-void _rwlock_init(rwlock_t *lock, const char *file, const char *func, const int line)
+void rwlock_init_(rwlock_t *lock, const char *file, const char *func, const int line)
 {
     if (unlikely(pthread_rwlock_init(&lock->rwlock, NULL)))
         quitfrom(1, file, func, line, "Failed to pthread_rwlock_init");
 }
 
 
-void _cond_init(pthread_cond_t *cond, const char *file, const char *func, const int line)
+void cond_init_(pthread_cond_t *cond, const char *file, const char *func, const int line)
 {
     if (unlikely(pthread_cond_init(cond, NULL)))
         quitfrom(1, file, func, line, "Failed to pthread_cond_init!");
 }
 
-void _cklock_init(cklock_t *lock, const char *file, const char *func, const int line)
+void cklock_init_(cklock_t *lock, const char *file, const char *func, const int line)
 {
-    _mutex_init(&lock->mutex, file, func, line);
-    _rwlock_init(&lock->rwlock, file, func, line);
+    mutex_init_(&lock->mutex, file, func, line);
+    rwlock_init_(&lock->rwlock, file, func, line);
 }
 
 
 /* Read lock variant of cklock. Cannot be promoted. */
-void _ck_rlock(cklock_t *lock, const char *file, const char *func, const int line)
+void ck_rlock_(cklock_t *lock, const char *file, const char *func, const int line)
 {
-    _mutex_lock(&lock->mutex, file, func, line);
-    _rd_lock(&lock->rwlock, file, func, line);
-    _mutex_unlock(&lock->mutex, file, func, line);
+    mutex_lock_(&lock->mutex, file, func, line);
+    rd_lock_(&lock->rwlock, file, func, line);
+    mutex_unlock_(&lock->mutex, file, func, line);
 }
 
 /* Write lock variant of cklock */
-void _ck_wlock(cklock_t *lock, const char *file, const char *func, const int line)
+void ck_wlock_(cklock_t *lock, const char *file, const char *func, const int line)
 {
-    _mutex_lock(&lock->mutex, file, func, line);
-    _wr_lock(&lock->rwlock, file, func, line);
+    mutex_lock_(&lock->mutex, file, func, line);
+    wr_lock_(&lock->rwlock, file, func, line);
 }
 
 /* Downgrade write variant to a read lock */
-void _ck_dwlock(cklock_t *lock, const char *file, const char *func, const int line)
+void ck_dwlock_(cklock_t *lock, const char *file, const char *func, const int line)
 {
-    _wr_unlock(&lock->rwlock, file, func, line);
-    _rd_lock(&lock->rwlock, file, func, line);
-    _mutex_unlock(&lock->mutex, file, func, line);
+    wr_unlock_(&lock->rwlock, file, func, line);
+    rd_lock_(&lock->rwlock, file, func, line);
+    mutex_unlock_(&lock->mutex, file, func, line);
 }
 
 /* Demote a write variant to an intermediate variant */
-void _ck_dwilock(cklock_t *lock, const char *file, const char *func, const int line)
+void ck_dwilock_(cklock_t *lock, const char *file, const char *func, const int line)
 {
-    _wr_unlock(&lock->rwlock, file, func, line);
+    wr_unlock_(&lock->rwlock, file, func, line);
 }
 
-void _ck_runlock(cklock_t *lock, const char *file, const char *func, const int line)
+void ck_runlock_(cklock_t *lock, const char *file, const char *func, const int line)
 {
-    _rd_unlock(&lock->rwlock, file, func, line);
+    rd_unlock_(&lock->rwlock, file, func, line);
 }
 
-void _ck_wunlock(cklock_t *lock, const char *file, const char *func, const int line)
+void ck_wunlock_(cklock_t *lock, const char *file, const char *func, const int line)
 {
-    _wr_unlock(&lock->rwlock, file, func, line);
-    _mutex_unlock(&lock->mutex, file, func, line);
+    wr_unlock_(&lock->rwlock, file, func, line);
+    mutex_unlock_(&lock->mutex, file, func, line);
 }
 
 void cklock_destroy(cklock_t *lock)
@@ -614,7 +614,7 @@ void block_socket(int fd)
     fcntl(fd, F_SETFL, flags & ~O_NONBLOCK);
 }
 
-void _close(int *fd, const char *file, const char *func, const int line)
+void close_helper(int *fd, const char *file, const char *func, const int line)
 {
     int sockd;
 
@@ -822,13 +822,13 @@ void empty_socket(int fd)
     } while (ret > 0);
 }
 
-void _close_unix_socket(int *sockd, const char *server_path)
+void close_unix_socket_(int *sockd, const char *server_path)
 {
     LOGDEBUG("Closing unix socket %d %s", *sockd, server_path);
-    _Close(sockd);
+    Close_(sockd);
 }
 
-int _open_unix_server(const char *server_path, const char *file, const char *func, const int line)
+int open_unix_server_(const char *server_path, const char *file, const char *func, const int line)
 {
     mode_t mode = S_IRWXU | S_IRWXG; // Owner+Group RWX
     struct sockaddr_un serveraddr;
@@ -897,7 +897,7 @@ out:
     return sockd;
 }
 
-int _open_unix_client(const char *server_path, const char *file, const char *func, const int line)
+int open_unix_client_(const char *server_path, const char *file, const char *func, const int line)
 {
     struct sockaddr_un serveraddr;
     int sockd = -1, len, ret;
@@ -959,7 +959,7 @@ int read_length(int sockd, void *buf, int len)
 /* Use a standard message across the unix sockets:
  * 4 byte length of message as little endian encoded uint32_t followed by the
  * string. Return NULL in case of failure. */
-char *_recv_unix_msg(int sockd, int timeout1, int timeout2, const char *file, const char *func, const int line)
+char *recv_unix_msg_(int sockd, int timeout1, int timeout2, const char *file, const char *func, const int line)
 {
     char *buf = NULL;
     uint32_t msglen;
@@ -1003,7 +1003,7 @@ out:
     return buf;
 }
 
-int _write_length(int sockd, const void *buf, int len, const char *file, const char *func, const int line)
+int write_length_(int sockd, const void *buf, int len, const char *file, const char *func, const int line)
 {
     int ret, ofs = 0, ern;
 
@@ -1034,7 +1034,7 @@ int _write_length(int sockd, const void *buf, int len, const char *file, const c
     return ofs;
 }
 
-bool _send_unix_msg(int sockd, const char *buf, int timeout, const char *file, const char *func, const int line)
+bool send_unix_msg_(int sockd, const char *buf, int timeout, const char *file, const char *func, const int line)
 {
     uint32_t msglen, len;
     bool retval = false;
@@ -1060,7 +1060,7 @@ bool _send_unix_msg(int sockd, const char *buf, int timeout, const char *file, c
         LOGERR("Select1 failed in send_unix_msg (%d)", ern);
         goto out;
     }
-    ret = _write_length(sockd, &msglen, 4, file, func, line);
+    ret = write_length_(sockd, &msglen, 4, file, func, line);
     if (unlikely(ret < 4)) {
         LOGERR("Failed to write 4 byte length in send_unix_msg");
         goto out;
@@ -1071,7 +1071,7 @@ bool _send_unix_msg(int sockd, const char *buf, int timeout, const char *file, c
         LOGERR("Select2 failed in send_unix_msg (%d)", ern);
         goto out;
     }
-    ret = _write_length(sockd, buf, len, file, func, line);
+    ret = write_length_(sockd, buf, len, file, func, line);
     if (unlikely(ret < 0)) {
         LOGERR("Failed to write %d bytes in send_unix_msg", len);
         goto out;
@@ -1084,7 +1084,7 @@ out:
     return retval;
 }
 
-bool _send_unix_data(int sockd, const struct msghdr *msg, const char *file, const char *func, const int line)
+bool send_unix_data_(int sockd, const struct msghdr *msg, const char *file, const char *func, const int line)
 {
     bool retval = false;
     int ret;
@@ -1111,7 +1111,7 @@ out:
     return retval;
 }
 
-bool _recv_unix_data(int sockd, struct msghdr *msg, const char *file, const char *func, const int line)
+bool recv_unix_data_(int sockd, struct msghdr *msg, const char *file, const char *func, const int line)
 {
     bool retval = false;
     int ret;
@@ -1138,7 +1138,7 @@ out:
 #define MAXLINE 4096
 
 /* Send a msghdr containing fd via the unix socket sockd */
-bool _send_fd(int fd, int sockd, const char *file, const char *func, const int line)
+bool send_fd_(int fd, int sockd, const char *file, const char *func, const int line)
 {
     struct cmsghdr *cmptr = ckzalloc(CONTROLLLEN);
     struct iovec iov[1];
@@ -1171,7 +1171,7 @@ bool _send_fd(int fd, int sockd, const char *file, const char *func, const int l
 }
 
 /* Receive an fd by reading a msghdr from the unix socket sockd */
-int _get_fd(int sockd, const char *file, const char *func, const int line)
+int get_fd_(int sockd, const char *file, const char *func, const int line)
 {
     int newfd = -1;
     char buf[MAXLINE];
@@ -1200,7 +1200,7 @@ out:
 }
 
 
-void _json_check(json_t *val, json_error_t *err, const char *file, const char *func, const int line)
+void json_check_(json_t *val, json_error_t *err, const char *file, const char *func, const int line)
 {
     if (likely(val))
         return;
@@ -1213,7 +1213,7 @@ void _json_check(json_t *val, json_error_t *err, const char *file, const char *f
 /* Extracts a string value from a json array with error checking. To be used
  * when the value of the string returned is only examined and not to be stored.
  * See json_array_string below */
-const char *__json_array_string(json_t *val, unsigned int entry)
+const char *json_array_string__(json_t *val, unsigned int entry)
 {
     json_t *arr_entry;
 
@@ -1230,10 +1230,10 @@ const char *__json_array_string(json_t *val, unsigned int entry)
     return json_string_value(arr_entry);
 }
 
-/* Creates a freshly malloced dup of __json_array_string */
+/* Creates a freshly malloced dup of json_array_string__ */
 char *json_array_string(json_t *val, unsigned int entry)
 {
-    const char *buf = __json_array_string(val, entry);
+    const char *buf = json_array_string__(val, entry);
 
     if (buf)
         return strdup(buf);
@@ -1355,7 +1355,7 @@ char *ckstrndup(const char *s, int len)
     return ret;
 }
 
-void *_ckzrealloc(void *oldbuf, size_t len, bool zeromem, const char *file, const char *func, const int line)
+void *ckzrealloc_(void *oldbuf, size_t len, bool zeromem, const char *file, const char *func, const int line)
 {
     int backoff = 1;
     void *ptr;
@@ -1395,7 +1395,7 @@ size_t round_up_page(size_t len)
 
 
 /* Adequate size s==len*2 + 1 must be alloced to use this variant */
-size_t __bin2hex(void *vs, const void *vp, size_t len)
+size_t bin2hex__(void *vs, const void *vp, size_t len)
 {
     static const char hex[16] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
     const uchar *p = vp;
@@ -1421,7 +1421,7 @@ void *bin2hex(const void *vp, size_t len)
 
     slen = len * 2 + 1;
     s = ckzalloc(slen);
-    __bin2hex(s, p, len);
+    bin2hex__(s, p, len);
 
     return s;
 }
@@ -1445,7 +1445,7 @@ const int hex2bin_tbl[256] = {
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
 };
 
-bool _validhex(const char *buf, const char *file, const char *func, const int line)
+bool validhex__(const char *buf, const char *file, const char *func, const int line)
 {
     unsigned int i, slen;
     bool ret = false;
@@ -1470,7 +1470,7 @@ out:
 }
 
 /* Does the reverse of bin2hex but does not allocate any ram */
-bool _hex2bin(void *vp, const void *vhexstr, size_t len, const char *file, const char *func, const int line)
+bool hex2bin__(void *vp, const void *vhexstr, size_t len, const char *file, const char *func, const int line)
 {
     const uchar *hexstr = vhexstr;
     int nibble1, nibble2;
