@@ -2,8 +2,13 @@
 find_package(ZeroMQ 4.1.5 REQUIRED)
 
 # Jansson
-add_subdirectory(jansson-2.10)
-include_directories(AFTER ${CMAKE_BINARY_DIR}/src/jansson-2.10/include ${CMAKE_SOURCE_DIR}/src/jansson-2.10/src)
+set(JANSSON_BUILD_DOCS OFF CACHE BOOL "Disable docs")
+set(JANSSON_EXAMPLES OFF CACHE BOOL "Disable examples")
+set(JANSSON_WITHOUT_TESTS ON CACHE BOOL "No tests")
+set(JANSSON_INSTALL OFF CACHE BOOL "No install target")
+set(JANSSON_BUILD_SHARED_LIBS OFF CACHE BOOL "Use static lib only")
+add_subdirectory(jansson-2.14)
+include_directories(AFTER ${CMAKE_BINARY_DIR}/src/jansson-2.14/include ${CMAKE_SOURCE_DIR}/src/jansson-2.14/src)
 
 # Set LIBS
 set(LIBS asicseerpool jansson)
