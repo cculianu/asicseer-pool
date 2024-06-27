@@ -192,6 +192,12 @@ extern "C" void sha256(const unsigned char *message, unsigned int len, unsigned 
     ctx.Finalize(std::span{reinterpret_cast<uint8_t *>(digest), std::size_t{SHA256_DIGEST_SIZE}});
 }
 
+extern "C" void sha256_d64(unsigned char *output, const unsigned char *input, unsigned long blocks)
+{
+    SHA256D64(reinterpret_cast<uint8_t *>(output), reinterpret_cast<const uint8_t *>(input), blocks);
+}
+
+
 extern "C" void sha256_selftest(void)
 {
     try {

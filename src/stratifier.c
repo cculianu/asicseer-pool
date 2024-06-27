@@ -1734,7 +1734,7 @@ static void update_txns(pool_t *ckp, sdata_t *sdata, txntable_t *txns, bool loca
 static txntable_t *wb_merkle_bin_txns(pool_t *ckp, sdata_t *sdata, workbase_t *wb,
                                       json_t *txn_array, bool local)
 {
-    long i, j, binleft, binlen;
+    long i, binleft, binlen;
     txntable_t *txns = NULL;
     json_t *arr_val;
     uchar *hashbin;
@@ -1800,6 +1800,7 @@ static txntable_t *wb_merkle_bin_txns(pool_t *ckp, sdata_t *sdata, workbase_t *w
     } else
         wb->txn_hashes = ckzalloc(1);
     wb->merkle_array = json_array();
+    const int64_t t0merkle = time_micros();
     while (binleft > 1L) {
         if (unlikely(wb->merkles >= GENWORK_MAX_MERKLE_DEPTH)) {
             LOGWARNING("Ran out of space for merkle tree! Max depth of %d exceeded!",
@@ -1816,16 +1817,16 @@ static txntable_t *wb_merkle_bin_txns(pool_t *ckp, sdata_t *sdata, workbase_t *w
             binlen += 32L;
             binleft++;
         }
-        for (i = 32, j = 64; j < binlen; i += 32L, j += 64L)
-            gen_hash(hashbin + j, hashbin + i, 64);
+        if (binlen > 64L)
+            sha256_d64(hashbin + 32L, hashbin + 64L, (binlen - 64L) / 64L);
         binleft /= 2L;
         binlen = binleft * 32L;
     }
-    LOGNOTICE("Stored %s workbase with %d transactions", local ? "local" : "remote",
-              wb->txns);
+    LOGNOTICE("Stored %s workbase with %d transactions (merkle rebuild took: %1.3f msec)",
+              local ? "local" : "remote", wb->txns, (time_micros() - t0merkle) / 1e3);
 out:
     free(hashbin);
-    LOGDEBUG("%s: took %1.6f secs", __func__, (time_micros()-t0) / 1e6);
+    LOGDEBUG("%s: took %1.3f msec", __func__, (time_micros()-t0) / 1e3);
     return txns;
 }
 

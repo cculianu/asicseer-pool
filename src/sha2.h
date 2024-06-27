@@ -36,6 +36,15 @@ extern "C" {
 
 void sha256(const unsigned char *message, unsigned int len, unsigned char digest[SHA256_DIGEST_SIZE]);
 void sha256_selftest(void); /* will perform the self-test and if there is a problem will exit the app with an error */
+
+/**
+ * Compute multiple double-SHA256's of 64-byte blobs.
+ * output:  pointer to a blocks*32 byte output buffer
+ * input:   pointer to a blocks*64 byte input buffer
+ * blocks:  the number of hashes to compute.
+ */
+void sha256_d64(unsigned char *output, const unsigned char *input, unsigned long blocks);
+
 #ifdef  __cplusplus
 }
 #endif
