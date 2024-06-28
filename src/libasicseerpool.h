@@ -75,8 +75,10 @@ typedef unsigned char uchar;
 typedef struct timeval tv_t;
 typedef struct timespec ts_t;
 
-static inline uint32_t read_i32(const void *p) { uint32_t ret; memcpy(&ret, p, sizeof(uint32_t)); return ret; }
-static inline void write_i32(void *dest, uint32_t val) { memcpy(dest, &val, sizeof(uint32_t)); }
+static inline uint32_t read_i32(const void *p) { uint32_t ret; memcpy(&ret, p, sizeof(ret)); return ret; }
+static inline uint64_t read_i64(const void *p) { uint64_t ret; memcpy(&ret, p, sizeof(ret)); return ret; }
+static inline void write_i32(void *dest, uint32_t val) { memcpy(dest, &val, sizeof(val)); }
+static inline void write_i64(void *dest, uint64_t val) { memcpy(dest, &val, sizeof(val)); }
 
 maybe_unused__
 static inline void swap_256(void *dest_p, const void *src_p)
@@ -589,9 +591,8 @@ bool validhex__(const char *buf, const char *file, const char *func, const int l
 bool hex2bin__(void *p, const void *vhexstr, size_t len, const char *file, const char *func, const int line);
 #define hex2bin(p, vhexstr, len) hex2bin__(p, vhexstr, len, __FILE__, __func__, __LINE__)
 char *http_base64(const char *src);
-void b58tobin(char *b58bin, const char *b58);
 /* Does no checksum checks but returns false if the characters in b58 source are invalid, or if b58 is > 35 characters, true otherwise. */
-bool b58tobin_safe(char *b58bin, const char *b58);
+bool b58tobin_safe(uchar *b58bin, const char *b58);
 int safecmp(const char *a, const char *b);
 int safecasecmp(const char *a, const char *b, int len); // pass len < 0 to compare all
 bool cmdmatch(const char *buf, const char *cmd);

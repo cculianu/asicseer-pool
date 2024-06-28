@@ -1517,16 +1517,9 @@ static const int b58tobin_tbl[] = {
 };
 
 /* b58bin should always be at least 25 bytes long and already checked to be
- * valid. */
-void b58tobin(char *b58bin, const char *b58)
-{
-    b58tobin_safe(b58bin, b58);
-}
-
-/* b58bin should always be at least 25 bytes long and already checked to be
  * valid.  Does no checksum checks but returns false if the characters in b58 source are invalid,
  * or if b58 is > 35 characters, true otherwise. */
-bool b58tobin_safe(char *b58bin, const char *b58)
+bool b58tobin_safe(uchar *b58bin, const char *b58)
 {
     uint32_t c, bin32[7];
     int len, i, j;
@@ -1553,7 +1546,7 @@ bool b58tobin_safe(char *b58bin, const char *b58)
     }
     *(b58bin++) = bin32[0] & 0xff;
     for (i = 1; i < 7; i++) {
-        *((uint32_t *)b58bin) = htobe32(bin32[i]);
+        write_i32(b58bin, htobe32(bin32[i]));
         b58bin += sizeof(uint32_t);
     }
     return true;
@@ -1689,7 +1682,7 @@ static const char *remove_any_cashaddr_prefix(const char *addr)
 
 static int p2pkh_address_to_script(uchar *pkh, const char *addr, const char *cashaddr_prefix)
 {
-    char b58bin[25] = {0};
+    uchar b58bin[25] = {0};
     bool decoded_cashaddr = false;
 
     if (strlen(addr) > CASHADDR_HEURISTIC_LEN) {
@@ -1721,7 +1714,7 @@ static int p2pkh_address_to_script(uchar *pkh, const char *addr, const char *cas
 
 static int p2sh_address_to_script(uchar *psh, const char *addr, const char *cashaddr_prefix)
 {
-    char b58bin[25] = {0};
+    uchar b58bin[25] = {0};
     bool decoded_cashaddr = false;
 
     if (strlen(addr) > CASHADDR_HEURISTIC_LEN) {
@@ -2057,22 +2050,14 @@ static const double bits128 = 340282366920938463463374607431768211456.0;
 static const double bits64 = 18446744073709551616.0;
 
 /* Converts a little endian 256 bit value to a double */
-double le256todouble(const uchar *target)
+double le256todouble(const uchar * const target)
 {
-    uint64_t *data64;
     double dcut64;
 
-    data64 = (uint64_t *)(target + 24);
-    dcut64 = le64toh(*data64) * bits192;
-
-    data64 = (uint64_t *)(target + 16);
-    dcut64 += le64toh(*data64) * bits128;
-
-    data64 = (uint64_t *)(target + 8);
-    dcut64 += le64toh(*data64) * bits64;
-
-    data64 = (uint64_t *)(target);
-    dcut64 += le64toh(*data64);
+    dcut64  = le64toh(read_i64(target + 24)) * bits192;
+    dcut64 += le64toh(read_i64(target + 16)) * bits128;
+    dcut64 += le64toh(read_i64(target +  8)) * bits64;
+    dcut64 += le64toh(read_i64(target +  0));
 
     return dcut64;
 }
@@ -2112,9 +2097,9 @@ double diff_from_nbits(const uchar *nbits)
     return numerator / (double)diff32;
 }
 
-void target_from_diff(uchar *target, double diff)
+void target_from_diff(uchar *const target, double const diff)
 {
-    uint64_t *data64, h64;
+    uint64_t h64;
     double d64, dcut64;
 
     if (unlikely(diff == 0.0)) {
@@ -2128,38 +2113,35 @@ void target_from_diff(uchar *target, double diff)
 
     dcut64 = d64 / bits192;
     h64 = dcut64;
-    data64 = (uint64_t *)(target + 24);
-    *data64 = htole64(h64);
+    write_i64(target + 24, htole64(h64));
     dcut64 = h64;
     dcut64 *= bits192;
     d64 -= dcut64;
 
     dcut64 = d64 / bits128;
     h64 = dcut64;
-    data64 = (uint64_t *)(target + 16);
-    *data64 = htole64(h64);
+    write_i64(target + 16, htole64(h64));
     dcut64 = h64;
     dcut64 *= bits128;
     d64 -= dcut64;
 
     dcut64 = d64 / bits64;
     h64 = dcut64;
-    data64 = (uint64_t *)(target + 8);
-    *data64 = htole64(h64);
+    write_i64(target +  8, htole64(h64));
     dcut64 = h64;
     dcut64 *= bits64;
     d64 -= dcut64;
 
     h64 = d64;
-    data64 = (uint64_t *)(target);
-    *data64 = htole64(h64);
+    write_i64(target +  0, htole64(h64));
 }
 
 void gen_hash(const uchar *data, uchar *hash, int len)
 {
     uchar hash1[32];
 
-    assert(len > 0);
+    assert(len >= 0); // debug builds
+    if (unlikely(len < 0)) len = 0; // non-debug builds
 
     sha256(data, len, hash1);
     sha256(hash1, 32, hash);

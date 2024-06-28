@@ -994,7 +994,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 
     /* Put block height at start of scriptsig (consensus rule) */
     {
-        uint8_t buf[8];
+        uint8_t buf[16];
         len = ser_cbheight(buf, wb->height);
         strbuffer_append_bytes(strbuf, buf, len);
     }
@@ -1125,7 +1125,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
     header[224] = 0;
     LOGDEBUG("Header: %s", header);
     hex2bin(wb->headerbin, header, 112);
-    LOGDEBUG("%s: took %0.6f secs", __func__, (time_micros()-t0)/1e6);
+    LOGDEBUG("%s: took %0.3f msec", __func__, (time_micros()-t0)/1e3);
 }
 
 static void stratum_broadcast_update(sdata_t *sdata, const workbase_t *wb, bool clean);
@@ -1448,7 +1448,7 @@ static void add_base(pool_t *ckp, sdata_t *sdata, workbase_t *wb, bool *new_bloc
 
     ts_realtime(&wb->gentime);
     wb->network_diff = diff_from_nbits((uchar *)(wb->headerbin + 72));
-    LOGDEBUG("gbt network diff: %1.3lf", wb->network_diff);
+    LOGDEBUG("gbt network diff: %1.3f", wb->network_diff);
     if (!ckp->proxy) {
         pool_stats_t *stats = &ckp_sdata->stats;
         double reward = wb->coinbasevalue;
@@ -2003,7 +2003,7 @@ retry:
         goto out;
     }
     if (unlikely(retries))
-        LOGWARNING("Generator succeeded in update_base after retrying");
+        LOGWARNING("Generator succeeded in update_base after retrying %d times", retries);
 
     wb->ckp = ckp;
 
