@@ -1608,7 +1608,7 @@ static int64_t add_share(gdata_t *gdata, const int64_t client_id, const double d
     HASH_ITER(hh, gdata->shares, share, tmpshare) {
         if (share->submit_time < now - 120) {
             HASH_DEL(gdata->shares, share);
-            // TODO (Calin): are we leaking here? Shouldn't we dealloc(share)?!
+            dealloc(share);
         }
     }
     mutex_unlock(&gdata->share_lock);
@@ -2328,7 +2328,7 @@ static void *proxy_recv(void *arg)
         HASH_ITER(hh, gdata->shares, share, tmpshare) {
             if (share->submit_time < now - 120) {
                 HASH_DEL(gdata->shares, share);
-                // TODO (Calin): are we leaking 'share' here?! shouldn't we `dealloc(share)` ?!
+                dealloc(share);
             }
         }
         mutex_unlock(&gdata->share_lock);
@@ -2472,7 +2472,7 @@ static void *userproxy_recv(void *arg)
         HASH_ITER(hh, gdata->shares, share, tmpshare) {
             if (share->submit_time < now - 120) {
                 HASH_DEL(gdata->shares, share);
-                // TODO (Calin): Are we not leaking `share` here?!
+                dealloc(share);
             }
         }
         mutex_unlock(&gdata->share_lock);
