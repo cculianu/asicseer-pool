@@ -2158,6 +2158,7 @@ int main(int argc, char **argv)
     rename_proc(ckp.name);
 
     sha256_selftest(); // may exit if there is a problem
+    cashaddr_selftest(); // won't exit app, will just warn if there's a problem
 
     if (ckp.grpnam) {
         struct group *group = getgrnam(ckp.grpnam);

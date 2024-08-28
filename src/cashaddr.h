@@ -1,5 +1,5 @@
 /* Cash Address decode for asicseer-pool.
- * Copyright (c) 2020 Calin Culianu <calin.culianu@gmail.com>
+ * Copyright (c) 2020-2024 Calin Culianu <calin.culianu@gmail.com>
  * Code adapted to C from C++ by Calin Culianu
  * Original C++ sources: Bitcoin Cash Node https://gitlab.com/bitcoin-cash-node/bitcoin-cash-node
  * LICENSE: MIT
@@ -24,9 +24,8 @@ extern "C" {
  *
  * The returned buffer must be freed by the caller.
  */
-extern uint8_t *cashaddr_decode_hash160(const char *addr,
-                                        const char *default_prefix /* <- may be null or empty, in which case
-                                                                         "bitcoincash" is used */);
+uint8_t *cashaddr_decode_hash160(const char *addr, const char *default_prefix /* <- may be null or empty, in which case
+                                                                                    "bitcoincash" is used */);
 #define CASHADDR_HEURISTIC_LEN 35
 
 // NB: if these ever change, please make sure they are <16 bytes or if not, modify
@@ -34,6 +33,9 @@ extern uint8_t *cashaddr_decode_hash160(const char *addr,
 #define CASHADDR_PREFIX_MAIN "bitcoincash"
 #define CASHADDR_PREFIX_TEST "bchtest"
 #define CASHADDR_PREFIX_REGTEST "bchreg"
+
+// Perform internal cashaddr selftest -- returns 1 on success, 0 on failure.
+int cashaddr_selftest(void);
 
 #ifdef  __cplusplus
 }

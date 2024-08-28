@@ -30,7 +30,7 @@ if(USE_ASM)
     add_compile_definitions(USE_ASM=1)
 endif()
 
-add_library(asicseerpool libasicseerpool.c libasicseerpool_cxx.cpp libasicseerpool.h sha2.h cashaddr.c cashaddr.h
+add_library(asicseerpool libasicseerpool.c libasicseerpool_cxx.cpp libasicseerpool.h sha2.h cashaddr.cpp cashaddr.h
                          bitcoin/common.h bitcoin/compat_byteswap.h bitcoin/compat_cpuid.h bitcoin/compat_endian.h
                          bitcoin/sha256.cpp bitcoin/sha256.h bitcoin/sha256_sse4.cpp
                          libasicseerpool_platform_specific.cpp
