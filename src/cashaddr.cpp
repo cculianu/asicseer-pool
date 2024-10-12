@@ -359,7 +359,8 @@ CashAddrContent DecodeCashAddrContent(const std::string_view addr, const std::st
  *
  * The returned buffer must be freed by the caller.
  */
-extern "C" uint8_t *cashaddr_decode_hash160(const char *addr, const char *default_prefix)
+/* extern "C" */
+uint8_t *cashaddr_decode_hash160(const char *addr, const char *default_prefix)
 {
     const std::string_view sv_addr = addr;
     std::string_view sv_def_pfx;
@@ -385,7 +386,8 @@ extern "C" uint8_t *cashaddr_decode_hash160(const char *addr, const char *defaul
     return ret;
 }
 
-extern "C" int cashaddr_selftest(void)
+/* extern "C" */
+int cashaddr_selftest(void)
 {
     int ret = 1;
     const char *addr, *pfx, *expect;

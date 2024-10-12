@@ -184,7 +184,8 @@ int emulate_epoll_using_kevent(KFilt kfilt, int sockd, float timeout, bool eof_o
 } // namespace
 
 /* Wait till a socket has been closed at the other end */
-extern "C" int wait_close(int sockd, int timeout)
+// extern "C"
+int wait_close(int sockd, int timeout)
 {
     int ret;
 #if USE_KEVENT /* macOS, BSD, etc */
@@ -211,7 +212,8 @@ extern "C" int wait_close(int sockd, int timeout)
 }
 
 /* Emulate a select read wait for high fds that select doesn't support. */
-extern "C" int wait_read_select(int sockd, float timeout)
+// extern "C"
+int wait_read_select(int sockd, float timeout)
 {
 #if USE_EPOLL /* Linux */
     struct epoll_event event = {0, {NULL}};
@@ -237,7 +239,8 @@ extern "C" int wait_read_select(int sockd, float timeout)
 }
 
 /* Emulate a select write wait for high fds that select doesn't support */
-extern "C" int wait_write_select(int sockd, float timeout)
+// extern "C"
+int wait_write_select(int sockd, float timeout)
 {
 #if USE_EPOLL /* Linux */
     struct epoll_event event = {0, {NULL}};
@@ -262,7 +265,8 @@ extern "C" int wait_write_select(int sockd, float timeout)
 #endif
 }
 
-extern "C" void rename_proc(const char *name)
+// extern "C"
+void rename_proc(const char *name)
 {
 #if defined(PR_SET_NAME)
     char buf[16];
@@ -279,7 +283,8 @@ extern "C" void rename_proc(const char *name)
 #endif
 }
 
-extern "C" int random_threadsafe(int range)
+// extern "C"
+int random_threadsafe(int range)
 {
     static std::mutex mut;
 #if HAVE_ARC4RANDOM
@@ -320,7 +325,8 @@ extern "C" int random_threadsafe(int range)
 #endif
 }
 
-extern "C" void nanosleep_abstime(const ts_t *ts_end)
+// extern "C"
+void nanosleep_abstime(const ts_t *ts_end)
 {
 #ifdef HAVE_CLOCK_NANOSLEEP /* Linux */
     clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, ts_end, NULL);
@@ -332,7 +338,8 @@ extern "C" void nanosleep_abstime(const ts_t *ts_end)
 #endif
 }
 
-extern "C" int epfd_create_(const char *const file, const char *const func, int const line)
+// extern "C"
+int epfd_create_(const char *const file, const char *const func, int const line)
 {
     const int ret = []{
 #if USE_EPOLL /* Linux */
@@ -348,8 +355,9 @@ extern "C" int epfd_create_(const char *const file, const char *const func, int 
     return ret;
 }
 
-extern "C" int epfd_add_or_mod_(int epfd, int fd, uint64_t userdata, bool isAdd, bool forRead, bool oneShot, bool edgeTriggered,
-                                const char *const file, const char *const func, int const line)
+// extern "C"
+int epfd_add_or_mod_(int epfd, int fd, uint64_t userdata, bool isAdd, bool forRead, bool oneShot, bool edgeTriggered,
+                     const char *const file, const char *const func, int const line)
 {
     const int ret = [&]{
 #if USE_EPOLL /* Linux */
@@ -382,8 +390,8 @@ extern "C" int epfd_add_or_mod_(int epfd, int fd, uint64_t userdata, bool isAdd,
     return ret;
 }
 
-extern "C" int epfd_wait_(int epfd, aevt_t *event, int timeout_msec,
-                          const char *const file, const char *const func, int const line)
+// extern "C"
+int epfd_wait_(int epfd, aevt_t *event, int timeout_msec, const char *const file, const char *const func, int const line)
 {
     const int ret = [&] {
         std::memset(event, 0, sizeof(*event));
@@ -428,8 +436,8 @@ extern "C" int epfd_wait_(int epfd, aevt_t *event, int timeout_msec,
     return ret;
 }
 
-extern "C" int epfd_rm_(int epfd, int fd,
-                        const char *const file, const char *const func, int const line)
+// extern "C"
+int epfd_rm_(int epfd, int fd, const char *const file, const char *const func, int const line)
 {
     const int ret = [&] {
 #ifdef USE_EPOLL /* Linux */

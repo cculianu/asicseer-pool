@@ -139,7 +139,7 @@ int64_t vch_to_int64(const std::vector<uchar> &vch) {
 } // namespace
 
 /*  For encoding nHeight into coinbase, return how many bytes were used */
-extern "C"
+// extern "C"
 int ser_cbheight(void *outp, int32_t val)
 {
     const auto data = BCHN_ser_cbheight(val);
@@ -148,7 +148,7 @@ int ser_cbheight(void *outp, int32_t val)
 }
 
 // returns the height
-extern "C"
+// extern "C"
 int deser_cbheight(const void *inp)
 {
     const uchar *p = static_cast<const uchar *>(inp);
@@ -168,7 +168,8 @@ int deser_cbheight(const void *inp)
     return vch_to_int64(vec);
 }
 
-extern "C" void test_ser_deser_cbheight(void)
+// extern "C"
+void test_ser_deser_cbheight(void)
 {
     constexpr int from = -1'000'000, to = 10'000'000;
     std::cout << "Testing ser/deser of cb_height from " << from << " to " << to << " ..." << std::endl;
@@ -185,20 +186,23 @@ extern "C" void test_ser_deser_cbheight(void)
     std::cout << "Success!" << std::endl;
 }
 
-extern "C" void sha256(const unsigned char *message, unsigned int len, unsigned char digest[SHA256_DIGEST_SIZE])
+// extern "C"
+void sha256(const unsigned char *message, unsigned int len, unsigned char digest[SHA256_DIGEST_SIZE])
 {
     CSHA256 ctx;
     ctx.Write(std::span{reinterpret_cast<const uint8_t *>(message), std::size_t{len}});
     ctx.Finalize(std::span{reinterpret_cast<uint8_t *>(digest), std::size_t{SHA256_DIGEST_SIZE}});
 }
 
-extern "C" void sha256_d64(unsigned char *output, const unsigned char *input, unsigned long blocks)
+// extern "C"
+void sha256_d64(unsigned char *output, const unsigned char *input, unsigned long blocks)
 {
     SHA256D64(reinterpret_cast<uint8_t *>(output), reinterpret_cast<const uint8_t *>(input), blocks);
 }
 
 
-extern "C" void sha256_selftest(void)
+// extern "C"
+void sha256_selftest(void)
 {
     try {
         const auto impl = SHA256AutoDetect();
@@ -231,7 +235,8 @@ struct OpaqueSem {
     OpaqueSem(unsigned int value = 0) : sem(value) {}
 };
 
-extern "C" void cksem_init_(cksem_t *sem, const char *file, const char *func, const int line)
+// extern "C"
+void cksem_init_(cksem_t *sem, const char *file, const char *func, const int line)
 {
     static_assert(OpaqueSem::SemType::max() > 0);
     try {
@@ -242,7 +247,8 @@ extern "C" void cksem_init_(cksem_t *sem, const char *file, const char *func, co
     }
 }
 
-extern "C" void cksem_destroy_(cksem_t *sem, const char *file, const char *func, const int line)
+// extern "C"
+void cksem_destroy_(cksem_t *sem, const char *file, const char *func, const int line)
 {
     if (const void *a[2] = {}; !(a[0] = sem) || !(a[1] = *sem)) {
         quitfrom(1, file, func, line, "Failed to destroy OpaqueSem sem=0x%p *sem=0x%p", a[0], a[1]);
@@ -253,7 +259,8 @@ extern "C" void cksem_destroy_(cksem_t *sem, const char *file, const char *func,
     *sem = nullptr;
 }
 
-extern "C" void cksem_post_(cksem_t *sem, const char *file, const char *func, const int line)
+// extern "C"
+void cksem_post_(cksem_t *sem, const char *file, const char *func, const int line)
 {
     const void *a[2] = {};
     try {
@@ -265,7 +272,8 @@ extern "C" void cksem_post_(cksem_t *sem, const char *file, const char *func, co
     }
 }
 
-extern "C" void cksem_wait_(cksem_t *sem, const char *file, const char *func, const int line)
+// extern "C"
+void cksem_wait_(cksem_t *sem, const char *file, const char *func, const int line)
 {
     const void *a[2] = {};
     try {
@@ -277,7 +285,8 @@ extern "C" void cksem_wait_(cksem_t *sem, const char *file, const char *func, co
     }
 }
 
-extern "C" int cksem_trywait_(cksem_t *sem, const char *file, const char *func, const int line)
+// extern "C"
+int cksem_trywait_(cksem_t *sem, const char *file, const char *func, const int line)
 {
     const void *a[2] = {};
     try {
