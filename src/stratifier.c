@@ -931,11 +931,28 @@ static uint64_t add_coinbase_payouts(const pool_t *ckp, workbase_t *wb, cb1_buff
         assert(!pf64 || pool_has_amt); // if there is a pool fee (pf64), then there must have been a pool payout generated above.
 
         if (ckp->solo) {
-            // SOLO mode: return early, return generation amount that is leftover after taking fees
-            return g64 - f64;
+            // SOLO mode: return early:
+            //  - return generation amount that is leftover after taking fees
+            //  - set wb->payout with some sensible values which is needed later for writing to BLOCK.unconfirmed
+            json_t *payout = json_object();
+            const uint64_t solo_reward = g64 - f64;
+            json_set_int(payout, "height", wb->height);
+            json_set_double(payout, "reward", wb->coinbasevalue / (double)SATOSHIS);
+            json_set_double(payout, "fee", f64 / (double)SATOSHIS);
+            json_set_double(payout, "net_fee", pf64 / (double)SATOSHIS);
+            json_set_double(payout, "dev_donation", df64 / (double)SATOSHIS);
+            json_t *payout_entries = json_object();
+            json_set_double(payout_entries, "<solominer>", solo_reward / (double)SATOSHIS); // fudge the payouts...
+            json_object_set_new_nocheck(payout, "payouts", payout_entries);
+            json_set_double(payout, "herp", sdata->stats.payout_herp);
+            json_object_set_new_nocheck(payout, "postponed", json_object());
+            // add a timestamp for file writer
+            json_set_int64(payout, "time", (int64_t)time(NULL));
+            wb->payout = payout;
+            return solo_reward;
         }
 
-        c64 = add_user_generation(sdata, wb, cb1_buf, g64 - f64, pf64); // add miner payouts, minus total fee
+        c64 = add_user_generation(sdata, wb, cb1_buf, g64 - f64, pf64); // add miner payouts, minus total fee, sets wb->payout
 
         /* Add any change left over from user gen to pool -- note c64 may be negative here if pool fee discounts occurred */
         if ( c64 && (pool_has_amt || c64 >= DUST_LIMIT_SATS) && sdata->scriptlen) {
@@ -1502,7 +1519,7 @@ static void send_ageworkinfo(pool_t *ckp, const int64_t id)
 }
 
 /* Entered with instance_lock held, make sure wb can't be pulled from us */
-static void generate_userwb__(sdata_t *sdata, workbase_t *wb, user_instance_t *user)
+static struct userwb * find_or_generate_userwb__(sdata_t *sdata, const workbase_t *wb, user_instance_t *user)
 {
     struct userwb *userwb;
     const int64_t id = wb->id;
@@ -1510,7 +1527,7 @@ static void generate_userwb__(sdata_t *sdata, workbase_t *wb, user_instance_t *u
     /* Make sure this user doesn't have this userwb already */
     HASH_FIND_I64(user->userwbs, &id, userwb);
     if (unlikely(userwb))
-        return;
+        return userwb;
 
     sdata->userwbs_generated++;
     userwb = ckzalloc(sizeof(struct userwb));
@@ -1527,19 +1544,20 @@ static void generate_userwb__(sdata_t *sdata, workbase_t *wb, user_instance_t *u
     userwb->coinb2len += wb->solo.coinb3len;
     userwb->coinb2 = bin2hex(userwb->coinb2bin, userwb->coinb2len);
     HASH_ADD_I64(user->userwbs, id, userwb);
+    return userwb;
 }
 
 static void generate_userwbs(sdata_t *sdata, workbase_t *wb)
 {
-   user_instance_t *instance, *tmp;
+    user_instance_t *instance, *tmp;
 
-   ck_wlock(&sdata->instance_lock);
-   HASH_ITER(hh, sdata->user_instances, instance, tmp) {
-    if (!instance->bchaddress)
-        continue;
-    generate_userwb__(sdata, wb, instance);
-   }
-   ck_wunlock(&sdata->instance_lock);
+    ck_wlock(&sdata->instance_lock);
+    HASH_ITER(hh, sdata->user_instances, instance, tmp) {
+        if (!instance->bchaddress)
+            continue;
+        find_or_generate_userwb__(sdata, wb, instance);
+    }
+    ck_wunlock(&sdata->instance_lock);
 }
 
 /* Add a new workbase to the table of workbases. Sdata is the global data in
@@ -2575,11 +2593,29 @@ static void add_node_base(pool_t *ckp, json_t *val, bool trusted, int64_t client
     }
 }
 
+/* Entered with instance_lock held */
+static const uchar *user_coinb2__(sdata_t *sdata, const stratum_instance_t *client, const workbase_t *wb, int *cb2len)
+{
+    if (client && client->ckp->solo) {
+        struct userwb * const userwb = find_or_generate_userwb__(sdata, wb, client->user_instance);
+        if (likely(userwb)) {
+            *cb2len = userwb->coinb2len;
+            return userwb->coinb2bin;
+        }
+    }
+
+    // NOTE: If we get here, there is some logic error since we should not be using this function in non-SOLO mode.
+    LOGEMERG("%s: Cannot find user workbase for client id %lld. This should never happen! The coinbase txn may be malformed. FIXME!",
+             __FUNCTION__, client ? (long long)client->id : -1);
+    *cb2len = wb->coinb2len;
+    return wb->coinb2bin;
+}
+
 /* Calculate share diff and fill in hash and swap. Need to hold workbase read count */
-static double
-share_diff(char *coinbase, const uchar *enonce1bin, const workbase_t *wb, const char *nonce2,
-       const uint32_t ntime32, uint32_t version_mask, const char *nonce,
-       uchar *hash, uchar * const swap, int *cblen)
+static double share_diff(const stratum_instance_t *client /* may be NULL */,
+                         char *coinbase, const uchar *enonce1bin, const workbase_t *wb, const char *nonce2,
+                         const uint32_t ntime32, uint32_t version_mask, const char *nonce,
+                         uchar *hash, uchar * const swap, int *cblen)
 {
     unsigned char merkle_root[32], merkle_sha[64];
     uint32_t benonce32;
@@ -2592,8 +2628,30 @@ share_diff(char *coinbase, const uchar *enonce1bin, const workbase_t *wb, const 
     *cblen += wb->enonce1constlen + wb->enonce1varlen;
     hex2bin(coinbase + *cblen, nonce2, wb->enonce2varlen);
     *cblen += wb->enonce2varlen;
-    memcpy(coinbase + *cblen, wb->coinb2bin, wb->coinb2len);
-    *cblen += wb->coinb2len;
+    if (client && client->sdata && client->ckp->solo) {
+        // SOLO mode only, write user-specific coinb2
+        const uchar *cb2bin;
+        int cb2len;
+        ck_rlock(&client->sdata->instance_lock);
+        cb2bin = user_coinb2__(client->sdata, client, wb, &cb2len);
+        memcpy(coinbase + *cblen, cb2bin, cb2len);
+        *cblen += cb2len;
+        ck_runlock(&client->sdata->instance_lock);
+    } else {
+        // non-SOLO mode, write workbase coinb2
+        memcpy(coinbase + *cblen, wb->coinb2bin, wb->coinb2len);
+        *cblen += wb->coinb2len;
+    }
+
+#if 0
+    // DEBUGGING
+    if (SHOULD_EVALUATE_LOGMSG(LOG_DEBUG)) {
+        char *hex = bin2hex(coinbase, *cblen);
+        LOGDEBUG("%s:%d: Got coinbase of length %d from client %lld, raw coinbase hex is: %s",
+                 __FILE__, __LINE__, *cblen, client ? (long long)client->id : 0ll, hex);
+        free(hex);
+    }
+#endif
 
     gen_hash((const uchar *)coinbase, merkle_root, *cblen);
     memcpy(merkle_sha, merkle_root, 32);
@@ -2916,7 +2974,7 @@ static void submit_node_block(pool_t *ckp, sdata_t *sdata, json_t *val)
         hex2bin(enonce1bin, enonce1, enonce1len);
         coinbase = alloca(wb->coinb1len + wb->enonce1constlen + wb->enonce1varlen + wb->enonce2varlen + wb->coinb2len);
         /* Fill in the hashes */
-        share_diff(coinbase, enonce1bin, wb, nonce2, ntime32, version_mask, nonce, hash, swap, &cblen);
+        share_diff(NULL, coinbase, enonce1bin, wb, nonce2, ntime32, version_mask, nonce, hash, swap, &cblen);
     }
 
     // TODO: Enforce 32MB block size limit here?
@@ -6633,7 +6691,7 @@ out:
 
         if (wb) {
             ck_wlock(&sdata->instance_lock);
-            generate_userwb__(sdata, wb, user);
+            find_or_generate_userwb__(sdata, wb, user);
             ck_wunlock(&sdata->instance_lock);
 
             update_solo_client(sdata, wb, client->id, user);
@@ -6931,8 +6989,21 @@ test_blocksolve(const stratum_instance_t *client, const workbase_t *wb, const uc
         double percent;
         FILE *fp;
 
-        blockval = json_copy(wb->payout);
+        blockval = json_deep_copy(wb->payout);
         json_set_string(blockval, "solvedby", client->workername ? client->workername : client->user_instance->username);
+        if (ckp->solo) {
+            // rewrite the payouts -> <solominer> entry to the correct username
+            // (this is read back later to do per-user stats accounting properly)
+            json_t *payouts = json_object_get(blockval, "payouts");
+            if (payouts) {
+                double val;
+                if (json_get_double(&val, payouts, "<solominer>") && json_object_size(payouts) == 1
+                    && client && client->user_instance && client->user_instance->username[0]) {
+                    json_object_clear(payouts);
+                    json_set_double(payouts, client->user_instance->username, val);
+                }
+            }
+        }
         get_timestamp(stamp);
         json_set_string(blockval, "date", stamp);
         swap_256(swap256, flip32);
@@ -6975,18 +7046,17 @@ static double submission_diff(const stratum_instance_t *client, const workbase_t
                               const uint32_t ntime32, const uint32_t version_mask,
                               const char *nonce, uchar *hash, const bool stale)
 {
-    //
-    // XXX FIXEME TODO: Handle SOLO mode; port changes over from ckpool-solo
-    //
     char *coinbase;
     uchar swap[80];
     double ret;
     int cblen;
 
-    coinbase = ckalloc(wb->coinb1len + wb->enonce1constlen + wb->enonce1varlen + wb->enonce2varlen + wb->coinb2len);
+    coinbase = ckalloc(wb->coinb1len + wb->enonce1constlen + wb->enonce1varlen + wb->enonce2varlen + wb->coinb2len
+                       + GENERATOR_MAX_CSCRIPT_LEN + 1u /* for user scriptbin, if any (SOLO mode only) */
+                       + wb->solo.coinb3len);
 
     /* Calculate the diff of the share here */
-    ret = share_diff(coinbase, client->enonce1bin, wb, nonce2, ntime32, version_mask, nonce, hash, swap, &cblen);
+    ret = share_diff(client, coinbase, client->enonce1bin, wb, nonce2, ntime32, version_mask, nonce, hash, swap, &cblen);
 
     /* Test we haven't solved a block regardless of share status */
     test_blocksolve(client, wb, swap, hash, ret, coinbase, cblen, nonce2, nonce, ntime32, version_mask, stale);

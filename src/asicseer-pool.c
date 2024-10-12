@@ -2131,8 +2131,8 @@ int main(int argc, char **argv)
         }
     }
 
-    if (ckp.proxy && ckp.solo) {
-        quit(1, "Cannot set both proxy and solo mode");
+    if ((ckp.proxy || ckp.node || ckp.passthrough || ckp.redirector || ckp.remote) && ckp.solo) {
+        quit(1, "Solo mode requires stand-alone/non-proxy/non-redirector/non-passhtrough/non-node mode.");
     }
 
     if (ckp.daemon) {
@@ -2315,6 +2315,9 @@ int main(int argc, char **argv)
     for (int i = 0; i < ckp.n_bchsigs; ++i) {
         if (ckp.bchsigs[i].sig && *ckp.bchsigs[i].sig)
             LOGNOTICE("Using coinbase signature #%d: %s", i+1, ckp.bchsigs[i].sig);
+    }
+    if (ckp.solo) {
+        LOGWARNING("Solo mode activated: miners that find a solution get the full block reward (minus pool fees)");
     }
     ckp.main.ckp = &ckp;
     ckp.main.processname = strdup("main");
