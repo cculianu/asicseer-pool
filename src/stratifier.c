@@ -173,6 +173,15 @@ struct smsg {
 
 typedef struct smsg smsg_t;
 
+struct userwb {
+   UT_hash_handle hh;
+   int64_t id;
+
+   uchar *coinb2bin; // Coinb2 cointaining this user's address for generation
+   char *coinb2;
+   int coinb2len; // Length of user coinb2
+};
+
 struct user_instance {
     UT_hash_handle hh;
     char username[MAX_USERNAME+1];
@@ -190,6 +199,8 @@ struct user_instance {
 
     int workers;
     int remote_workers;
+
+    struct userwb *userwbs; /* SOLO mode only; Protected by sdata->instance_lock */
 
     mutex_t stats_lock; /* Protects all user and worker stats */
 
@@ -536,6 +547,7 @@ struct stratifier_data {
 
     int64_t stratum_generated;
     int64_t disconnected_generated;
+    int64_t userwbs_generated;
     session_t *disconnected_sessions;
 
     user_instance_t *user_instances;
@@ -842,7 +854,7 @@ skip:
     return total;
 }
 
-static void add_coinbase_payouts(const pool_t *ckp, workbase_t *wb, cb1_buffer_t *cb1_buf)
+static uint64_t add_coinbase_payouts(const pool_t *ckp, workbase_t *wb, cb1_buffer_t *cb1_buf)
 {
     uint64_t g64, f64, pf64, df64;
     int64_t c64;
@@ -853,6 +865,7 @@ static void add_coinbase_payouts(const pool_t *ckp, workbase_t *wb, cb1_buffer_t
     // Generation value
     g64 = wb->coinbasevalue; // generation (reward)
     f64 = ceil(g64 * (ckp->pool_fee/100.0)); // pool fee gross (including dev donation)
+    if (f64 > g64) f64 = g64;
     pf64 = f64; // pool fee net (minus dev donation), starts off as f64 initially but may be decreased below
     df64 = 0; // total dev donations (10% of f64 * num_devs), 0 initially, may be increased below
     c64 = 0; // leftover change/dust, 0 initially, may increase below, or go below 0 if pool fee was credited back to pool discount users (see add_user_generation)
@@ -917,6 +930,11 @@ static void add_coinbase_payouts(const pool_t *ckp, workbase_t *wb, cb1_buffer_t
 
         assert(!pf64 || pool_has_amt); // if there is a pool fee (pf64), then there must have been a pool payout generated above.
 
+        if (ckp->solo) {
+            // SOLO mode: return early, return generation amount that is leftover after taking fees
+            return g64 - f64;
+        }
+
         c64 = add_user_generation(sdata, wb, cb1_buf, g64 - f64, pf64); // add miner payouts, minus total fee
 
         /* Add any change left over from user gen to pool -- note c64 may be negative here if pool fee discounts occurred */
@@ -970,6 +988,7 @@ static void add_coinbase_payouts(const pool_t *ckp, workbase_t *wb, cb1_buffer_t
         pool_has_amt = true;
     }
 #undef SET_POOL_AMT
+    return 0u;
 }
 
 /// This is called in a serialized context (from a ckmsgq)
@@ -1046,9 +1065,14 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
     /* Add all the payout outputs (including pool fees and donations, if any, etc).
        In the rare case of leftover satoshis, they are guaranteed to go back to the pool
        as a fallback.  The below call always succeeds if it returns. */
-    add_coinbase_payouts(ckp, wb, &cb1_buf);
+    const uint64_t solo_amount = add_coinbase_payouts(ckp, wb, &cb1_buf);
 
-    /* OP_RETURN output at end, after all payouts */
+    if (ckp->solo) {
+        // SOLO mode, leave room for 1 output for the solo miner. This output goes at the end of cb2
+        ++cb1_buf.num_outs;
+    }
+
+    /* OP_RETURN output at end, after all payouts (note: in SOLO mode the solo miner payout is after this) */
     {
         // append OP_RETURN output (this leaves space for enonce1 and enonce2)
         wb->enonce1varlen = ckp->nonce1length;
@@ -1104,9 +1128,26 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
     LOGDEBUG("Coinb1: %s", wb->coinb1);
     /* Coinbase 1 complete */
 
-    wb->coinb2len = sizeof(t0) + 4; // timestamp (end of OP_RETURN) + nlocktime == 4 bytes of zeroes at end
-    wb->coinb2bin = ckzalloc(wb->coinb2len);
-    memcpy(wb->coinb2bin, &t0, sizeof(t0)); // copy timestamp to end of OP_RETURN
+    if (!ckp->solo) {
+        wb->coinb2len = sizeof(t0) + 4; // timestamp (end of OP_RETURN) + nlocktime == 4 bytes of zeroes at end
+        wb->coinb2bin = ckzalloc(wb->coinb2len);
+        memcpy(wb->coinb2bin, &t0, sizeof(t0)); // copy timestamp to end of OP_RETURN
+    } else {
+        // Handle SOLO mode here:
+        // - where we *don't* write nlocktime to coinb2; instead we rely on coinb3 for the 4 empty nlocktime bytes
+        // - we do write the t0 end of OP_RETURN
+        // - we do write the amount here for the solo miner payout which must end at end of coinb2
+        wb->coinb2len = sizeof(t0) + 8; // timestamp (end of OP_RETURN) + amount for the per-user payout
+        wb->coinb2bin = ckzalloc(wb->coinb2len);
+        size_t offset = 0;
+        memcpy(wb->coinb2bin + offset, &t0, sizeof(t0));
+        offset += sizeof(t0);
+        const uint64_t amt = htole64(solo_amount);
+        memcpy(wb->coinb2bin + offset, &amt, sizeof(amt));
+        offset += sizeof(amt);
+        memset(wb->solo.coinb3bin, 0, 4);
+        wb->solo.coinb3len = 4; // nlocktime bytes
+    }
     wb->coinb2 = bin2hex(wb->coinb2bin, wb->coinb2len);
     LOGDEBUG("Coinb2: %s", wb->coinb2);
     /* Coinbase 2 complete */
@@ -1129,9 +1170,31 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 }
 
 static void stratum_broadcast_update(sdata_t *sdata, const workbase_t *wb, bool clean);
+static void stratum_broadcast_solo_updates(sdata_t *sdata, bool clean);
 
-static void clear_workbase(workbase_t *wb)
+static void clear_userwb(sdata_t *sdata, const int64_t id)
 {
+   user_instance_t *instance, *tmp;
+
+   ck_wlock(&sdata->instance_lock);
+   HASH_ITER(hh, sdata->user_instances, instance, tmp) {
+        struct userwb *userwb;
+
+        HASH_FIND_I64(instance->userwbs, &id, userwb);
+        if (!userwb)
+            continue;
+        HASH_DEL(instance->userwbs, userwb);
+        free(userwb->coinb2bin);
+        free(userwb->coinb2);
+        free(userwb);
+   }
+   ck_wunlock(&sdata->instance_lock);
+}
+
+static void clear_workbase(const pool_t *ckp, workbase_t *wb)
+{
+    if (ckp->solo)
+        clear_userwb(ckp->sdata, wb->id);
     free(wb->flags);
     free(wb->txn_data);
     free(wb->txn_hashes);
@@ -1438,6 +1501,47 @@ static void send_ageworkinfo(pool_t *ckp, const int64_t id)
     ckdbq_add(ckp, ID_AGEWORKINFO, val);
 }
 
+/* Entered with instance_lock held, make sure wb can't be pulled from us */
+static void generate_userwb__(sdata_t *sdata, workbase_t *wb, user_instance_t *user)
+{
+    struct userwb *userwb;
+    const int64_t id = wb->id;
+
+    /* Make sure this user doesn't have this userwb already */
+    HASH_FIND_I64(user->userwbs, &id, userwb);
+    if (unlikely(userwb))
+        return;
+
+    sdata->userwbs_generated++;
+    userwb = ckzalloc(sizeof(struct userwb));
+    userwb->id = id;
+    userwb->coinb2bin = ckalloc(wb->coinb2len + 1 + user->scriptlen + wb->solo.coinb3len);
+    // Write coinb2 from workbase
+    memcpy(userwb->coinb2bin, wb->coinb2bin, wb->coinb2len);
+    userwb->coinb2len += wb->coinb2len;
+    // Write the scriptPubKey (assumption is: coinb2 ends right after the amount field for this output)
+    userwb->coinb2bin[userwb->coinb2len++] = user->scriptlen; /* Assumption: compactsize is 1 byte here */
+    memcpy(userwb->coinb2bin + userwb->coinb2len, user->scriptbin, user->scriptlen);
+    userwb->coinb2len += user->scriptlen;
+    memcpy(userwb->coinb2bin + userwb->coinb2len, wb->solo.coinb3bin, wb->solo.coinb3len);
+    userwb->coinb2len += wb->solo.coinb3len;
+    userwb->coinb2 = bin2hex(userwb->coinb2bin, userwb->coinb2len);
+    HASH_ADD_I64(user->userwbs, id, userwb);
+}
+
+static void generate_userwbs(sdata_t *sdata, workbase_t *wb)
+{
+   user_instance_t *instance, *tmp;
+
+   ck_wlock(&sdata->instance_lock);
+   HASH_ITER(hh, sdata->user_instances, instance, tmp) {
+    if (!instance->bchaddress)
+        continue;
+    generate_userwb__(sdata, wb, instance);
+   }
+   ck_wunlock(&sdata->instance_lock);
+}
+
 /* Add a new workbase to the table of workbases. Sdata is the global data in
  * pool mode but unique to each subproxy in proxy mode */
 static void add_base(pool_t *ckp, sdata_t *sdata, workbase_t *wb, bool *new_block)
@@ -1517,12 +1621,17 @@ static void add_base(pool_t *ckp, sdata_t *sdata, workbase_t *wb, bool *new_bloc
             /* Drop lock to avoid recursive locks */
             send_ageworkinfo(ckp, tmp->id);
             age_share_hashtable(sdata, tmp->id);
-            clear_workbase(tmp);
+            clear_workbase(ckp, tmp);
 
             ck_wlock(&sdata->workbase_lock);
         }
     }
     ck_wunlock(&sdata->workbase_lock);
+
+   /* This wb can't be pulled out from under us so no workbase lock is
+    * required to generate_userwbs */
+   if (ckp->solo)
+        generate_userwbs(sdata, wb);
 
     if (*new_block)
         purge_share_hashtable(sdata, wb->id);
@@ -2017,7 +2126,12 @@ retry:
 
     add_base(ckp, sdata, wb, &new_block);
 
-    stratum_broadcast_update(sdata, wb, new_block);
+    if (ckp->solo)
+        // SOLO mode: generate per-user workbases and broadcast
+        stratum_broadcast_solo_updates(sdata, new_block);
+    else
+        stratum_broadcast_update(sdata, wb, new_block);
+
     ret = true;
     LOGINFO("Broadcast updated stratum base");
 
@@ -2307,7 +2421,7 @@ static void add_remote_base(pool_t *ckp, sdata_t *sdata, workbase_t *wb)
 
             /* Drop lock to send this */
             send_ageworkinfo(ckp, tmp->mapped_id);
-            clear_workbase(tmp);
+            clear_workbase(ckp, tmp);
 
             ck_wlock(&sdata->workbase_lock);
         }
@@ -2421,7 +2535,7 @@ static void add_node_base(pool_t *ckp, json_t *val, bool trusted, int64_t client
             wb->incomplete = true;
     } else {
         if (!rebuild_txns(ckp, sdata, wb)) {
-            clear_workbase(wb);
+            clear_workbase(ckp, wb);
             return;
         }
     }
@@ -3758,7 +3872,7 @@ static void generator_drop_proxy(pool_t *ckp, const int64_t id, const int subid)
 }
 #endif
 
-static void free_proxy(proxy_t *proxy)
+static void free_proxy(pool_t *ckp, proxy_t *proxy)
 {
     sdata_t *dsdata = proxy->sdata;
 
@@ -3778,7 +3892,7 @@ static void free_proxy(proxy_t *proxy)
         ck_wlock(&dsdata->workbase_lock);
         HASH_ITER(hh, dsdata->workbases, wb, tmpwb) {
             HASH_DEL(dsdata->workbases, wb);
-            clear_workbase(wb);
+            clear_workbase(ckp, wb);
         }
         ck_wunlock(&dsdata->workbase_lock);
 
@@ -3829,14 +3943,14 @@ static void reap_proxies(pool_t *ckp, sdata_t *sdata)
             dead++;
             HASH_DELETE(sh, proxy->subproxies, subproxy);
             proxy->subproxy_count--;
-            free_proxy(subproxy);
+            free_proxy(ckp, subproxy);
         }
         /* Should we reap the parent proxy too?*/
         if (!proxy->deleted || proxy->subproxy_count > 1 || proxy->bound_clients)
             continue;
         HASH_DELETE(sh, proxy->subproxies, proxy);
         HASH_DELETE(hh, sdata->proxies, proxy);
-        free_proxy(proxy);
+        free_proxy(ckp, proxy);
     }
     mutex_unlock(&sdata->proxy_lock);
 
@@ -4471,6 +4585,22 @@ char *stratifier_stats(pool_t *ckp, void *data)
     json_steal_object(val, "remote_workbases", subval);
 
     ck_rlock(&sdata->instance_lock);
+    if (ckp->solo) {
+        user_instance_t *user, *tmpuser;
+        int subobjects;
+
+        objects = 0;
+        memsize = 0;
+        HASH_ITER(hh, sdata->user_instances, user, tmpuser) {
+            subobjects = HASH_COUNT(user->userwbs);
+            objects += subobjects;
+            memsize += SAFE_HASH_OVERHEAD(user->userwbs) + sizeof(struct userwb) * subobjects;
+        }
+        generated = sdata->userwbs_generated;
+        JSON_CPACK(subval, "{si,sI,sI}", "count", objects, "memory", memsize, "generated", generated);
+        json_steal_object(val, "userwbs", subval);
+    }
+
     objects = HASH_COUNT(sdata->user_instances);
     memsize = SAFE_HASH_OVERHEAD(sdata->user_instances) + sizeof(stratum_instance_t) * objects;
     JSON_CPACK(subval, "{si,sI}", "count", objects, "memory", memsize);
@@ -6389,6 +6519,15 @@ static void client_auth(pool_t *ckp, stratum_instance_t *client, user_instance_t
     client->authorising = false;
 }
 
+static json_t *user_solo_notify__(const workbase_t *wb, const user_instance_t *user, const bool clean);
+
+static void update_solo_client(sdata_t *sdata, workbase_t *wb, const int64_t client_id, user_instance_t *user_instance)
+{
+    json_t *json_msg = user_solo_notify__(wb, user_instance, true);
+
+    stratum_add_send(sdata, json_msg, client_id, SM_UPDATE);
+}
+
 /* Needs to be entered with client holding a ref count. */
 static json_t *parse_authorize(stratum_instance_t *client, const json_t *params_val, json_t **err_val)
 {
@@ -6465,14 +6604,15 @@ static json_t *parse_authorize(stratum_instance_t *client, const json_t *params_
     }
     ret = user->bchaddress;
     if (!ret) {
-        ret = sdata && sdata->single_payout_override_scriptlen > 0 && ckp->single_payout_override;
+        ret = !ckp->solo && sdata && sdata->single_payout_override_scriptlen > 0 && ckp->single_payout_override;
         if (ret) {
             // New! allow invalid address in single payout mode
             LOGINFO("Client %s %s worker %s has invalid bchaddress, allowing anyway (single_payout_override mode)",
                     client->identity, client->address, buf);
         } else {
-            LOGINFO("Client %s %s worker %s has invalid bchaddress -- use \"single_payout_override\" in config to support this",
-                    client->identity, client->address, buf);
+            LOGINFO("Client %s %s worker %s has invalid bchaddress%s",
+                    client->identity, client->address, buf,
+                    ckp->solo ? "" : " -- use \"single_payout_override\" in config to support this");
         }
     }
 
@@ -6481,6 +6621,31 @@ static json_t *parse_authorize(stratum_instance_t *client, const json_t *params_
     if (!ckp->remote)
         client_auth(ckp, client, user, ret);
 out:
+    if (ret && ckp->solo && !client->remote) {
+        sdata_t *sdata = ckp->sdata;
+        workbase_t *wb;
+
+        /* To avoid grabbing recursive lock */
+        ck_wlock(&sdata->workbase_lock);
+        wb = sdata->current_workbase;
+        if (wb) wb->readcount++;
+        ck_wunlock(&sdata->workbase_lock);
+
+        if (wb) {
+            ck_wlock(&sdata->instance_lock);
+            generate_userwb__(sdata, wb, user);
+            ck_wunlock(&sdata->instance_lock);
+
+            update_solo_client(sdata, wb, client->id, user);
+
+            ck_wlock(&sdata->workbase_lock);
+            wb->readcount--;
+            ck_wunlock(&sdata->workbase_lock);
+
+            stratum_send_diff(sdata, client);
+        }
+    }
+
     return json_boolean(ret);
 }
 
@@ -6810,6 +6975,9 @@ static double submission_diff(const stratum_instance_t *client, const workbase_t
                               const uint32_t ntime32, const uint32_t version_mask,
                               const char *nonce, uchar *hash, const bool stale)
 {
+    //
+    // XXX FIXEME TODO: Handle SOLO mode; port changes over from ckpool-solo
+    //
     char *coinbase;
     uchar swap[80];
     double ret;
@@ -7264,6 +7432,62 @@ static void stratum_send_update(sdata_t *sdata, const int64_t client_id, const b
     stratum_add_send(sdata, json_msg, client_id, SM_UPDATE);
 }
 
+/* Hold instance and workbase lock */
+static json_t *user_solo_notify__(const workbase_t *wb, const user_instance_t *user, const bool clean)
+{
+    int64_t id = wb->id;
+    struct userwb *userwb;
+    json_t *val;
+
+    HASH_FIND_I64(user->userwbs, &id, userwb);
+    if (unlikely(!userwb)) {
+        LOGINFO("Failed to find userwb in user_solo_notify__!");
+        return NULL;
+    }
+
+    JSON_CPACK(val, "{s:[ssssosssb],s:o,s:s}",
+               "params",
+               wb->idstring,
+               wb->prevhash,
+               wb->coinb1,
+               userwb->coinb2,
+               json_deep_copy(wb->merkle_array),
+               wb->bbversion,
+               wb->nbit,
+               wb->ntime,
+               clean,
+               "id", json_null(),
+               "method", "mining.notify");
+    return val;
+}
+
+/* Sends a stratum update with a unique coinb2 for every client. Avoid
+ * recursive locking. */
+static void stratum_broadcast_solo_updates(sdata_t *sdata, bool clean)
+{
+    stratum_instance_t *client, *tmp;
+    json_t *json_msg;
+
+    ck_wlock(&sdata->instance_lock);
+    HASH_ITER(hh, sdata->stratum_instances, client, tmp) {
+        if (!client->user_instance)
+            continue;
+        inc_instance_ref__(client);
+        ck_wunlock(&sdata->instance_lock);
+
+        ck_rlock(&sdata->workbase_lock);
+        json_msg = user_solo_notify__(sdata->current_workbase, client->user_instance, clean);
+        ck_runlock(&sdata->workbase_lock);
+
+        if (likely(json_msg))
+            stratum_add_send(sdata, json_msg, client->id, SM_UPDATE);
+
+        ck_wlock(&sdata->instance_lock);
+        dec_instance_ref__(client);
+    }
+    ck_wunlock(&sdata->instance_lock);
+}
+
 static void send_json_err(sdata_t *sdata, const int64_t client_id, json_t *id_val, const char *err_msg)
 {
     json_t *val;
@@ -7277,7 +7501,8 @@ static void update_client(const stratum_instance_t *client, const int64_t client
 {
     sdata_t *sdata = client->sdata;
 
-    stratum_send_update(sdata, client_id, true);
+    if (!client->ckp->solo)
+        stratum_send_update(sdata, client_id, true);
     stratum_send_diff(sdata, client);
 }
 
@@ -7333,7 +7558,8 @@ static void init_client(const stratum_instance_t *client, const int64_t client_i
     sdata_t *sdata = client->sdata;
 
     stratum_send_diff(sdata, client);
-    stratum_send_update(sdata, client_id, true);
+    if (!client->ckp->solo)
+        stratum_send_update(sdata, client_id, true);
 }
 
 /* When a node first connects it has no transactions so we have to send all

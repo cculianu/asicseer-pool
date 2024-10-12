@@ -234,8 +234,8 @@ struct pool_instance {
     /* Are we running as a proxy */
     bool proxy;
 
-    /* Are we running without ckdb */
-    bool standalone;
+    /* Are we running in SOLO mode */
+    bool solo;
 
     /* Are we running in userproxy mode */
     bool userproxy;

@@ -88,6 +88,11 @@ struct genwork {
     char *coinb2; // coinbase2
     uchar *coinb2bin;
     int coinb2len; // length of above
+    /* Solo mode only */
+    struct {
+        uchar coinb3bin[4]; // coinbase txn footer (always just 4 blank locktime bytes)
+        uint8_t coinb3len; // length of above
+    } solo;
 
     /* Cached header binary */
     char headerbin[112];
