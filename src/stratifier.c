@@ -1149,6 +1149,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
         wb->coinb2len = sizeof(t0) + 4; // timestamp (end of OP_RETURN) + nlocktime == 4 bytes of zeroes at end
         wb->coinb2bin = ckzalloc(wb->coinb2len);
         memcpy(wb->coinb2bin, &t0, sizeof(t0)); // copy timestamp to end of OP_RETURN
+        wb->solo.coinb3len = 0; // paranoia, should already be 0
     } else {
         // Handle SOLO mode here:
         // - where we *don't* write nlocktime to coinb2; instead we rely on coinb3 for the 4 empty nlocktime bytes
