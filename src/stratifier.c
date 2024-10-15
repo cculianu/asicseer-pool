@@ -6701,6 +6701,7 @@ out:
             wb->readcount--;
             ck_wunlock(&sdata->workbase_lock);
 
+            client_apply_mindiff_override(client); /* ensure diff respects mindiff_overrides */
             stratum_send_diff(sdata, client);
         }
     }
