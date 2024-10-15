@@ -38,6 +38,7 @@ It has been updated and reworked to add features and to support Bitcoin Cash
 * Added ZMQ support for new block notifications
 * Removed asicseer-db, removed all sql, HTML, & php files related to this.
 * Updated source tree to use cmake, removed autotools-based build.
+* Added optional "solo" mining mode (-B / --solo).
 * Fixed bugs
 
 BUILDING
@@ -123,47 +124,10 @@ Features:
 
 
 ---
-BUILDING:
-
-** NOTE from Calin: The below is no longer accurate since we switched the
-** codebase to use cmake instead of autotools.
-
-Building asicseer-pool standalone without asicseer-db has no dependencies
-outside of the basic build tools on any Linux installation.
-
-sudo apt-get install build-essential yasm libzmq3-dev
-./configure --without-asicseer-db
-make
-
-
-** NOTE from Calin: The below is no longer accurate since we have removed
-** asicseer-db.
-
-Building with asicseer-db requires installation of the postgresql, gsl and ssl
-development libraries.
-
-sudo apt-get install build-essential yasm libzmq3-dev libpq-dev libgsl-dev
-./configure --with-asicseer-db
-make
-
-older distributions may instead require a different version of gsl:
- sudo apt-get install build-essential libpq-dev libgsl0ldbl libgsl0-dev yasm
-
-N.B.: asicseer-db also requires libssl-dev but libpq-dev depends on it and
-      installs it.
-
-
-Building from git also requires autoconf and automake
-
-sudo apt-get install build-essential yasm libzmq3-dev libpq-dev libgsl-dev autoconf automake libtool
-./autogen.sh
-./configure
-make
-
+BUILT BINARIES:
 
 Binaries will be built in the src/ subdirectory. Binaries generated will be:
 asicseer-pool - The main pool back-end.
-asicseer-db   - The pool's database (only if ./configure --with-asicseer-db).
 asicseer-pmsg - An application for passing messages in libasicseerpool format
                 to asicseer-pool/asicseer-db.
 notifier      - An application designed to be run with bitcoind's -blocknotify
@@ -174,25 +138,16 @@ notifier      - An application designed to be run with bitcoind's -blocknotify
 
 
 Installation is NOT required and asicseer-pool can be run directly from the
-directory it's built in but it can be installed with:
-sudo make install
-
-
-It is anticipated that pool operators wishing to set up a full database based
-installation of asicseer-pool+asicseer-db will be familiar with setting up
-postgresql and associated permissions to the directories where the various
-processes will communicate with each other and a web server so these will not be
-documented.
-
+directory it's built in.
 
 ---
 RUNNING:
 
 asicseer-pool supports the following options:
 
--A | --standalone
+-A | --standalone (unused)
+-B | --solo
 -c CONFIG | --config CONFIG
--d DB-NAME | --db-name DB-NAME
 -g GROUP | --group GROUP
 -H | --handover
 -h | --help
@@ -210,11 +165,15 @@ asicseer-pool supports the following options:
 -v | --version
 
 
--A Standalone mode tells asicseer-pool not to try to communicate with
-asicseer-db or log any asicseer-db requests in the rotating db logs it would
-otherwise store. All users are automatically accepted without any attempt to
-authorize users in any way. This option is explicitly enabled when built without
-db support.
+-A Standalone mode (defunct). This option currently does nothing but used
+to tell the program not to use asicseer-db. It only exists now for backward
+compatibility.
+
+-B Solo mining mode. Payouts will give all of the reward (minus fees) to the
+miner that solved the block. Use this if you intend to run a solo mining pool.
+This option does not work with any of the following: -N, -P, -p, -R, -u.
+** Note ** In solo mining mode, all miner clients must have valid BCH addresses
+as their username prefix otherwise they will be rejected.
 
 -c <CONFIG> tells asicseer-pool to override its default configuration filename
 and load the specified one. If -c is not specified, asicseer-pool looks for:
@@ -287,28 +246,6 @@ upstream pool specified in the configuration file and then reconnect miners to
 mine with their chosen username/password to the upstream pool.
 
 -v Prints the program version and exits immediately.
-
-
-asicseer-db takes the following options:
-
--b DBPREFIX | --dbprefix DBPREFIX
--c CONFIG | --config CONFIG
--d DBNAME | --dbname DBNAME
--h | --help
--k | --killold
--l LOGLEVEL | --loglevel LOGLEVEL
--n NAME | --name NAME
--p DBPASS | --dbpass DBPASS
--r POOL-LOGDIR | --pool-logdir POOL-LOGDIR
--R LOGDIR | --logdir LOGDIR
--s SOCKDIR | --sockdir SOCKDIR
--u DBUSER | --dbuser DBUSER
--v | --version
--y | --confirm
--Y CONFIRMRANGE | --confirmrange CONFIRMRANGE
-
-
-ckpmsg and notifier support the -n, -p and -s options
 
 ---
 CONFIGURATION

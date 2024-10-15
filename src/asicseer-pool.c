@@ -1961,6 +1961,7 @@ static struct option long_options[] = {
     {"trusted",     no_argument,       0,    't'},
     {"userproxy",   no_argument,       0,    'u'},
     {"version",     no_argument,       0,    'v'},
+    {"solo",        no_argument,       0,    'B'},
     {0, 0, 0, 0}
 };
 
@@ -2032,10 +2033,14 @@ int main(int argc, char **argv)
         ckp.initial_args[ckp.args] = strdup(argv[ckp.args]);
     ckp.initial_args[ckp.args] = NULL;
 
-    while ((c = getopt_long(argc, argv, "Ac:Dd:g:HhkLl:Nn:PpqRS:s:tuv", long_options, &i)) != -1) {
+    while ((c = getopt_long(argc, argv, "ABc:Dd:g:HhkLl:Nn:PpqRS:s:tuv", long_options, &i)) != -1) {
         switch (c) {
             case 'A':
-                ckp.standalone = true;
+                /* legacy compat. */
+                fprintf(stderr, "Warning: Since ckdb has been removed, `-A` option is always active; ignoring `-A` from command-line.\n");
+                break;
+            case 'B':
+                ckp.solo = true;
                 break;
             case 'c':
                 ckp.config = optarg;
@@ -2083,7 +2088,7 @@ int main(int argc, char **argv)
             case 'N':
                 if (ckp.proxy || ckp.redirector || ckp.userproxy || ckp.passthrough)
                     quit(1, "Cannot set another proxy type or redirector and node mode");
-                ckp.standalone = ckp.proxy = ckp.passthrough = ckp.node = true;
+                ckp.proxy = ckp.passthrough = ckp.node = true;
                 break;
             case 'n':
                 ckp.name = optarg;
@@ -2091,7 +2096,7 @@ int main(int argc, char **argv)
             case 'P':
                 if (ckp.proxy || ckp.redirector || ckp.userproxy || ckp.node)
                     quit(1, "Cannot set another proxy type or redirector and passthrough mode");
-                ckp.standalone = ckp.proxy = ckp.passthrough = true;
+                ckp.proxy = ckp.passthrough = true;
                 break;
             case 'p':
                 if (ckp.passthrough || ckp.redirector || ckp.userproxy || ckp.node)
@@ -2104,7 +2109,7 @@ int main(int argc, char **argv)
             case 'R':
                 if (ckp.proxy || ckp.passthrough || ckp.userproxy || ckp.node)
                     quit(1, "Cannot set a proxy type or passthrough and redirector modes");
-                ckp.standalone = ckp.proxy = ckp.passthrough = ckp.redirector = true;
+                ckp.proxy = ckp.passthrough = ckp.redirector = true;
                 break;
             case 's':
                 ckp.socket_dir = strdup(optarg);
@@ -2112,7 +2117,7 @@ int main(int argc, char **argv)
             case 't':
                 if (ckp.proxy)
                     quit(1, "Cannot set a proxy type and trusted remote mode");
-                ckp.standalone = ckp.remote = true;
+                ckp.remote = true;
                 break;
             case 'u':
                 if (ckp.proxy || ckp.redirector || ckp.passthrough || ckp.node)
@@ -2124,6 +2129,10 @@ int main(int argc, char **argv)
                 exit(0);
                 break; // not reached
         }
+    }
+
+    if ((ckp.proxy || ckp.node || ckp.passthrough || ckp.redirector || ckp.remote) && ckp.solo) {
+        quit(1, "Solo mode requires stand-alone/non-proxy/non-redirector/non-passhtrough/non-node mode.");
     }
 
     if (ckp.daemon) {
@@ -2220,6 +2229,10 @@ int main(int argc, char **argv)
             ckp.n_notify_btcds++;
     }
 
+    // refuse to proceed if single_payout_override is specified and solo mode is also specified
+    if (ckp.single_payout_override && ckp.solo)
+        quit(1, "Cannot use single_payout_override mode with SOLO mode (-B)");
+
     // set up donation addresses
     {
         ckp.dev_donations[0].address = (char *) DONATION_ADDRESS_CALIN;
@@ -2302,6 +2315,9 @@ int main(int argc, char **argv)
     for (int i = 0; i < ckp.n_bchsigs; ++i) {
         if (ckp.bchsigs[i].sig && *ckp.bchsigs[i].sig)
             LOGNOTICE("Using coinbase signature #%d: %s", i+1, ckp.bchsigs[i].sig);
+    }
+    if (ckp.solo) {
+        LOGWARNING("Solo mode activated: miners that find a solution get the full block reward (minus pool fees)");
     }
     ckp.main.ckp = &ckp;
     ckp.main.processname = strdup("main");
