@@ -167,11 +167,13 @@ asicseer-pool supports the following options:
 
 -A Standalone mode (defunct). This option currently does nothing but used
 to tell the program not to use asicseer-db. It only exists now for backward
-compatibility from e.g. extant shell scripts, etc.
+compatibility.
 
 -B Solo mining mode. Payouts will give all of the reward (minus fees) to the
 miner that solved the block. Use this if you intend to run a solo mining pool.
-This option does not workwith any of the following: -N, -P, -p, -R, -u.
+This option does not work with any of the following: -N, -P, -p, -R, -u.
+** Note ** In solo mining mode, all miner clients must have valid BCH addresses
+as their username prefix otherwise they will be rejected.
 
 -c <CONFIG> tells asicseer-pool to override its default configuration filename
 and load the specified one. If -c is not specified, asicseer-pool looks for:

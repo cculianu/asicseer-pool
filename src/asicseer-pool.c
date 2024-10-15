@@ -2037,7 +2037,7 @@ int main(int argc, char **argv)
         switch (c) {
             case 'A':
                 /* legacy compat. */
-                fprintf(stderr, "Warning: Since ckdb as been removed, `-A` option is always active; ignoring `-A` from command-line.\n");
+                fprintf(stderr, "Warning: Since ckdb has been removed, `-A` option is always active; ignoring `-A` from command-line.\n");
                 break;
             case 'B':
                 ckp.solo = true;

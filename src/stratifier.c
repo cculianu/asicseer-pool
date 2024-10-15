@@ -1155,7 +1155,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
         // - where we *don't* write nlocktime to coinb2; instead we rely on coinb3 for the 4 empty nlocktime bytes
         // - we do write the t0 end of OP_RETURN
         // - we do write the amount here for the solo miner payout which must end at end of coinb2
-        wb->coinb2len = sizeof(t0) + 8; // timestamp (end of OP_RETURN) + amount for the per-user payout
+        wb->coinb2len = sizeof(t0) + 8; // timestamp (end of OP_RETURN) + amount for the miner-specific payout
         wb->coinb2bin = ckzalloc(wb->coinb2len);
         size_t offset = 0;
         memcpy(wb->coinb2bin + offset, &t0, sizeof(t0));
@@ -5992,7 +5992,8 @@ static void client_apply_mindiff_override(stratum_instance_t *client)
             // match, apply suggested_diff to client, which will clamp
             // the minimum difficulty for this client for all workers to be >= ovr->mindiff
             client->suggest_diff = client->old_diff = client->diff = ovr->mindiff;
-            LOGDEBUG("mindiff_overrides: Applied minimum & starting difficulty = %"PRId64" to client %"PRId64" matching \"%s\"", ovr->mindiff, client->id, ovr->useragent);
+            LOGDEBUG("mindiff_overrides: Applied minimum & starting difficulty = %"PRId64" to client %"PRId64" matching"
+                     " \"%s\"", ovr->mindiff, client->id, ovr->useragent);
             return;
         }
     }
