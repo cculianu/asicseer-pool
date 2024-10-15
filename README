@@ -159,7 +159,6 @@ asicseer-pool supports the following options:
 -P | --passthrough
 -p | --proxy
 -R | --redirector
--S DB-SOCKDIR | --db-sockdir DB-SOCKDIR
 -s SOCKDIR | --sockdir SOCKDIR
 -u | --userproxy
 -v | --version
@@ -180,10 +179,6 @@ and load the specified one. If -c is not specified, asicseer-pool looks for:
 asicseer-pool.conf, in proxy mode it looks for asicseer-proxy.conf, in
 passthrough mode for asicseer-passthrough.conf and in redirector mode for
 asicseer-redirector.conf
-
--d <DB-NAME> tells asicseer-pool what the name of the db process is that it should
-speak to, otherwise it will look for asicseer-db.
-This option does not exist when built without db support.
 
 -g <GROUP> will start asicseer-pool as the group ID specified.
 
@@ -231,10 +226,6 @@ accepted share from the upstream pool is detected, it will issue a redirect to
 one of the redirecturl entries in the configuration file. It will cycle over
 entries if multiple exist, but try to keep all clients from the same IP
 redirecting to the same pool.
-
--S <DB-SOCKDIR> tells asicseer-pool which directory to look for the asicseer-db
-socket to talk to.
-This option does not exist when built without asicseer-db support.
 
 -s <SOCKDIR> tells asicseer-pool which directory to place its own communication
 sockets (/tmp by default)

@@ -2033,7 +2033,7 @@ int main(int argc, char **argv)
         ckp.initial_args[ckp.args] = strdup(argv[ckp.args]);
     ckp.initial_args[ckp.args] = NULL;
 
-    while ((c = getopt_long(argc, argv, "ABc:Dd:g:HhkLl:Nn:PpqRS:s:tuv", long_options, &i)) != -1) {
+    while ((c = getopt_long(argc, argv, "ABc:Dg:HhkLl:Nn:PpqRs:tuv", long_options, &i)) != -1) {
         switch (c) {
             case 'A':
                 /* legacy compat. */
