@@ -1011,12 +1011,15 @@ static uint64_t add_coinbase_payouts(const pool_t *ckp, workbase_t *wb, cb1_buff
 /// This is called in a serialized context (from a ckmsgq)
 static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
 {
+    const int64_t tstart = time_micros();
     static const size_t COINB1_INITIAL_CAPACITY = 512;
-    const int64_t t0 = time_micros();
+    uint8_t random_bytes[8];
     char header[272];
     cb1_buffer_t cb1_buf;
     strbuffer_t *strbuf = &cb1_buf.buffer; // for convenience -- used below
     int len = 0;
+
+    get_random_bytes(random_bytes, sizeof(random_bytes));
 
     // ensure these are cleared (they normally already are)
     wb->coinb1bin = wb->coinb2bin = NULL;
@@ -1095,8 +1098,8 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
         wb->enonce1varlen = ckp->nonce1length;
         wb->enonce2varlen = ckp->nonce2length;
         static const uint8_t amt0[8] = {0,0,0,0,0,0,0,0};
-        // script is: OP_RETURN length_byte(20) enonce1_bytes[4] enonce2_bytes[8] timestamp_bytes[8]
-        int scriptlen = 1 + 1 + wb->enonce1varlen + wb->enonce2varlen + sizeof(t0);
+        // script is: OP_RETURN length_byte(20) enonce1_bytes[4] enonce2_bytes[8] random_bytes[8]
+        int scriptlen = 1 + 1 + wb->enonce1varlen + wb->enonce2varlen + sizeof(random_bytes);
         strbuffer_append_bytes(strbuf, amt0, 8); // amount
         assert(scriptlen < 223 && scriptlen > 2); // script should be > 2 bytes and less than max OP_RETURN size
         strbuffer_append_byte(strbuf, (uint8_t)scriptlen); // push script length
@@ -1146,20 +1149,20 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
     /* Coinbase 1 complete */
 
     if (!ckp->solo) {
-        wb->coinb2len = sizeof(t0) + 4; // timestamp (end of OP_RETURN) + nlocktime == 4 bytes of zeroes at end
+        wb->coinb2len = sizeof(random_bytes) + 4; // timestamp (end of OP_RETURN) + nlocktime == 4 bytes of zeroes at end
         wb->coinb2bin = ckzalloc(wb->coinb2len);
-        memcpy(wb->coinb2bin, &t0, sizeof(t0)); // copy timestamp to end of OP_RETURN
+        memcpy(wb->coinb2bin, random_bytes, sizeof(random_bytes)); // copy random bytes to end of OP_RETURN
         wb->solo.coinb3len = 0; // paranoia, should already be 0
     } else {
         // Handle SOLO mode here:
         // - where we *don't* write nlocktime to coinb2; instead we rely on coinb3 for the 4 empty nlocktime bytes
-        // - we do write the t0 end of OP_RETURN
+        // - we do write the random_bytes end of OP_RETURN
         // - we do write the amount here for the solo miner payout which must end at end of coinb2
-        wb->coinb2len = sizeof(t0) + 8; // timestamp (end of OP_RETURN) + amount for the miner-specific payout
+        wb->coinb2len = sizeof(random_bytes) + 8; // timestamp (end of OP_RETURN) + amount for the miner-specific payout
         wb->coinb2bin = ckzalloc(wb->coinb2len);
         size_t offset = 0;
-        memcpy(wb->coinb2bin + offset, &t0, sizeof(t0));
-        offset += sizeof(t0);
+        memcpy(wb->coinb2bin + offset, random_bytes, sizeof(random_bytes));
+        offset += sizeof(random_bytes);
         const uint64_t amt = htole64(solo_amount);
         memcpy(wb->coinb2bin + offset, &amt, sizeof(amt));
         offset += sizeof(amt);
@@ -1184,7 +1187,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
     header[224] = 0;
     LOGDEBUG("Header: %s", header);
     hex2bin(wb->headerbin, header, 112);
-    LOGDEBUG("%s: took %0.3f msec", __func__, (time_micros()-t0)/1e3);
+    LOGDEBUG("%s: took %0.3f msec", __func__, (time_micros() - tstart)/1e3);
 }
 
 static void stratum_broadcast_update(sdata_t *sdata, const workbase_t *wb, bool clean);

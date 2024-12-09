@@ -1,8 +1,11 @@
 #include "libasicseerpool.h"
 #include "sha2.h"
 
+#include "bitcoin/random.h"
 #include "bitcoin/sha256.h"
+#include "bitcoin/sha512.h"
 
+#include <bit>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -298,4 +301,11 @@ int cksem_trywait_(cksem_t *sem, const char *file, const char *func, const int l
         quitfrom(1, file, func, line, "Failed to `try_acquire()` from OpaqueSem sem=0x%p *sem=0x%p (%s)", a[0], a[1], e.what());
     }
     return -1; // failure
+}
+
+// extern "C"
+void get_random_bytes(void * const vbuf, const size_t nbytes)
+{
+    unsigned char * const buf = reinterpret_cast<unsigned char *>(vbuf);
+    GetRandBytes(std::span{buf, nbytes});
 }

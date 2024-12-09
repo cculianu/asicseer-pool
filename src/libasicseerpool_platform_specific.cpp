@@ -1,18 +1,16 @@
 #define _GNU_SOURCE 1
 #include <chrono>
 #include <cmath>
-#include <concepts>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
-#include <functional>
 #include <mutex>
 #include <random>
 #include <thread>
-#include <utility>
 
 #include "config.h"
+#include "util_cxx.h"
 
 #if HAVE_ARPA_INET_H && HAVE_NETINET_IN_H && HAVE_SYS_SOCKET_H && (HAVE_POLL_H || HAVE_SYS_POLL_H) && HAVE_UNISTD_H
 #include <arpa/inet.h>
@@ -79,38 +77,6 @@ timespec operator+(const timespec &a, const timespec &b) noexcept
 {
     return normalize(timespec{.tv_sec = a.tv_sec + b.tv_sec, .tv_nsec = a.tv_nsec + b.tv_nsec});
 }
-
-template <std::invocable Func = std::function<void()>>
-class Defer
-{
-    Func f;
-    bool disabled = false;
-public:
-    explicit Defer(Func && fun) : f(std::move(fun)) {}
-    explicit Defer(const Func & fun) : f(fun) {}
-
-    Defer(const Defer &d) : Defer(d.f) { disabled = d.disabled; }
-    Defer(Defer &&d) : Defer(std::move(d.f)) { disabled = d.disabled; d.disabled = true; }
-
-    ~Defer() { if (!disabled) f(); }
-
-    Defer &operator=(const Defer &d) {
-        f = d.f;
-        disabled = d.disabled;
-        return *this;
-    }
-
-    Defer &operator=(Defer &&d) {
-        f = std::move(d.f);
-        disabled = d.disabled;
-        d.disabled = true;
-        return *this;
-    }
-
-    void disable() { disabled = true; }
-    void enable() { disabled = false; }
-    operator bool() const { return !disabled; }
-};
 
 [[maybe_unused]]
 double tsToSecs(const timespec &t) noexcept { return double(t.tv_sec) + double(t.tv_nsec / 1e9); }
