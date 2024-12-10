@@ -31,9 +31,7 @@ if(USE_ASM)
 endif()
 
 add_library(asicseerpool libasicseerpool.c libasicseerpool_cxx.cpp libasicseerpool.h sha2.h cashaddr.cpp cashaddr.h
-                         bitcoin/common.h bitcoin/compat_byteswap.h bitcoin/compat_cpuid.h bitcoin/compat_endian.h
-                         bitcoin/random.cpp
-                         bitcoin/sha256.cpp bitcoin/sha256.h bitcoin/sha256_sse4.cpp bitcoin/sha512.cpp
+                         bitcoin/random.cpp bitcoin/sha256.cpp bitcoin/sha256_sse4.cpp bitcoin/sha512.cpp
                          libasicseerpool_platform_specific.cpp
 )
 
