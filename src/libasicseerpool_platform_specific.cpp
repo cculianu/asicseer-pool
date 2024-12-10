@@ -250,12 +250,12 @@ void rename_proc(const char *name)
 }
 
 // extern "C"
-int random_threadsafe(int range)
+int random_threadsafe(const int range)
 {
     static std::mutex mut;
-#if HAVE_ARC4RANDOM
     if (range <= 1)
         return 0;
+#if HAVE_ARC4RANDOM
     std::unique_lock l(mut);
     return static_cast<int>(arc4random_uniform(static_cast<unsigned>(range)));
 #elif HAVE_RANDOM_R
@@ -263,13 +263,18 @@ int random_threadsafe(int range)
     static char state[256] = {};
     static bool initted = false;
 
-    if (range <= 1)
-        return 0;
-    assert(range <= RAND_MAX);
+    if (range > RAND_MAX) {
+        // requested range exceeds RAND_MAX -- so we fake it with random bytes.
+        uint32_t val;
+        get_random_bytes(static_cast<void *>(reinterpret_cast<unsigned char *>(&val)), sizeof(val));
+        return static_cast<int>(val % static_cast<uint32_t>(range)); // this introduces modulo-bias but it's fine.
+    }
 
     std::unique_lock l(mut);
     if (!initted) {
-        if (initstate_r((unsigned int)(time_micros() % 1000000LL), state, sizeof(state), &buf)) {
+        unsigned int seed;
+        get_random_bytes(static_cast<void *>(reinterpret_cast<unsigned char *>(&seed)), sizeof(seed));
+        if (initstate_r(seed, state, sizeof(state), &buf)) {
             quit(1, "Got error result from initstate_r with errno %d", errno);
         }
         initted = true;
@@ -278,7 +283,7 @@ int random_threadsafe(int range)
     if (random_r(&buf, &result)) {
         quit(1, "Got error result from random_r with errno %d", errno);
     }
-    return result % range;
+    return result % range; // this introduces modulo-bias but it's fine.
 #else
     // Fall back to the C++ std random generator
     static std::mt19937 rgen = []{

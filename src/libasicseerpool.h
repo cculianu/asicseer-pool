@@ -668,7 +668,7 @@ int epfd_wait_(int epfd, aevt_t *event, int timeout_msec, const char *file, cons
 #define epfd_rm(epfd, fd) epfd_rm_(epfd, fd, __FILE__, __func__, __LINE__)
 #define epfd_wait(epfd, event, timeout_msec) epfd_wait_(epfd, event, timeout_msec, __FILE__, __func__, __LINE__)
 
-/// Reads nbytes random bytes from a fast, insecure but high quality randomness source.
+/// Reads nbytes random bytes from a fast, insecure but high quality randomness source. This call is thread safe.
 void get_random_bytes(void *buf, size_t nbytes);
 
 #ifdef  __cplusplus
