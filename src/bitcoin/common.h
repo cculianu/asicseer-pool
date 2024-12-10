@@ -9,6 +9,8 @@
 #ifdef __cplusplus
 #include <cstdint>
 #include <cstring>
+#include <type_traits>
+static_assert(std::is_same_v<uint8_t, unsigned char>, "Assumption is that uint8_t and unsigned char are the same type");
 #define STD_NS std::
 #else
 #include <stdint.h>
