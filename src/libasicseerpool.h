@@ -70,6 +70,11 @@ extern "C" {
        _a < _b ? _a : _b; })
 #endif
 
+#define PASTE(x, y) x ## y
+#define PASTE2(x, y) PASTE(x, y)
+#define UNIQUE_NAME(name) PASTE2(PASTE(name, _), __COUNTER__)
+
+
 typedef unsigned char uchar;
 
 typedef struct timeval tv_t;

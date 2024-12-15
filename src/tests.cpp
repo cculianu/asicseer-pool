@@ -187,10 +187,6 @@ auto registerTest(std::string_view name, VoidFunc && f) {
     return allSuites.try_emplace(std::string{name}, std::move(f)).first;
 }
 
-#define PASTE(x, y) x ## y
-#define PASTE2(x, y) PASTE(x, y)
-#define UNIQUE_NAME(name) PASTE2(PASTE(name, _), __COUNTER__)
-
 
 // Some macros used below so we can just copy-paste unit tests from BCHN without changing them
 #define TEST_RUN_CONTEXT() Context::cur().runAll()
