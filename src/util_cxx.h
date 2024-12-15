@@ -4,6 +4,7 @@
 
 #include <concepts>
 #include <functional>
+#include <type_traits>
 #include <utility>
 
 template <std::invocable Func = std::function<void()>>
@@ -37,5 +38,9 @@ public:
     void enable() { disabled = false; }
     operator bool() const { return !disabled; }
 };
+
+template<typename T>
+concept ByteLike = std::is_standard_layout_v<T> && std::is_trivial_v<T> && sizeof(T) == 1
+                   && !std::is_same_v<std::remove_cv_t<T>, bool>;
 
 #endif // __cplusplus

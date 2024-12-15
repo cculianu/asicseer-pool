@@ -25,17 +25,21 @@
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
-#ifndef SHA2_H
-#define SHA2_H
+#pragma once
 
 #ifdef  __cplusplus
+#include <cstddef>
 extern "C" {
+#else
+#include <stddef.h>
 #endif
 
-#define SHA256_DIGEST_SIZE (256 / 8)
+#define SHA256_DIGEST_SIZE ((size_t)32u)
 
-void sha256(const unsigned char *message, unsigned int len, unsigned char digest[SHA256_DIGEST_SIZE]);
-void sha256_selftest(void); /* will perform the self-test and if there is a problem will exit the app with an error */
+typedef unsigned char uchar;
+
+void sha256(const uchar *message, size_t len, uchar digest[SHA256_DIGEST_SIZE]);
+bool sha256_selftest(void); /* will perform the self-test and if there is a problem will exit the app with an error */
 
 /**
  * Compute multiple double-SHA256's of 64-byte blobs.
@@ -43,10 +47,8 @@ void sha256_selftest(void); /* will perform the self-test and if there is a prob
  * input:   pointer to a blocks*64 byte input buffer
  * blocks:  the number of hashes to compute.
  */
-void sha256_d64(unsigned char *output, const unsigned char *input, unsigned long blocks);
+void sha256_d64(uchar *output, const uchar *input, size_t blocks);
 
 #ifdef  __cplusplus
 }
 #endif
-
-#endif /* !SHA2_H */

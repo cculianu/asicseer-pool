@@ -48,6 +48,12 @@ target_link_libraries(notifier ${LIBS})
 add_executable(summariser summariser.c empty.cpp)
 target_link_libraries(summariser ${LIBS})
 
+option(ENABLE_TESTS "Enable unit tests" OFF)
+if(ENABLE_TESTS)
+    add_executable(tests tests.cpp)
+    target_link_libraries(tests ${LIBS})
+endif()
+
 # ------------------------------------------- config.h generation -------------------------------------------
 # This generates config.h which provides numerous defines about the state of the platform we are building on.
 include(CheckIncludeFiles)

@@ -190,22 +190,23 @@ void test_ser_deser_cbheight(void)
 }
 
 // extern "C"
-void sha256(const unsigned char *message, unsigned int len, unsigned char digest[SHA256_DIGEST_SIZE])
+void sha256(const uchar *message, size_t len, uchar digest[SHA256_DIGEST_SIZE])
 {
+    static_assert(SHA256_DIGEST_SIZE == CSHA256::OUTPUT_SIZE);
     CSHA256 ctx;
-    ctx.Write(std::span{message, std::size_t{len}});
-    ctx.Finalize(std::span{&*digest, std::size_t{SHA256_DIGEST_SIZE}});
+    ctx.Write(std::span{message, len});
+    ctx.Finalize(std::span{&*digest, SHA256_DIGEST_SIZE});
 }
 
 // extern "C"
-void sha256_d64(unsigned char *output, const unsigned char *input, unsigned long blocks)
+void sha256_d64(uchar *output, const uchar *input, size_t blocks)
 {
     SHA256D64(output, input, blocks);
 }
 
 
 // extern "C"
-void sha256_selftest(void)
+bool sha256_selftest(void)
 {
     try {
         const auto impl = SHA256AutoDetect();
@@ -223,7 +224,9 @@ void sha256_selftest(void)
     } catch (const std::exception &e) {
         LOGEMERG("SHA256 self-test failed: %s", e.what());
         std::exit(1);
+        return false; // not reached
     }
+    return true;
 }
 
 struct OpaqueSem {

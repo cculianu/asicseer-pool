@@ -25,6 +25,7 @@
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -1295,8 +1296,8 @@ stageleft:
 /* Align a size_t to 4 byte boundaries for fussy arches */
 void align_len(size_t *len)
 {
-    if (*len % 4)
-        *len += 4 - (*len % 4);
+    const size_t rem = *len % 4u;
+    if (rem) *len += 4u - rem;
 }
 
 /* Malloc failure should be fatal but keep backing off and retrying as the OS
@@ -1392,41 +1393,46 @@ size_t round_up_page(size_t len)
     return len;
 }
 
-
+static const char bin2hex_tbl[513] =
+    "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f"
+    "303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f"
+    "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f"
+    "909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf"
+    "c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeef"
+    "f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff";
 
 /* Adequate size s==len*2 + 1 must be alloced to use this variant */
-size_t bin2hex__(void *vs, const void *vp, size_t len)
+size_t bin2hex__(char *dest, const void *src, const size_t len)
 {
-    static const char hex[16] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
-    const uchar *p = vp;
-    uchar *s = vs;
-    int i;
+    const uchar *p = src;
+    const uchar *const end = p + len;
+    uint16_t hex_idx;
 
-    for (i = 0; i < (int)len; i++) {
-        *s++ = hex[p[i] >> 4];
-        *s++ = hex[p[i] & 0xF];
+    while (p < end) {
+        hex_idx = ((uint16_t)*p++) * 2u;
+        *dest++ = bin2hex_tbl[hex_idx++];
+        *dest++ = bin2hex_tbl[hex_idx++];
     }
-    *s++ = '\0';
-    return len * 2;
+    *dest++ = '\0';
+    return len * 2u;
 }
 
 /* Returns a malloced array string of a binary value of arbitrary length. The
  * array is rounded up to a 4 byte size to appease architectures that need
  * aligned array  sizes */
-void *bin2hex(const void *vp, size_t len)
+char *bin2hex(const void *bin, const size_t len)
 {
-    const uchar *p = vp;
     size_t slen;
-    uchar *s;
+    char *s;
 
-    slen = len * 2 + 1;
-    s = ckzalloc(slen);
-    bin2hex__(s, p, len);
+    slen = len * 2u + 1u;
+    s = ckalloc(slen);
+    bin2hex__(s, bin, len);
 
     return s;
 }
 
-const int hex2bin_tbl[256] = {
+static const int8_t hex2bin_tbl[256] = {
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
     -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
@@ -1447,20 +1453,19 @@ const int hex2bin_tbl[256] = {
 
 bool validhex__(const char *buf, const char *file, const char *func, const int line)
 {
-    unsigned int i, slen;
+    size_t i, slen;
     bool ret = false;
 
     slen = strlen(buf);
-    if (!slen || slen % 2) {
-        LOGDEBUG("Invalid hex due to length %u from %s %s:%d", slen, file, func, line);
+    if (!slen || slen % 2u) {
+        LOGDEBUG("Invalid hex due to length %lu from %s %s:%d", (unsigned long)slen, file, func, line);
         goto out;
     }
-    for (i = 0; i < slen; i++) {
-        uchar idx = buf[i];
+    for (i = 0u; i < slen; ++i) {
+        const uchar idx = (uchar)buf[i];
 
-        if (hex2bin_tbl[idx] == -1) {
-            LOGDEBUG("Invalid hex due to value %u at offset %d from %s %s:%d",
-                 idx, i, file, func, line);
+        if (hex2bin_tbl[idx] < 0) {
+            LOGDEBUG("Invalid hex due to value %u at offset %lu from %s %s:%d", (unsigned)idx, (unsigned long)i, file, func, line);
             goto out;
         }
     }
@@ -1470,24 +1475,21 @@ out:
 }
 
 /* Does the reverse of bin2hex but does not allocate any ram */
-bool hex2bin__(void *vp, const void *vhexstr, size_t len, const char *file, const char *func, const int line)
+bool hex2bin__(void *dest, const char *hexstr, size_t len, const char *file, const char *func, const int line)
 {
-    const uchar *hexstr = vhexstr;
-    int nibble1, nibble2;
+    const uchar *ustr = (const uchar *)hexstr;
+    int8_t nibble1, nibble2;
     bool ret = false;
-    uchar *p = vp;
-    uchar idx;
+    uchar *p = dest;
 
-    while (*hexstr && len) {
-        if (unlikely(!hexstr[1])) {
+    while (*ustr && len) {
+        if (unlikely(!ustr[1])) {
             LOGWARNING("Early end of string in hex2bin from %s %s:%d", file, func, line);
             return ret;
         }
 
-        idx = *hexstr++;
-        nibble1 = hex2bin_tbl[idx];
-        idx = *hexstr++;
-        nibble2 = hex2bin_tbl[idx];
+        nibble1 = hex2bin_tbl[*ustr++];
+        nibble2 = hex2bin_tbl[*ustr++];
 
         if (unlikely((nibble1 < 0) || (nibble2 < 0))) {
             LOGWARNING("Invalid binary encoding in hex2bin from %s %s:%d", file, func, line);
@@ -1498,7 +1500,7 @@ bool hex2bin__(void *vp, const void *vhexstr, size_t len, const char *file, cons
         --len;
     }
 
-    if (likely(len == 0 && *hexstr == 0))
+    if (likely(len == 0 && *ustr == 0))
         ret = true;
     if (!ret)
         LOGWARNING("Failed hex2bin decode from %s %s:%d", file, func, line);
@@ -2138,11 +2140,9 @@ void target_from_diff(uchar *const target, double const diff)
 
 void gen_hash(const uchar *data, uchar *hash, int len)
 {
-    uchar hash1[32];
-
     assert(len >= 0); // debug builds
     if (unlikely(len < 0)) len = 0; // non-debug builds
 
-    sha256(data, len, hash1);
-    sha256(hash1, 32, hash);
+    sha256(data, len, hash);
+    sha256(hash, 32, hash);
 }

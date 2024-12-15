@@ -117,13 +117,13 @@ uint64_t PolyMod(const std::span<const uint8_t> sp) {
          * c'(x) = (c1*x^5 + c2*x^4 + c3*x^3 + c4*x^2 + c5*x + d) + c0*k(x)
          */
 
-               // First, determine the value of c0:
+         // First, determine the value of c0:
         uint8_t c0 = c >> 35;
 
-               // Then compute c1*x^5 + c2*x^4 + c3*x^3 + c4*x^2 + c5*x + d:
+        // Then compute c1*x^5 + c2*x^4 + c3*x^3 + c4*x^2 + c5*x + d:
         c = ((c & 0x07ffffffff) << 5) ^ d;
 
-               // Finally, for each set bit n in c0, conditionally add {2^n}k(x):
+        // Finally, for each set bit n in c0, conditionally add {2^n}k(x):
         if (c0 & 0x01) {
             // k(x) = {19}*x^7 + {3}*x^6 + {25}*x^5 + {11}*x^4 + {25}*x^3 +
             //        {3}*x^2 + {19}*x + {1}

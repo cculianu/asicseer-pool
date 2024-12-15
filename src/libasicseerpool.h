@@ -583,13 +583,12 @@ void *json_ckalloc(size_t size);
 void *ckzrealloc_(void *old, size_t len, bool zeromem, const char *file, const char *func, const int line);
 size_t round_up_page(size_t len);
 
-extern const int hex2bin_tbl[];
-size_t bin2hex__(void *vs, const void *vp, size_t len);
-void *bin2hex(const void *vp, size_t len);
+size_t bin2hex__(char *dest, const void *bin, size_t len);
+char *bin2hex(const void *bin, size_t len);
 bool validhex__(const char *buf, const char *file, const char *func, const int line);
 #define validhex(buf) validhex__(buf, __FILE__, __func__, __LINE__)
-bool hex2bin__(void *p, const void *vhexstr, size_t len, const char *file, const char *func, const int line);
-#define hex2bin(p, vhexstr, len) hex2bin__(p, vhexstr, len, __FILE__, __func__, __LINE__)
+bool hex2bin__(void *dest, const char *hexstr, size_t len, const char *file, const char *func, const int line);
+#define hex2bin(p, hexstr, len) hex2bin__(p, hexstr, len, __FILE__, __func__, __LINE__)
 char *http_base64(const char *src);
 /* Does no checksum checks but returns false if the characters in b58 source are invalid, or if b58 is > 35 characters, true otherwise. */
 bool b58tobin_safe(uchar *b58bin, const char *b58);
