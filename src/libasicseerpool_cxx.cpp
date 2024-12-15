@@ -193,14 +193,14 @@ void test_ser_deser_cbheight(void)
 void sha256(const unsigned char *message, unsigned int len, unsigned char digest[SHA256_DIGEST_SIZE])
 {
     CSHA256 ctx;
-    ctx.Write(std::span{reinterpret_cast<const uint8_t *>(message), std::size_t{len}});
-    ctx.Finalize(std::span{reinterpret_cast<uint8_t *>(digest), std::size_t{SHA256_DIGEST_SIZE}});
+    ctx.Write(std::span{message, std::size_t{len}});
+    ctx.Finalize(std::span{&*digest, std::size_t{SHA256_DIGEST_SIZE}});
 }
 
 // extern "C"
 void sha256_d64(unsigned char *output, const unsigned char *input, unsigned long blocks)
 {
-    SHA256D64(reinterpret_cast<uint8_t *>(output), reinterpret_cast<const uint8_t *>(input), blocks);
+    SHA256D64(output, input, blocks);
 }
 
 
@@ -306,6 +306,6 @@ int cksem_trywait_(cksem_t *sem, const char *file, const char *func, const int l
 // extern "C"
 void get_random_bytes(void * const vbuf, const size_t nbytes)
 {
-    unsigned char * const buf = reinterpret_cast<unsigned char *>(vbuf);
+    unsigned char * const buf = static_cast<unsigned char *>(vbuf);
     GetRandBytes(std::span{buf, nbytes});
 }
