@@ -11,7 +11,7 @@ services:
   pool:
     image: asicseer-pool
     ports:
-      - "3334:3333"
+      - "3333:3333"
     volumes:
       - ./pool-conf:/asicseer/conf
       - ./pool-logs:/asicseer/logs
