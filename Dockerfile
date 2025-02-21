@@ -12,7 +12,7 @@ COPY CMakeFiles/ ./CMakeFiles/
 COPY src/ ./src/
 COPY CMakeLists.txt .
 
-RUN mkdir out && cd out && cmake .. && make
+RUN mkdir out && cd out && cmake -DCMAKE_BUILD_TYPE=Release .. && make
 
 RUN apt-get download \
 	libzmq5 \
