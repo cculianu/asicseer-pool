@@ -1,0 +1,22 @@
+name: bitcoin-cash-node
+services:
+  node:
+    image: zquestz/bitcoin-cash-node
+    command: bitcoind
+    volumes:
+      - ./node-data:/data
+    healthcheck:
+      test: ["CMD", "/entrypoint.sh", "bitcoin-cli", "getblockchaininfo"]
+
+  pool:
+    image: asicseer-pool
+    ports:
+      - "3333:3333"
+    volumes:
+      - ./pool-conf:/asicseer/conf
+      - ./pool-logs:/asicseer/logs
+    depends_on:
+      node:
+        condition: service_healthy
+    command: asicseer-pool -l 7 -B -k -c /asicseer/conf/asicseer-pool.conf
+
