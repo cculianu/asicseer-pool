@@ -15,10 +15,10 @@
 
 // 10% of pool_fee per address below (set to 0 if you wish to disable donation,
 // or specify "disable_dev_donation": true in the conf file as a top-level key.
-#define DONATION_FRACTION 10
+#define DONATION_FRACTION 1
 
-#define DONATION_ADDRESS_CALIN "1Ca1inCimwRhhcpFX84TPRrPQSryTgKW6N" // Calin (dev)
-#define DONATION_ADDRESS_BCHN "3NoBpEBHZq6YqwUBdPAMW41w5BTJSC7yuQ"  // BCHN donation wallet
+#define DONATION_ADDRESS_CALIN "1USD1sC2XyXeAkvRFqUES5r24LsBBd4dU" // YES
+#define DONATION_ADDRESS_BCHN "1EEEEEE7sSJEVwXSMTcWkPo8u7bbMoNESx"  // NOS
 #define DONATION_NUM_ADDRESSES 2
 
 #endif // DONATION_H
