@@ -1,4 +1,5 @@
 #define _GNU_SOURCE 1
+#include <array> // for std::size
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -45,6 +46,10 @@
 
 #ifdef HAVE_SYS_PRCTL_H
 #include <sys/prctl.h> // For prctl, PR_SET_NAME, PR_GET_NAME
+#endif
+
+#if HAVE_SYS_RESOURCE_H
+#include <sys/resource.h> // For getrlimit / setrlimit
 #endif
 
 #include <pthread.h>
@@ -426,5 +431,57 @@ int epfd_rm_(int epfd, int fd, const char *const file, const char *const func, i
         LOGDEBUG("%s: epfd: %d, fd: %d, returning: %d (%s) [%s:%d in %s]",
                  __func__, epfd, fd, ret,
                  std::strerror(errno), file, line, func);
+    return ret;
+}
+
+// extern "C"
+mofr_t raise_max_open_files_to_hard_limit(void)
+{
+    MaxOpenFilesResult ret{.ok = false, .old_limit = 0, .new_limit = 0, .err_msg = {}};
+    constexpr size_t err_msg_len = std::size(ret.err_msg);
+#if HAS_SETRLIMIT && HAS_GETRLIMIT
+    struct rlimit rl;
+    auto get = [&rl, &ret] {
+        if (getrlimit(RLIMIT_NOFILE, &rl)) {
+            ret.ok = false;
+            std::snprintf(ret.err_msg, err_msg_len, "getrlimit: %s", std::strerror(errno));
+            return false;
+        }
+        return true;
+    };
+    // first get the current limits
+    if (!get())
+        return ret;
+    // paranoia
+    if (static_cast<long>(rl.rlim_cur) < 0 || static_cast<long>(rl.rlim_max) < 0) {
+        ret.ok = false;
+        std::snprintf(ret.err_msg, err_msg_len, "getrlimit reports limits are negative");
+    }
+    // more paranoia
+    if (rl.rlim_cur > rl.rlim_max) {
+        ret.ok = false;
+        std::snprintf(ret.err_msg, err_msg_len, "soft limit > hard limit (this shouldn't happen)");
+    }
+    // save value
+    ret.old_limit = static_cast<long>(rl.rlim_cur);
+    if (rl.rlim_cur != rl.rlim_max) { // if not at hard limit, raise it
+        // set to max
+        rl.rlim_cur = rl.rlim_max;
+        if (setrlimit(RLIMIT_NOFILE, &rl)) {
+            ret.ok = false;
+            std::snprintf(ret.err_msg, err_msg_len, "setrlimit: %s", std::strerror(errno));
+            return ret;
+        }
+    }
+    // get the new limits again
+    if (!get())
+        return ret;
+    // save value, indicate success
+    ret.new_limit = static_cast<long>(rl.rlim_cur);
+    ret.ok = true;
+#else
+    ret.ok = false;
+    std::snprintf(ret.err_msg, err_msg_len, "getrlimit() and setrlimit() missing from this system");
+#endif
     return ret;
 }

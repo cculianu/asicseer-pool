@@ -675,6 +675,16 @@ int epfd_wait_(int epfd, aevt_t *event, int timeout_msec, const char *file, cons
 /// Reads nbytes random bytes from a fast, insecure but high quality randomness source. This call is thread safe.
 void get_random_bytes(void *buf, size_t nbytes);
 
+struct MaxOpenFilesResult {
+    bool ok;
+    long old_limit, new_limit;
+    char err_msg[64];
+};
+typedef struct MaxOpenFilesResult mofr_t;
+
+/// Will attempt to raise the POSIX RLIMIT_NOFILE limit from the soft limit to the hard limit.
+mofr_t raise_max_open_files_to_hard_limit(void);
+
 #ifdef  __cplusplus
 }
 #endif

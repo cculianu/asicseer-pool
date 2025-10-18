@@ -138,6 +138,9 @@
 /* Define to 1 if you have the <sys/prctl.h> header file. */
 #cmakedefine HAVE_SYS_PRCTL_H 1
 
+/* Define to 1 if you have the <sys/resource.h> header file. */
+#cmakedefine HAVE_SYS_RESOURCE_H 1
+
 /* Define to 1 if you have the <sys/select.h> header file. */
 #cmakedefine HAVE_SYS_SELECT_H 1
 
@@ -167,6 +170,12 @@
 
 /* Define to 1 if you have the function pthread_rwlock_timedrdlock(). */
 #cmakedefine HAVE_PTHREAD_RWLOCK_TIMEDRDLOCK 1
+
+/* Define to 1 if you have the function setrlimit(). */
+#cmakedefine HAS_SETRLIMIT 1
+
+/* Define to 1 if you have the function getrlimit(). */
+#cmakedefine HAS_GETRLIMIT 1
 
 /* Define to 1 if on a big endian platform */
 #cmakedefine WORDS_BIGENDIAN 1

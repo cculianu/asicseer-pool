@@ -2364,6 +2364,15 @@ int main(int argc, char **argv)
     write_namepid(&ckp.main);
     open_process_sock(&ckp, &ckp.main, &ckp.main.us);
 
+    {
+        const mofr_t res = raise_max_open_files_to_hard_limit();
+        if (!res.ok) {
+            LOGWARNING("Failed to raise max open files: %s", res.err_msg);
+        } else if (res.old_limit != res.new_limit) {
+            LOGDEBUG("Raised max open files from %ld to %ld", res.old_limit, res.new_limit);
+        }
+    }
+
     ret = sysconf(_SC_OPEN_MAX);
     if (ckp.maxclients > ret * 9 / 10) {
         LOGWARNING("Cannot set maxclients to %d due to max open file limit of %d, reducing to %d",
