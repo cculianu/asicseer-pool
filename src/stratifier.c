@@ -1074,7 +1074,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
     // at this point strbuf (and cb1_buf) points to the tx.vout length field (compact size).
     // reserve 3 bytes for this field.  Common case is we will have to move the data back by 2 bytes, however.
     const int compact_size_pos = strbuf->length;
-    static const int compact_size_reserved = 3;
+#define compact_size_reserved 3
     {
         uint8_t resv[compact_size_reserved];
         memset(resv, 0, compact_size_reserved);
@@ -1188,6 +1188,7 @@ static void generate_coinbase(const pool_t *ckp, workbase_t *wb)
     LOGDEBUG("Header: %s", header);
     hex2bin(wb->headerbin, header, 112);
     LOGDEBUG("%s: took %0.3f msec", __func__, (time_micros() - tstart)/1e3);
+#undef compact_size_reserved
 }
 
 static void stratum_broadcast_update(sdata_t *sdata, const workbase_t *wb, bool clean);
@@ -6221,8 +6222,8 @@ static worker_instance_t *get_create_worker(sdata_t *sdata, user_instance_t *use
 /* Load the statistics of and create all known users at startup */
 static void read_userstats(pool_t *ckp, sdata_t *sdata, int tvsec_diff)
 {
-    const size_t kDSize = 512;
-    const size_t kFullSize = kDSize + MAX_USERNAME + 2;
+#define kDSize 512
+#define kFullSize (kDSize + MAX_USERNAME + 2)
     char dnam[kDSize], s[kFullSize], *username, *buf;
     int ret, users = 0, workers = 0;
     user_instance_t *user;
@@ -6384,6 +6385,8 @@ static void read_userstats(pool_t *ckp, sdata_t *sdata, int tvsec_diff)
 
     if (likely(users))
         LOGWARNING("Loaded %d users and %d workers; cb txouts ~%d bytes", users, workers, sdata->stats.cbspace);
+#undef kDSize
+#undef kFullSize
 }
 
 #define DEFAULT_AUTH_BACKOFF	(3)  /* Set initial backoff to 3 seconds */
