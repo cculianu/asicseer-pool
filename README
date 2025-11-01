@@ -160,6 +160,7 @@ asicseer-pool supports the following options:
 -p | --proxy
 -R | --redirector
 -s SOCKDIR | --sockdir SOCKDIR
+-T | --tslocal
 -u | --userproxy
 -v | --version
 
@@ -229,6 +230,9 @@ redirecting to the same pool.
 
 -s <SOCKDIR> tells asicseer-pool which directory to place its own communication
 sockets (/tmp by default)
+
+-T tells asicseer-pool to format all user-facing timestamps (such as logs) as
+localtime rather than the default UTC.
 
 -u Userproxy mode will start asicseer-pool in proxy mode as per the -p option
 above, but in addition it will accept username/passwords from the stratum

@@ -250,6 +250,9 @@ struct pool_instance {
     bool wmem_warn;
     bool rmem_warn;
 
+    /* Print logs in localtime rather than UTC */
+    bool localtime_logging;
+
     /* Bitcoind data */
     int btcds;
     char **btcdurl;
@@ -387,7 +390,7 @@ static const char maybe_unused__ *stratum_msgs[] = {
 
 #define SAFE_HASH_OVERHEAD(HASHLIST) (HASHLIST ? HASH_OVERHEAD(hh, HASHLIST) : 0)
 
-void get_timestamp(char *stamp);
+void get_timestamp(char *stamp, size_t stamp_len, bool is_localtime /* if false, use gmtime */);
 
 ckmsgq_t *create_ckmsgq(pool_t *ckp, const char *name, const void *func);
 ckmsgq_t *create_ckmsgqs(pool_t *ckp, const char *name, const void *func, const int count);

@@ -90,28 +90,32 @@ static void proclog(pool_t *ckp, char *msg)
     free(msg);
 }
 
-void get_timestamp(char *stamp)
+void get_timestamp(char *stamp, size_t stamp_len, bool is_localtime)
 {
     struct tm tm;
     tv_t now_tv;
-    int ms;
+    long ms;
 
     tv_time(&now_tv);
-    ms = (int)(now_tv.tv_usec / 1000);
-    gmtime_r(&(now_tv.tv_sec), &tm);
-    sprintf(stamp, "[%d-%02d-%02d %02d:%02d:%02d.%03d]",
-            tm.tm_year + 1900,
-            tm.tm_mon + 1,
-            tm.tm_mday,
-            tm.tm_hour,
-            tm.tm_min,
-            tm.tm_sec, ms);
+    ms = (long)(now_tv.tv_usec / 1000L);
+    if (is_localtime)
+        localtime_r(&now_tv.tv_sec, &tm);
+    else
+        gmtime_r(&now_tv.tv_sec, &tm);
+    snprintf(stamp, stamp_len, "[%d-%02d-%02d %02d:%02d:%02d.%03ld]",
+             tm.tm_year + 1900,
+             tm.tm_mon + 1,
+             tm.tm_mday,
+             tm.tm_hour,
+             tm.tm_min,
+             tm.tm_sec, ms);
 }
 
 /* Log everything to the logfile, but display warnings on the console as well */
 void logmsg(int loglevel, const char *fmt, ...)
 {
     const int logfd = global_ckp->logfd;
+    const bool is_localtime = global_ckp->localtime_logging;
     char *log, *buf = NULL;
     char stamp[128];
     va_list ap;
@@ -131,7 +135,7 @@ void logmsg(int loglevel, const char *fmt, ...)
         fprintf(stderr, "Zero length string sent to logmsg\n");
         goto out;
     }
-    get_timestamp(stamp);
+    get_timestamp(stamp, sizeof(stamp), is_localtime);
     if (loglevel <= LOG_ERR && errno != 0)
         ASPRINTF(&log, "%s %s with errno %d: %s\n", stamp, buf, errno, strerror(errno));
     else
@@ -1943,6 +1947,7 @@ static void prepare_child(pool_t *ckp, proc_instance_t *pi, void *process, char 
 }
 
 static struct option long_options[] = {
+    {"solo",        no_argument,       0,    'B'},
     {"config",      required_argument, 0,    'c'},
     {"daemonise",   no_argument,       0,    'D'},
     {"group",       required_argument, 0,    'g'},
@@ -1958,10 +1963,10 @@ static struct option long_options[] = {
     {"quiet",       no_argument,       0,    'q'},
     {"redirector",  no_argument,       0,    'R'},
     {"sockdir",     required_argument, 0,    's'},
+    {"tslocal",     no_argument,       0,    'T'},
     {"trusted",     no_argument,       0,    't'},
     {"userproxy",   no_argument,       0,    'u'},
     {"version",     no_argument,       0,    'v'},
-    {"solo",        no_argument,       0,    'B'},
     {0, 0, 0, 0}
 };
 
@@ -2033,7 +2038,7 @@ int main(int argc, char **argv)
         ckp.initial_args[ckp.args] = strdup(argv[ckp.args]);
     ckp.initial_args[ckp.args] = NULL;
 
-    while ((c = getopt_long(argc, argv, "ABc:Dg:HhkLl:Nn:PpqRs:tuv", long_options, &i)) != -1) {
+    while ((c = getopt_long(argc, argv, "ABc:Dg:HhkLl:Nn:PpqRs:Ttuv", long_options, &i)) != -1) {
         switch (c) {
             case 'A':
                 /* legacy compat. */
@@ -2113,6 +2118,9 @@ int main(int argc, char **argv)
                 break;
             case 's':
                 ckp.socket_dir = strdup(optarg);
+                break;
+            case 'T':
+                ckp.localtime_logging = true;
                 break;
             case 't':
                 if (ckp.proxy)

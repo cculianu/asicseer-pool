@@ -1299,7 +1299,7 @@ static void ckdbq_add_(pool_t *ckp, const DatumID idtype, json_t *val, const cha
             time_counter = now_t;
             suffix_string(stats->dsps1 * nonces, hashrate, 16, 3);
             ch = status_chars[(counter++) & 0x3];
-            get_timestamp(stamp);
+            get_timestamp(stamp, sizeof(stamp), ckp->localtime_logging);
             fprintf(stdout, "\33[2K\r%s %c %sH/s  %.1f SPS  %d users  %d workers",
                     stamp, ch, hashrate, stats->sps1, stats->users + stats->remote_users,
                     stats->workers + stats->remote_workers);
@@ -7013,8 +7013,10 @@ test_blocksolve(const stratum_instance_t *client, const workbase_t *wb, const uc
                 }
             }
         }
-        get_timestamp(stamp);
+        get_timestamp(stamp, sizeof(stamp), false /* date is always UTC */);
         json_set_string(blockval, "date", stamp);
+        get_timestamp(stamp, sizeof(stamp), true /* date_localtime is always localtime */);
+        json_set_string(blockval, "date_localtime", stamp);
         swap_256(swap256, flip32);
         bin2hex__(rhash, swap256, 32);
         json_set_string(blockval, "hash", rhash);
