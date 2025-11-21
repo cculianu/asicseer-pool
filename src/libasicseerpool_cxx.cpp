@@ -3,21 +3,18 @@
 
 #include "bitcoin/random.h"
 #include "bitcoin/sha256.h"
-#include "bitcoin/sha512.h"
 
-#include <bit>
 #include <cstdint>
 #include <cstring>
-#include <iostream>
 #include <memory>
-#include <sstream>
+#include <span>
 #include <string_view>
 #include <semaphore>
+#include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace {
-using uchar = uint8_t;
-
 enum opcodetype {
     // push value
     OP_0 = 0x00,
@@ -47,38 +44,6 @@ void pushVec(std::vector<uchar> &v, const std::vector<uchar> &b) {
      }
      v.insert(v.end(), b.begin(), b.end());
 }
-
-// minimal encoding for bitcoin script: encodes an int64, taken from BCHN sources
-std::vector<uint8_t> int64_to_vch(const int64_t &value) {
-    if (value == 0) {
-        return {};
-    }
-
-    std::vector<uint8_t> result;
-    const bool neg = value < 0;
-    uint64_t absvalue = neg ? -value : value;
-
-    while (absvalue) {
-        result.push_back(absvalue & 0xff);
-        absvalue >>= 8;
-    }
-
-    // - If the most significant byte is >= 0x80 and the value is positive,
-    // push a new zero-byte to make the significant byte < 0x80 again.
-    // - If the most significant byte is >= 0x80 and the value is negative,
-    // push a new 0x80 byte that will be popped off when converting to an
-    // integral.
-    // - If the most significant byte is < 0x80 and the value is negative,
-    // add 0x80 to it, since it will be subtracted and interpreted as a
-    // negative when converting to an integral.
-    if (result.back() & 0x80) {
-        result.push_back(neg ? 0x80 : 0);
-    } else if (neg) {
-        result.back() |= 0x80;
-    }
-
-    return result;
-};
 
 std::vector<uchar> BCHN_ser_cbheight(int64_t n) {
     std::vector<uchar> v;
@@ -119,27 +84,67 @@ std::size_t readScriptSizeAndAdvance(const uchar * & p) {
     }
     throw std::runtime_error("readScriptSize: data does not contain a valid encoded script size!");
 }
+} // namespace
 
-// taken from BCHN sources to read an int64 from a script
-int64_t vch_to_int64(const std::vector<uchar> &vch) {
-    if (vch.empty()) {
-        return 0;
+// minimal encoding for bitcoin script: encodes an int64, taken from BCHN sources
+std::vector<uchar> int64_to_vch(const int64_t value) {
+    std::vector<uchar> result;
+    if (value == 0) {
+        return result;
     }
 
-    int64_t result = 0;
-    for (size_t i = 0; i != vch.size(); ++i) {
-        result |= int64_t(vch[i]) << 8 * i;
+    const bool neg = value < 0;
+    uint64_t absvalue = neg ? -value : value;
+
+    while (absvalue) {
+        result.push_back(absvalue & 0xff);
+        absvalue >>= 8u;
     }
 
-    // If the input vector's most significant byte is 0x80, remove it from
-    // the result's msb and return a negative.
-    if (vch.back() & 0x80) {
-        return -int64_t(result & ~(0x80ULL << (8 * (vch.size() - 1))));
+    // - If the most significant byte is >= 0x80 and the value is positive,
+    //   push a new zero-byte to make the significant byte < 0x80 again.
+    // - If the most significant byte is >= 0x80 and the value is negative,
+    //   push a new 0x80 byte that will be popped off when converting to an
+    //   integral.
+    // - If the most significant byte is < 0x80 and the value is negative,
+    //   add 0x80 to it, since it will be subtracted and interpreted as a
+    //   negative when converting to an integral.
+    if (result.back() & 0x80u) {
+        result.push_back(neg ? 0x80u : 0u);
+    } else if (neg) {
+        result.back() |= 0x80u;
     }
 
     return result;
 }
-} // namespace
+
+// taken from BCHN sources to read an int64 from a script
+int64_t vch_to_int64(std::vector<uchar> vchIn) {
+    if (vchIn.empty()) {
+        return 0;
+    }
+    std::span<uchar> span = vchIn;
+    // uh-oh, this is too large. this really should be unsupported, but force 64-bit, keeping the last byte (for sign)
+    if (span.size() > 8u) [[unlikely]]
+        span = span.last(8u);
+
+    // If most significant bit is set, vchIn is negative
+    const bool neg = span.back() & 0x80u;
+    // Remove sign bit (modifies vchIn, in-place)
+    span.back() &= 0x7fu;
+
+    uint64_t absVal = 0u;
+    for (size_t i = 0, sz = span.size(); i != sz; ++i) {
+        absVal |= uint64_t(span[i]) << 8u * i;
+    }
+
+    // cast abs value to signed
+    int64_t result = static_cast<int64_t>(absVal);
+    if (neg)
+        // was negative, negate
+        result = -result;
+    return result;
+}
 
 /*  For encoding nHeight into coinbase, return how many bytes were used */
 // extern "C"
@@ -168,25 +173,7 @@ int deser_cbheight(const void *inp)
     const auto size = readScriptSizeAndAdvance(p); // moves p forward
     std::vector<uchar> vec;
     vec.insert(vec.end(), p, p + size); // copy data out of p
-    return vch_to_int64(vec);
-}
-
-// extern "C"
-void test_ser_deser_cbheight(void)
-{
-    constexpr int from = -1'000'000, to = 10'000'000;
-    std::cout << "Testing ser/deser of cb_height from " << from << " to " << to << " ..." << std::endl;
-    char buf[64];
-    for (int i = from; i < to; ++i) {
-        ser_cbheight(buf, i);
-        const int val = deser_cbheight(buf);
-        if (val != i) {
-            std::ostringstream os;
-            os << "Failed for " << i << " != " << val;
-            throw std::runtime_error(os.str());
-        }
-    }
-    std::cout << "Success!" << std::endl;
+    return vch_to_int64(std::move(vec));
 }
 
 // extern "C"

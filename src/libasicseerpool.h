@@ -50,6 +50,13 @@
 #include "utlist.h"
 
 #ifdef  __cplusplus
+
+#include <vector>
+
+// Below is used by tests.cpp to test internals
+int64_t vch_to_int64(std::vector<unsigned char> vchIn);
+std::vector<unsigned char> int64_to_vch(int64_t value);
+
 extern "C" {
 #endif
 

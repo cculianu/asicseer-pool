@@ -33,6 +33,8 @@
 #include "sha2.h"
 #include "util_cxx.h"
 
+#include <algorithm>
+#include <bit>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -42,6 +44,7 @@
 #include <iostream>
 #include <list>
 #include <map>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -155,7 +158,8 @@ struct Context {
             Warning() << "Check failed (" << file << ":" << line << "): " << estr << msgStr();
         } else {
             ++nChecksOk;
-            Trace() << "Check success (" << file << ":" << line << "): " << estr << msgStr();
+            if (Trace::enabled)
+                Trace() << "Check success (" << file << ":" << line << "): " << estr << msgStr();
         }
     }
 
@@ -290,6 +294,60 @@ TEST_CASE(base58) {
 
 TEST_CASE(cashaddr_selftest) {
     TEST_CHECK(cashaddr_selftest());
+};
+
+TEST_CASE(ser_deser_cbheight) {
+    constexpr int from = -1'000'000, to = 10'000'000;
+    Log() << "Testing ser/deser of cb_height from " << from << " to " << to << " ...";
+    char buf[64];
+    for (int i = from; i < to; ++i) {
+        ser_cbheight(buf, i);
+        const int val = deser_cbheight(buf);
+        if (val != i) {
+            std::ostringstream os;
+            os << "Failed for " << i << " != " << val;
+            throw std::runtime_error(os.str());
+        } else
+            TEST_CHECK_EQUAL(val, i);
+    }
+};
+
+TEST_CASE(int64_to_vch_and_back) {
+    constexpr int from = -1'000'000, to = 10'000'000;
+    Log() << "Testing int64_to_vch and back from " << from << " to " << to << " ...";
+    for (int i = from; i < to; ++i) {
+        const auto vch = int64_to_vch(i);
+        TEST_CHECK((!vch.empty() && i != 0) || (vch.empty() && i == 0));
+        const bool neg = i < 0;
+        std::optional<std::vector<uchar>> optVec;
+        std::span<const uchar> sp = vch;
+        if (neg) {
+            if (vch.empty()) throw std::runtime_error("Expected non-empty vector!");
+            optVec.emplace(vch);
+            TEST_CHECK(optVec->back() & 0x80u);
+            optVec->back() &= 0x7fu;
+            sp = *optVec;
+        }
+        // ensure abs val is just little endian
+        uint64_t val{};
+        std::memcpy(&val, sp.data(), std::min(sp.size(), sizeof(val)));
+        if constexpr (std::endian::native == std::endian::big) {
+            // reverse it if big endian host
+            std::reverse(reinterpret_cast<std::byte *>(&val), reinterpret_cast<std::byte *>(&val) + sizeof(val));
+        }
+        // abs value should match expected
+        TEST_CHECK_EQUAL(val, static_cast<uint64_t>(std::abs(static_cast<long>(i))));
+        if (neg) {
+            // undo negative
+            optVec.value().back() |= 0x80u;
+        }
+        if (optVec)
+            // if we had optVec, at this point it should equal vch
+            TEST_CHECK_EQUAL(*optVec, vch);
+
+        // lastly, round-trip should produce same result
+        TEST_CHECK_EQUAL(vch_to_int64(std::move(vch)), i);
+    }
 };
 
 TEST_SUITE_END() // misc
