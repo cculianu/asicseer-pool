@@ -320,14 +320,15 @@ TEST_CASE(int64_to_vch_and_back) {
         TEST_CHECK((!vch.empty() && i != 0) || (vch.empty() && i == 0));
         const bool neg = i < 0;
         std::optional<std::vector<uchar>> optVec;
-        std::span<const uchar> sp = vch;
+        std::span<const uchar> sp;
         if (neg) {
             if (vch.empty()) throw std::runtime_error("Expected non-empty vector!");
             optVec.emplace(vch);
             TEST_CHECK(optVec->back() & 0x80u);
             optVec->back() &= 0x7fu;
             sp = *optVec;
-        }
+        } else
+            sp = vch;
         // ensure abs val is just little endian
         uint64_t val{};
         std::memcpy(&val, sp.data(), std::min(sp.size(), sizeof(val)));
@@ -338,7 +339,7 @@ TEST_CASE(int64_to_vch_and_back) {
         // abs value should match expected
         TEST_CHECK_EQUAL(val, static_cast<uint64_t>(std::abs(static_cast<long>(i))));
         if (neg) {
-            // undo negative
+            // undo absval-ification
             optVec.value().back() |= 0x80u;
         }
         if (optVec)
