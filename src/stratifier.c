@@ -9284,7 +9284,7 @@ static void *statsupdate(void *arg)
     mutex_lock(&sdata->stats_lock);
     tv_time(&stats->start_time);
     cksleep_prepare_r(&stats->last_update);
-    mutex_lock(&sdata->stats_lock);
+    mutex_unlock(&sdata->stats_lock);
     sleep(1);
 
     while (42) {
