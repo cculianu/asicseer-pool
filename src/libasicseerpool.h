@@ -637,17 +637,17 @@ int64_t time_micros(void);
 void cksleep_prepare_r(ts_t *ts);
 void nanosleep_abstime(const ts_t *ts_end);
 void timeraddspec(ts_t *a, const ts_t *b);
-void cksleep_ms_r(ts_t *ts_start, int ms);
-void cksleep_us_r(ts_t *ts_start, int64_t us);
+void cksleep_ms_r(const ts_t *ts_start, int ms);
+void cksleep_us_r(const ts_t *ts_start, int64_t us);
 void cksleep_ms(int ms);
 void cksleep_us(int64_t us);
 
-double us_tvdiff(tv_t *end, tv_t *start);
-int ms_tvdiff(tv_t *end, tv_t *start);
-double tvdiff(tv_t *end, tv_t *start);
+double us_tvdiff(const tv_t *end, const tv_t *start);
+int ms_tvdiff(const tv_t *end, const tv_t *start);
+double tvdiff(const tv_t *end, const tv_t *start);
 
 void decay_time(double *f, double fadd, double fsecs, double interval);
-double sane_tdiff(tv_t *end, tv_t *start);
+double sane_tdiff(const tv_t *end, const tv_t *start);
 void suffix_string(double val, char *buf, size_t bufsiz, int sigdigits);
 
 double le256todouble(const uchar *target);

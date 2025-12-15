@@ -1897,7 +1897,7 @@ void timeraddspec(ts_t *a, const ts_t *b)
 /* Reentrant version of cksleep functions allow start time to be set separately
  * from the beginning of the actual sleep, allowing scheduling delays to be
  * counted in the sleep. */
-void cksleep_ms_r(ts_t *ts_start, int ms)
+void cksleep_ms_r(const ts_t *ts_start, int ms)
 {
     ts_t ts_end;
 
@@ -1906,7 +1906,7 @@ void cksleep_ms_r(ts_t *ts_start, int ms)
     nanosleep_abstime(&ts_end);
 }
 
-void cksleep_us_r(ts_t *ts_start, int64_t us)
+void cksleep_us_r(const ts_t *ts_start, int64_t us)
 {
     ts_t ts_end;
 
@@ -1932,7 +1932,7 @@ void cksleep_us(int64_t us)
 }
 
 /* Returns the microseconds difference between end and start times as a double */
-double us_tvdiff(tv_t *end, tv_t *start)
+double us_tvdiff(const tv_t *end, const tv_t *start)
 {
     /* Sanity check. We should only be using this for small differences so
      * limit the max to 60 seconds. */
@@ -1942,7 +1942,7 @@ double us_tvdiff(tv_t *end, tv_t *start)
 }
 
 /* Returns the milliseconds difference between end and start times */
-int ms_tvdiff(tv_t *end, tv_t *start)
+int ms_tvdiff(const tv_t *end, const tv_t *start)
 {
     /* Like us_tdiff, limit to 1 hour. */
     if (unlikely(end->tv_sec - start->tv_sec > 3600))
@@ -1951,7 +1951,7 @@ int ms_tvdiff(tv_t *end, tv_t *start)
 }
 
 /* Returns the seconds difference between end and start times as a double */
-double tvdiff(tv_t *end, tv_t *start)
+double tvdiff(const tv_t *end, const tv_t *start)
 {
     return end->tv_sec - start->tv_sec + (end->tv_usec - start->tv_usec) / 1000000.0;
 }
@@ -1978,7 +1978,7 @@ void decay_time(double *f, double fadd, double fsecs, double interval)
 }
 
 /* Sanity check to prevent clock adjustments backwards from screwing up stats */
-double sane_tdiff(tv_t *end, tv_t *start)
+double sane_tdiff(const tv_t *end, const tv_t *start)
 {
     double tdiff = tvdiff(end, start);
 

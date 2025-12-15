@@ -9274,15 +9274,17 @@ static void calc_user_paygens(sdata_t *sdata)
 
 static void *statsupdate(void *arg)
 {
-    pool_t *ckp = (pool_t *)arg;
-    sdata_t *sdata = ckp->sdata;
-    pool_stats_t *stats = &sdata->stats;
+    pool_t * const ckp = (pool_t *)arg;
+    sdata_t * const sdata = ckp->sdata;
+    pool_stats_t * const stats = &sdata->stats;
 
     pthread_detach(pthread_self());
     rename_proc("statsupdate");
 
+    mutex_lock(&sdata->stats_lock);
     tv_time(&stats->start_time);
     cksleep_prepare_r(&stats->last_update);
+    mutex_lock(&sdata->stats_lock);
     sleep(1);
 
     while (42) {
@@ -9304,9 +9306,10 @@ static void *statsupdate(void *arg)
         json_t *val;
         FILE *fp;
         int i;
+        pool_stats_t stats_copy_store; /* snapshot local copy of the shared pool stats (copy made with locks held) */
+        pool_stats_t const * const stats_copy = &stats_copy_store;
 
         tv_time(&now);
-        timersub(&now, &stats->start_time, &diff);
 
         mutex_lock(&sdata->uastats_lock);
         herp = stats->unaccounted_herp;
@@ -9315,9 +9318,10 @@ static void *statsupdate(void *arg)
         stats->unaccounted_lns = 0;
         mutex_unlock(&sdata->uastats_lock);
 
+        mutex_lock(&sdata->stats_lock);
+        timersub(&now, &stats->start_time, &diff); // must do this with the lock held
         /* Add new herp value to stats, decaying any older ones, thereby
          * scoring newest herp values more for derp once per minute */
-        mutex_lock(&sdata->stats_lock);
         if (stats->rolling_herp + herp > stats->herp_window) {
             long double herp_diff, herp_mul;
 
@@ -9592,6 +9596,7 @@ static void *statsupdate(void *arg)
             stats->remote_workers = remote_workers;
             stats->remote_users = remote_users;
         }
+        memcpy(&stats_copy_store, stats, sizeof(stats_copy_store)); // take a snapshot of the stats with the lock held
         mutex_unlock(&sdata->stats_lock);
 
         /* Dump log entries out of instance_lock */
@@ -9600,25 +9605,25 @@ static void *statsupdate(void *arg)
         dump_onelog_entries(&fname, &miner_entries);
         notice_msg_entries(&char_list);
 
-        ghs1 = stats->dsps1 * nonces;
+        ghs1 = stats_copy->dsps1 * nonces;
         suffix_string(ghs1, suffix1, 16, 0);
 
-        ghs5 = stats->dsps5 * nonces;
+        ghs5 = stats_copy->dsps5 * nonces;
         suffix_string(ghs5, suffix5, 16, 0);
 
-        ghs15 = stats->dsps15 * nonces;
+        ghs15 = stats_copy->dsps15 * nonces;
         suffix_string(ghs15, suffix15, 16, 0);
 
-        ghs60 = stats->dsps60 * nonces;
+        ghs60 = stats_copy->dsps60 * nonces;
         suffix_string(ghs60, suffix60, 16, 0);
 
-        ghs360 = stats->dsps360 * nonces;
+        ghs360 = stats_copy->dsps360 * nonces;
         suffix_string(ghs360, suffix360, 16, 0);
 
-        ghs1440 = stats->dsps1440 * nonces;
+        ghs1440 = stats_copy->dsps1440 * nonces;
         suffix_string(ghs1440, suffix1440, 16, 0);
 
-        ghs10080 = stats->dsps10080 * nonces;
+        ghs10080 = stats_copy->dsps10080 * nonces;
         suffix_string(ghs10080, suffix10080, 16, 0);
 
         ASPRINTF(&fname, "%s/pool/pool.status", ckp->logdir);
@@ -9628,12 +9633,12 @@ static void *statsupdate(void *arg)
         dealloc(fname);
 
         JSON_CPACK(val, "{sI,sI,si,si,si,si}",
-                "runtime", (json_int_t)diff.tv_sec,
-                "lastupdate", (json_int_t)now.tv_sec,
-                "Users", stats->users + stats->remote_users,
-                "Workers", stats->workers + stats->remote_workers,
-                "Idle", idle_workers,
-                "Disconnected", stats->disconnected);
+                   "runtime", (json_int_t)diff.tv_sec,
+                   "lastupdate", (json_int_t)now.tv_sec,
+                   "Users", stats_copy->users + stats_copy->remote_users,
+                   "Workers", stats_copy->workers + stats_copy->remote_workers,
+                   "Idle", idle_workers,
+                   "Disconnected", stats_copy->disconnected);
         s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER);
         json_decref(val);
         LOGNOTICE("Pool:%s", s);
@@ -9641,13 +9646,13 @@ static void *statsupdate(void *arg)
         dealloc(s);
 
         JSON_CPACK(val, "{ss,ss,ss,ss,ss,ss,ss}",
-                "hashrate1m", suffix1,
-                "hashrate5m", suffix5,
-                "hashrate15m", suffix15,
-                "hashrate1hr", suffix60,
-                "hashrate6hr", suffix360,
-                "hashrate1d", suffix1440,
-                "hashrate7d", suffix10080);
+                   "hashrate1m", suffix1,
+                   "hashrate5m", suffix5,
+                   "hashrate15m", suffix15,
+                   "hashrate1hr", suffix60,
+                   "hashrate6hr", suffix360,
+                   "hashrate1d", suffix1440,
+                   "hashrate7d", suffix10080);
         s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER);
         json_decref(val);
         LOGNOTICE("Pool:%s", s);
@@ -9655,27 +9660,27 @@ static void *statsupdate(void *arg)
         dealloc(s);
 
         JSON_CPACK(val, "{sf,sf,sf,sf}",
-                "SPS1m", stats->sps1,
-                "SPS5m", stats->sps5,
-                "SPS15m", stats->sps15,
-                "SPS1h", stats->sps60);
+                   "SPS1m", stats_copy->sps1,
+                   "SPS5m", stats_copy->sps5,
+                   "SPS15m", stats_copy->sps15,
+                   "SPS1h", stats_copy->sps60);
         s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER | JSON_REAL_PRECISION(3));
         json_decref(val);
         LOGNOTICE("Pool:%s", s);
         if (likely(fp)) fprintf(fp, "%s\n", s);
         dealloc(s);
 
-        percent = (double)stats->accounted_diff_shares * 100.0 / (double)stats->network_diff;
+        percent = (double)stats_copy->accounted_diff_shares * 100.0 / (double)stats_copy->network_diff;
         snprintf(pcstring, 31, "%.2f", percent);
         JSON_CPACK(val, "{ss,sI,sI,sf,sf,sf,sf,sf}",
-                "diff", pcstring,
-                "accepted", (json_int_t)stats->accounted_diff_shares,
-                "rejected", (json_int_t)stats->accounted_rejects,
-                "bestshare", stats->best_diff,
-                "bestshare_alltime", stats->best_diff_alltime,
-                "lns", rolling_lns,
-                "herp", rolling_herp,
-                "reward", reward / SATOSHIS);
+                   "diff", pcstring,
+                   "accepted", (json_int_t)stats_copy->accounted_diff_shares,
+                   "rejected", (json_int_t)stats_copy->accounted_rejects,
+                   "bestshare", stats_copy->best_diff,
+                   "bestshare_alltime", stats_copy->best_diff_alltime,
+                   "lns", rolling_lns,
+                   "herp", rolling_herp,
+                   "reward", reward / SATOSHIS);
         s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER | JSON_REAL_PRECISION(16));
         json_decref(val);
         val = NULL;
@@ -9710,9 +9715,9 @@ static void *statsupdate(void *arg)
 
             mutex_lock(&sdata->proxy_lock);
             JSON_CPACK(val, "{sI,si,si}",
-                    "current", (json_int_t)sdata->proxy->id,
-                    "active", (int)HASH_COUNT(sdata->proxies),
-                    "total", sdata->proxy_count);
+                       "current", (json_int_t)sdata->proxy->id,
+                       "active", (int)HASH_COUNT(sdata->proxies),
+                       "total", sdata->proxy_count);
             mutex_unlock(&sdata->proxy_lock);
 
             s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER);
@@ -9723,10 +9728,10 @@ static void *statsupdate(void *arg)
             mutex_lock(&sdata->proxy_lock);
             HASH_ITER(hh, sdata->proxies, proxy, proxytmp) {
                 JSON_CPACK(val, "{sI,si,sI,sb}",
-                        "id", (json_int_t)proxy->id,
-                        "subproxies", proxy->subproxy_count,
-                        "clients", (json_int_t)proxy->combined_clients,
-                        "alive", !proxy->dead);
+                           "id", (json_int_t)proxy->id,
+                           "subproxies", proxy->subproxy_count,
+                           "clients", (json_int_t)proxy->combined_clients,
+                           "alive", !proxy->dead);
                 s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER);
                 json_decref(val);
                 ASPRINTF(&sp, "Proxies:%s", s);
@@ -9734,13 +9739,13 @@ static void *statsupdate(void *arg)
                 add_msg_entry(&char_list, &sp);
                 HASH_ITER(sh, proxy->subproxies, subproxy, subtmp) {
                     JSON_CPACK(val, "{sI,si,si,sI,sI,sf,sb}",
-                            "id", (json_int_t)subproxy->id,
-                            "subid", subproxy->subid,
-                            "nonce2len", subproxy->nonce2len,
-                            "clients", (json_int_t)subproxy->bound_clients,
-                            "maxclients", (json_int_t)subproxy->max_clients,
-                            "diff", subproxy->diff,
-                            "alive", !subproxy->dead);
+                               "id", (json_int_t)subproxy->id,
+                               "subid", subproxy->subid,
+                               "nonce2len", subproxy->nonce2len,
+                               "clients", (json_int_t)subproxy->bound_clients,
+                               "maxclients", (json_int_t)subproxy->max_clients,
+                               "diff", subproxy->diff,
+                               "alive", !subproxy->dead);
                     s = json_dumps(val, JSON_NO_UTF8 | JSON_PRESERVE_ORDER);
                     json_decref(val);
                     ASPRINTF(&sp, "Subproxies:%s", s);
@@ -9755,31 +9760,38 @@ static void *statsupdate(void *arg)
         ts_realtime(&ts_now);
         sprintf(cdfield, "%lu,%lu", ts_now.tv_sec, ts_now.tv_nsec);
         JSON_CPACK(val, "{ss,sI,si,si,sf,sf,sf,sf,ss,ss,ss,ss}",
-                "poolinstance", ckp->name,
-                "elapsed", (json_int_t)diff.tv_sec,
-                "users", stats->users + stats->remote_users,
-                "workers", stats->workers + stats->remote_workers,
-                "hashrate", ghs1,
-                "hashrate5m", ghs5,
-                "hashrate1hr", ghs60,
-                "hashrate24hr", ghs1440,
-                "createdate", cdfield,
-                "createby", "code",
-                "createcode", __func__,
-                "createinet", ckp->serverurl[0]);
+                   "poolinstance", ckp->name,
+                   "elapsed", (json_int_t)diff.tv_sec,
+                   "users", stats_copy->users + stats_copy->remote_users,
+                   "workers", stats_copy->workers + stats_copy->remote_workers,
+                   "hashrate", ghs1,
+                   "hashrate5m", ghs5,
+                   "hashrate1hr", ghs60,
+                   "hashrate24hr", ghs1440,
+                   "createdate", cdfield,
+                   "createby", "code",
+                   "createcode", __func__,
+                   "createinet", ckp->serverurl[0]);
         ckdbq_add(ckp, ID_POOLSTATS, val);
 
         /* Update stats 32 times per minute to divide up userstats for
          * ckdb, displaying status every minute. */
         for (i = 0; i < 32; i++) {
             int64_t unaccounted_shares,
-                unaccounted_diff_shares,
-                unaccounted_rejects;
+                    unaccounted_diff_shares,
+                    unaccounted_rejects;
+            ts_t last_update_copy;
 
-            ts_to_tv(&diff, &stats->last_update);
-            cksleep_ms_r(&stats->last_update, 1875);
+            mutex_lock(&sdata->stats_lock);
+            last_update_copy = stats->last_update;
+            mutex_unlock(&sdata->stats_lock);
+            ts_to_tv(&diff, &last_update_copy);
+            cksleep_ms_r(&last_update_copy, 1875);
+            mutex_lock(&sdata->stats_lock);
             cksleep_prepare_r(&stats->last_update);
-            ts_to_tv(&now, &stats->last_update);
+            last_update_copy = stats->last_update;
+            mutex_unlock(&sdata->stats_lock);
+            ts_to_tv(&now, &last_update_copy);
             /* Calculate how long it's really been for accurate
              * stats update */
             per_tdiff = tvdiff(&now, &diff);
@@ -9826,12 +9838,13 @@ static void *statsupdate(void *arg)
 static void read_poolstats(pool_t *ckp, int *tvsec_diff)
 {
     char *s = alloca(4096), *pstats, *dsps, *sps, *splns;
-    sdata_t *sdata = ckp->sdata;
-    pool_stats_t *stats = &sdata->stats;
+    sdata_t * const sdata = ckp->sdata;
+    pool_stats_t * const stats = &sdata->stats;
     tv_t now, last;
     json_t *val;
     FILE *fp;
     int ret;
+    bool did_lock = false;
 
     snprintf(s, 4095, "%s/pool/pool.status", ckp->logdir);
     fp = fopen(s, "re");
@@ -9876,6 +9889,9 @@ static void read_poolstats(pool_t *ckp, int *tvsec_diff)
         LOGINFO("Failed to json decode dsps line from pool logfile: %s", sps);
         goto out;
     }
+
+    mutex_lock(&sdata->stats_lock); // paranoia: take lock for good measure in case assumptions change
+    did_lock = true;
     stats->dsps1 = dsps_from_key(val, "hashrate1m");
     stats->dsps5 = dsps_from_key(val, "hashrate5m");
     stats->dsps15 = dsps_from_key(val, "hashrate15m");
@@ -9917,8 +9933,11 @@ out:
     if (last.tv_sec)
         *tvsec_diff = now.tv_sec - last.tv_sec - 60;
     if (*tvsec_diff > 60) {
-        LOGNOTICE("Old pool stats indicate pool down for %d seconds, decaying stats",
-              *tvsec_diff);
+        LOGNOTICE("Old pool stats indicate pool down for %d seconds, decaying stats", *tvsec_diff);
+        if (!did_lock) {
+            mutex_lock(&sdata->stats_lock);
+            did_lock = true;
+        }
         decay_time(&stats->sps1, 0, *tvsec_diff, MIN1);
         decay_time(&stats->sps5, 0, *tvsec_diff, MIN5);
         decay_time(&stats->sps15, 0, *tvsec_diff, MIN15);
@@ -9932,6 +9951,8 @@ out:
         decay_time(&stats->dsps1440, 0, *tvsec_diff, DAY);
         decay_time(&stats->dsps10080, 0, *tvsec_diff, WEEK);
     }
+    if (did_lock)
+        mutex_unlock(&sdata->stats_lock);
 }
 
 void normalize_bchsig(char *s, int *len)
