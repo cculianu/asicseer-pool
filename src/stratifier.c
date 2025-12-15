@@ -120,6 +120,10 @@ struct pool_stats {
     int64_t accounted_diff_shares;
     int64_t accounted_rejects;
 
+    /* Best shares stats (added by Calin) */
+    double best_diff; /* Best share found for all users (this is reset on block solve) */
+    double best_diff_alltime; /* Best share found for all users ever (persistent) */
+
     /* Diff shares per second for 1/5/15... minute rolling averages */
     double dsps1;
     double dsps5;
@@ -4405,7 +4409,9 @@ static void reset_bestshares(sdata_t *sdata)
     stratum_instance_t *client, *tmp;
     user_instance_t *user, *tmpuser;
 
-    sdata->stats.accounted_diff_shares = sdata->stats.accounted_rejects = 0;
+    mutex_lock(&sdata->stats_lock);
+    sdata->stats.best_diff = sdata->stats.accounted_diff_shares = sdata->stats.accounted_rejects = 0;
+    mutex_unlock(&sdata->stats_lock);
 
     ck_rlock(&sdata->instance_lock);
     HASH_ITER(hh, sdata->stratum_instances, client, tmp) {
@@ -5260,7 +5266,7 @@ static void get_poolstats(sdata_t *sdata, int *sockd)
     json_t *val;
 
     mutex_lock(&sdata->stats_lock);
-    JSON_CPACK(val, "{sI,sI,si,si,si,sI,sf,sf,sf,sf,sI,sI,sf,sf,sf,sf,sf,sf,sf}",
+    JSON_CPACK(val, "{sI,sI,si,si,si,sI,sf,sf,sf,sf,sI,sI,sf,sf,sf,sf,sf,sf,sf,sf,sf}",
                "start", (json_int_t)stats->start_time.tv_sec,
                "update", (json_int_t)stats->last_update.tv_sec,
                "workers", stats->workers + stats->remote_workers,
@@ -5273,6 +5279,8 @@ static void get_poolstats(sdata_t *sdata, int *sockd)
                "sps60", stats->sps60,
                "accepted", stats->accounted_diff_shares,
                "rejected", stats->accounted_rejects,
+               "bestshare", stats->best_diff,
+               "bestshare_alltime", stats->best_diff_alltime,
                "dsps1", stats->dsps1,
                "dsps5", stats->dsps5,
                "dsps15", stats->dsps15,
@@ -6235,6 +6243,7 @@ static void read_userstats(pool_t *ckp, sdata_t *sdata, int tvsec_diff)
     tv_t now;
     DIR *d;
     int fd;
+    pool_stats_t * const stats = &sdata->stats;
 
     snprintf(dnam, kDSize - 1, "%susers", ckp->logdir);
     d = opendir(dnam);
@@ -6319,6 +6328,14 @@ static void read_userstats(pool_t *ckp, sdata_t *sdata, int tvsec_diff)
             // so ensure that this field is at least >= bestshare
             user->best_diff_alltime = user->best_diff;
         }
+        // pool-wide bestshare_alltime was also added later, so ensure it's >= user bestshare_alltime
+        if (user->best_diff_alltime > stats->best_diff_alltime) {
+            stats->best_diff_alltime = user->best_diff_alltime;
+        }
+        // pool-wide bestshare was also added later, so ensure it's >= user bestshare
+        if (user->best_diff > stats->best_diff) {
+            stats->best_diff = user->best_diff;
+        }
         LOGDEBUG("Successfully read user %s stats %f %f %f %f %f %f %f %f %f", username,
                  user->dsps1, user->dsps5, user->dsps60, user->dsps1440,
                  user->dsps10080, user->best_diff, user->best_diff_alltime,
@@ -6359,6 +6376,14 @@ static void read_userstats(pool_t *ckp, sdata_t *sdata, int tvsec_diff)
             if (worker->best_diff > worker->best_diff_alltime) {
                 // migrate
                 worker->best_diff_alltime = worker->best_diff;
+            }
+            // pool-wide bestshare_alltime was also added later, so ensure it's >= worker bestshare_alltime
+            if (worker->best_diff_alltime > stats->best_diff_alltime) {
+                stats->best_diff_alltime = worker->best_diff_alltime;
+            }
+            // pool-wide bestshare was also added later, so ensure it's >= worker bestshare
+            if (worker->best_diff > stats->best_diff) {
+                stats->best_diff = worker->best_diff;
             }
             LOGDEBUG("Successfully read worker %s stats %f %f %f %f %f %f %f %f",
                      worker->workername, worker->dsps1, worker->dsps5, worker->dsps60,
@@ -7122,9 +7147,11 @@ static void check_best_diff(pool_t *ckp, sdata_t *sdata, user_instance_t *user,
                             worker_instance_t *worker, const double sdiff, stratum_instance_t *client)
 {
     char buf[512];
+    const char *best_str = "worker";
     bool best_worker = false, best_user = false;
     (void)ckp;
 
+    mutex_lock(&user->stats_lock);
     if (sdiff > worker->best_diff) {
         worker->best_diff = floor(sdiff);
         if (worker->best_diff > worker->best_diff_alltime)
@@ -7136,10 +7163,20 @@ static void check_best_diff(pool_t *ckp, sdata_t *sdata, user_instance_t *user,
         if (user->best_diff > user->best_diff_alltime)
             user->best_diff_alltime = user->best_diff;
         best_user = true;
+        best_str = "user";
     }
+    mutex_unlock(&user->stats_lock);
+    mutex_lock(&sdata->stats_lock);
+    if (sdiff > sdata->stats.best_diff) {
+        sdata->stats.best_diff = floor(sdiff);
+        if (sdata->stats.best_diff > sdata->stats.best_diff_alltime)
+            sdata->stats.best_diff_alltime = sdata->stats.best_diff;
+    }
+    mutex_unlock(&sdata->stats_lock);
+
     if (likely((!best_user && !best_worker) || !client))
         return;
-    snprintf(buf, 511, "New best share for %s: %lf", best_user ? "user" : "worker", sdiff);
+    snprintf(buf, 511, "New best share for %s: %lf", best_str, sdiff);
     stratum_send_message(sdata, client, buf);
 }
 
@@ -9630,10 +9667,12 @@ static void *statsupdate(void *arg)
 
         percent = (double)stats->accounted_diff_shares * 100.0 / (double)stats->network_diff;
         snprintf(pcstring, 31, "%.2f", percent);
-        JSON_CPACK(val, "{ss,sI,sI,sf,sf,sf}",
+        JSON_CPACK(val, "{ss,sI,sI,sf,sf,sf,sf,sf}",
                 "diff", pcstring,
                 "accepted", (json_int_t)stats->accounted_diff_shares,
                 "rejected", (json_int_t)stats->accounted_rejects,
+                "bestshare", stats->best_diff,
+                "bestshare_alltime", stats->best_diff_alltime,
                 "lns", rolling_lns,
                 "herp", rolling_herp,
                 "reward", reward / SATOSHIS);
@@ -9867,6 +9906,11 @@ static void read_poolstats(pool_t *ckp, int *tvsec_diff)
     }
     json_get_int64(&stats->accounted_diff_shares, val, "accepted");
     json_get_int64(&stats->accounted_rejects, val, "rejected");
+
+    // bestshare (added later by Calin)
+    json_get_double(&stats->best_diff, val, "bestshare");
+    json_get_double(&stats->best_diff_alltime, val, "bestshare_alltime");
+
     json_decref(val);
 
 out:
