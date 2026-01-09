@@ -530,9 +530,10 @@ struct stratifier_data {
     int64_t blockchange_id;
     int session_id;
 
-    mutex_t last_hash_lock; ///< guards lasthash, lastswaphash, lasthashbin, and lastswaphashbin
+    mutex_t last_hash_lock; ///< guards lasthash, lastswaphash, lastBitsSeen, lasthashbin, and lastswaphashbin
     char lasthash[LastSwapHashSz /* 68 */];
     char lastswaphash[LastSwapHashSz /* 68 */];
+    uint8_t lastBitsSeen[4]; /* last block header nBits seen */
     uint8_t lasthashbin[32], lastswaphashbin[32];
 
     ckmsgq_t *updateq;	// Generator base work updates
@@ -1576,9 +1577,11 @@ static void add_base(pool_t *ckp, sdata_t *sdata, workbase_t *wb, bool *new_bloc
     sdata_t *ckp_sdata = ckp->sdata;
     workbase_t *tmp, *tmpa;
     int len, ret;
+    const uchar *nbits;
 
     ts_realtime(&wb->gentime);
-    wb->network_diff = diff_from_nbits((uchar *)(wb->headerbin + 72));
+    nbits = (uchar *)(wb->headerbin + 72);
+    wb->network_diff = diff_from_nbits(nbits);
     LOGDEBUG("gbt network diff: %1.3f", wb->network_diff);
     if (!ckp->proxy) {
         pool_stats_t *stats = &ckp_sdata->stats;
@@ -1605,6 +1608,11 @@ static void add_base(pool_t *ckp, sdata_t *sdata, workbase_t *wb, bool *new_bloc
     else
         sdata->workbase_id = wb->id;
     mutex_lock(&sdata->last_hash_lock);
+    if (memcmp(nbits, sdata->lastBitsSeen, 4)) {
+        // Network difficulty change, log it to normal log
+        memcpy(sdata->lastBitsSeen, nbits, 4);
+        LOGNOTICE("Network difficulty changed: %1.3f", wb->network_diff);
+    }
     if (strncmp(wb->prevhash, sdata->lasthash, 64)) {
         *new_block = true;
         // now copy the bin data and hexify it
