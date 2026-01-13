@@ -4531,6 +4531,28 @@ static void remap_workinfo_id(sdata_t *sdata, json_t *val, const int64_t client_
     json_set_int64(val, "workinfoid", mapped_id);
 }
 
+/* Note: this takes: sdata->workbase_lock & sdata->stats_lock; so must be entered with no locks held! */
+static void block_share_summary(sdata_t *sdata)
+{
+    double network_diff, effort_pct;
+    int64_t accounted_diff_shares;
+
+    ck_rlock(&sdata->workbase_lock);
+    network_diff = sdata && sdata->current_workbase ? sdata->current_workbase->network_diff : 0.0;
+    ck_runlock(&sdata->workbase_lock);
+
+    if (unlikely(network_diff <= 0.0))
+        return;
+
+    mutex_lock(&sdata->stats_lock);
+    accounted_diff_shares = sdata->stats.accounted_diff_shares;
+    mutex_unlock(&sdata->stats_lock);
+
+    effort_pct = (accounted_diff_shares / network_diff) * 100.0;
+
+    LOGWARNING("Block solved after %" PRId64 " shares at %.1f%% effort", accounted_diff_shares, effort_pct);
+}
+
 static void block_solve(pool_t *ckp, json_t *val)
 {
     char *msg, *workername = NULL;
@@ -4595,6 +4617,7 @@ static void block_solve(pool_t *ckp, json_t *val)
 
     free(workername);
 
+    block_share_summary(sdata);
     reset_bestshares(sdata);
 }
 
@@ -8381,8 +8404,10 @@ static void parse_remote_block(pool_t *ckp, sdata_t *sdata, json_t *val, const c
         /* We rely on the remote server to give us the ID_BLOCK
          * responses, so only use this response to determine if we
          * should reset the best shares. */
-        if (local_block_submit(ckp, gbt_block, gbt_block_len, flip32, wb->height))
+        if (local_block_submit(ckp, gbt_block, gbt_block_len, flip32, wb->height)) {
+            block_share_summary(sdata);
             reset_bestshares(sdata);
+        }
         put_remote_workbase(sdata, wb);
     }
 
