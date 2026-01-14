@@ -6363,10 +6363,6 @@ static void read_userstats(pool_t *ckp, sdata_t *sdata, int tvsec_diff)
         if (user->best_diff_alltime > stats->best_diff_alltime) {
             stats->best_diff_alltime = user->best_diff_alltime;
         }
-        // pool-wide bestshare was also added later, so ensure it's >= user bestshare
-        if (user->best_diff > stats->best_diff) {
-            stats->best_diff = user->best_diff;
-        }
         LOGDEBUG("Successfully read user %s stats %f %f %f %f %f %f %f %f %f", username,
                  user->dsps1, user->dsps5, user->dsps60, user->dsps1440,
                  user->dsps10080, user->best_diff, user->best_diff_alltime,
@@ -6411,10 +6407,6 @@ static void read_userstats(pool_t *ckp, sdata_t *sdata, int tvsec_diff)
             // pool-wide bestshare_alltime was also added later, so ensure it's >= worker bestshare_alltime
             if (worker->best_diff_alltime > stats->best_diff_alltime) {
                 stats->best_diff_alltime = worker->best_diff_alltime;
-            }
-            // pool-wide bestshare was also added later, so ensure it's >= worker bestshare
-            if (worker->best_diff > stats->best_diff) {
-                stats->best_diff = worker->best_diff;
             }
             LOGDEBUG("Successfully read worker %s stats %f %f %f %f %f %f %f %f",
                      worker->workername, worker->dsps1, worker->dsps5, worker->dsps60,
@@ -7197,13 +7189,6 @@ static void check_best_diff(pool_t *ckp, sdata_t *sdata, user_instance_t *user,
         best_str = "user";
     }
     mutex_unlock(&user->stats_lock);
-    mutex_lock(&sdata->stats_lock);
-    if (sdiff > sdata->stats.best_diff) {
-        sdata->stats.best_diff = floor(sdiff);
-        if (sdata->stats.best_diff > sdata->stats.best_diff_alltime)
-            sdata->stats.best_diff_alltime = sdata->stats.best_diff;
-    }
-    mutex_unlock(&sdata->stats_lock);
 
     if (likely((!best_user && !best_worker) || !client))
         return;
@@ -7350,6 +7335,15 @@ static json_t *parse_submit(stratum_instance_t *client, json_t *json_msg,
     bswap_256(sharehash, hash);
     bin2hex__(hexhash, sharehash, 32);
 
+    if (!stale) {
+        mutex_lock(&sdata->stats_lock);
+        if (sdiff > sdata->stats.best_diff) {
+            sdata->stats.best_diff = sdiff;
+            if (sdata->stats.best_diff > sdata->stats.best_diff_alltime)
+                sdata->stats.best_diff_alltime = sdata->stats.best_diff;
+        }
+        mutex_unlock(&sdata->stats_lock);
+    }
     if (stale) {
         /* Accept shares if they're received on remote nodes before the
          * workbase was retired. */
@@ -7360,8 +7354,7 @@ static json_t *parse_submit(stratum_instance_t *client, json_t *json_msg,
             ts_to_tv(&now_tv, &now);
             latency = ms_tvdiff(&now_tv, &wb->retired);
             if (latency < client->latency) {
-                LOGDEBUG("Accepting %dms late share from client %s",
-                         latency, client->identity);
+                LOGDEBUG("Accepting %dms late share from client %s", latency, client->identity);
                 goto no_stale;
             }
         }
@@ -9423,7 +9416,7 @@ static void *statsupdate(void *arg)
             ck_wlock(&sdata->instance_lock);
             /* Drop the reference of the last entry we examined,
              * then grab the next client. */
-           dec_instance_ref__(client);
+            dec_instance_ref__(client);
             client = client->hh.next;
             /* Grab a reference to this client allowing us to examine
              * it without holding the lock */
