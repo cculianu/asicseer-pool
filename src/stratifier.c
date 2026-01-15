@@ -7166,6 +7166,18 @@ static void submit_share(stratum_instance_t *client, const int64_t jobid, const 
     generator_add_send(ckp, json_msg);
 }
 
+static void check_pool_best_diff(sdata_t *sdata, const double sdiff)
+{
+    mutex_lock(&sdata->stats_lock);
+    /* Don't set pool best diff if it's a block since we will have reset it to zero. */
+    if (sdiff > sdata->stats.best_diff && sdiff < sdata->current_workbase->network_diff) {
+        sdata->stats.best_diff = sdiff;
+        if (sdiff > sdata->stats.best_diff_alltime)
+            sdata->stats.best_diff_alltime = sdiff;
+    }
+    mutex_unlock(&sdata->stats_lock);
+}
+
 static void check_best_diff(pool_t *ckp, sdata_t *sdata, user_instance_t *user,
                             worker_instance_t *worker, const double sdiff, stratum_instance_t *client)
 {
@@ -7190,14 +7202,7 @@ static void check_best_diff(pool_t *ckp, sdata_t *sdata, user_instance_t *user,
     }
     mutex_unlock(&user->stats_lock);
 
-    mutex_lock(&sdata->stats_lock);
-    /* Don't set pool best diff if it's a block since we will have reset it to zero. */
-    if (sdiff > sdata->stats.best_diff && sdiff < sdata->current_workbase->network_diff) {
-        sdata->stats.best_diff = sdiff;
-        if (sdiff > sdata->stats.best_diff_alltime)
-            sdata->stats.best_diff_alltime = sdiff;
-    }
-    mutex_unlock(&sdata->stats_lock);
+    check_pool_best_diff(sdata, sdiff);
 
     if (likely((!best_user && !best_worker) || !client))
         return;
@@ -7340,6 +7345,10 @@ static json_t *parse_submit(stratum_instance_t *client, json_t *json_msg,
         LOGINFO("User %s worker %s client %s new best diff %lf", user->username,
                 worker->workername, client->identity, sdiff);
         check_best_diff(ckp, sdata, user, worker, sdiff, client);
+    } else {
+        /* Workaround to some race here where client->best_diff is sometimes stale, but we still want to properly update
+         * pool-wide best_diff */
+        check_pool_best_diff(sdata, sdiff);
     }
     bswap_256(sharehash, hash);
     bin2hex__(hexhash, sharehash, 32);
