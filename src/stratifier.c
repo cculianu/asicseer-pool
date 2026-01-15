@@ -4428,9 +4428,9 @@ static void reset_bestshares(sdata_t *sdata)
     HASH_ITER(hh, sdata->user_instances, user, tmpuser) {
         worker_instance_t *worker;
 
-        user->best_diff = user->shares = 0;
+        user->best_diff = 0;
         DL_FOREACH(user->worker_instances, worker) {
-            worker->best_diff = worker->shares = 0;
+            worker->best_diff = 0;
         }
     }
     ck_wunlock(&sdata->instance_lock);
