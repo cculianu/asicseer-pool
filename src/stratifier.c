@@ -7170,11 +7170,11 @@ static void check_pool_best_diff(sdata_t *sdata, const double sdiff)
 {
     mutex_lock(&sdata->stats_lock);
     /* Don't set pool best diff if it's a block since we will have reset it to zero. */
-    if (sdiff > sdata->stats.best_diff && sdiff < sdata->current_workbase->network_diff) {
+    if (sdiff > sdata->stats.best_diff && sdiff < sdata->current_workbase->network_diff)
         sdata->stats.best_diff = sdiff;
-        if (sdiff > sdata->stats.best_diff_alltime)
-            sdata->stats.best_diff_alltime = sdiff;
-    }
+    /* But DO set all-time best diff regardless -- since we count solutions as part of the all-time best! */
+    if (sdiff > sdata->stats.best_diff_alltime)
+        sdata->stats.best_diff_alltime = sdiff;
     mutex_unlock(&sdata->stats_lock);
 }
 
