@@ -4421,7 +4421,7 @@ static void reset_bestshares(sdata_t *sdata)
     sdata->stats.best_diff = sdata->stats.accounted_diff_shares = sdata->stats.accounted_rejects = 0;
     mutex_unlock(&sdata->stats_lock);
 
-    ck_rlock(&sdata->instance_lock);
+    ck_wlock(&sdata->instance_lock);
     HASH_ITER(hh, sdata->stratum_instances, client, tmp) {
         client->best_diff = 0;
     }
@@ -4433,7 +4433,7 @@ static void reset_bestshares(sdata_t *sdata)
             worker->best_diff = worker->shares = 0;
         }
     }
-    ck_runlock(&sdata->instance_lock);
+    ck_wunlock(&sdata->instance_lock);
 }
 
 static user_instance_t *user_by_workername(sdata_t *sdata, const char *workername)
@@ -7190,6 +7190,18 @@ static void check_best_diff(pool_t *ckp, sdata_t *sdata, user_instance_t *user,
     }
     mutex_unlock(&user->stats_lock);
 
+    /* If best_user, check against pool's best diff. */
+    if (best_user) {
+        mutex_lock(&sdata->stats_lock);
+        /* Don't set pool best diff if it's a block since we will have reset it to zero. */
+        if (sdiff > sdata->stats.best_diff && sdiff < sdata->current_workbase->network_diff) {
+            sdata->stats.best_diff = sdiff;
+            if (sdiff > sdata->stats.best_diff_alltime)
+                sdata->stats.best_diff_alltime = sdiff;
+        }
+        mutex_unlock(&sdata->stats_lock);
+    }
+
     if (likely((!best_user && !best_worker) || !client))
         return;
     snprintf(buf, 511, "New best share for %s: %lf", best_str, sdiff);
@@ -7335,15 +7347,6 @@ static json_t *parse_submit(stratum_instance_t *client, json_t *json_msg,
     bswap_256(sharehash, hash);
     bin2hex__(hexhash, sharehash, 32);
 
-    if (!stale) {
-        mutex_lock(&sdata->stats_lock);
-        if (sdiff > sdata->stats.best_diff) {
-            sdata->stats.best_diff = sdiff;
-            if (sdata->stats.best_diff > sdata->stats.best_diff_alltime)
-                sdata->stats.best_diff_alltime = sdata->stats.best_diff;
-        }
-        mutex_unlock(&sdata->stats_lock);
-    }
     if (stale) {
         /* Accept shares if they're received on remote nodes before the
          * workbase was retired. */
