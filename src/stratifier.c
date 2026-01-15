@@ -7190,17 +7190,14 @@ static void check_best_diff(pool_t *ckp, sdata_t *sdata, user_instance_t *user,
     }
     mutex_unlock(&user->stats_lock);
 
-    /* If best_user, check against pool's best diff. */
-    if (best_user) {
-        mutex_lock(&sdata->stats_lock);
-        /* Don't set pool best diff if it's a block since we will have reset it to zero. */
-        if (sdiff > sdata->stats.best_diff && sdiff < sdata->current_workbase->network_diff) {
-            sdata->stats.best_diff = sdiff;
-            if (sdiff > sdata->stats.best_diff_alltime)
-                sdata->stats.best_diff_alltime = sdiff;
-        }
-        mutex_unlock(&sdata->stats_lock);
+    mutex_lock(&sdata->stats_lock);
+    /* Don't set pool best diff if it's a block since we will have reset it to zero. */
+    if (sdiff > sdata->stats.best_diff && sdiff < sdata->current_workbase->network_diff) {
+        sdata->stats.best_diff = sdiff;
+        if (sdiff > sdata->stats.best_diff_alltime)
+            sdata->stats.best_diff_alltime = sdiff;
     }
+    mutex_unlock(&sdata->stats_lock);
 
     if (likely((!best_user && !best_worker) || !client))
         return;
