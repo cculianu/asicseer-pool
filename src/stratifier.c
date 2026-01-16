@@ -6969,7 +6969,7 @@ downstream_block(pool_t *ckp, sdata_t *sdata, const json_t *val, const int cblen
 
 /* We should already be holding a wb readcount. Needs to be entered with
  * client holding a ref count. */
-static void
+static bool
 test_blocksolve(const stratum_instance_t *client, const workbase_t *wb, const uchar *data,
                 const uchar *hash, const double diff, const char *coinbase, int cblen,
                 const char *nonce2, const char *nonce, const uint32_t ntime32, const uint32_t version_mask,
@@ -6986,13 +6986,13 @@ test_blocksolve(const stratum_instance_t *client, const workbase_t *wb, const uc
 
     /* Submit anything over 99.9% of the diff in case of rounding errors */
     if (likely(diff < sdata->current_workbase->network_diff * 0.999))
-        return;
+        return false;
 
     LOGWARNING("Possible %sblock solve diff %lf (network diff: %lf) !", stale ? "stale share " : "",
                diff, sdata->current_workbase->network_diff);
     /* Can't submit a block in proxy mode without the transactions */
     if (!ckp->node && wb->proxy)
-        return;
+        return true;
 
     ts_realtime(&ts_now);
     sprintf(cdfield, "%lu,%lu", ts_now.tv_sec, ts_now.tv_nsec);
@@ -7098,17 +7098,19 @@ test_blocksolve(const stratum_instance_t *client, const workbase_t *wb, const uc
     } else
         block_reject(val_copy);
 
+    return ret;
 }
 
 /* Needs to be entered with workbase readcount and client holding a ref count. */
 static double submission_diff(const stratum_instance_t *client, const workbase_t *wb, const char *nonce2,
                               const uint32_t ntime32, const uint32_t version_mask,
-                              const char *nonce, uchar *hash, const bool stale)
+                              const char *nonce, uchar *hash, const bool stale, bool *solved)
 {
     char *coinbase;
     uchar swap[80];
     double ret;
     int cblen;
+    bool sol;
 
     coinbase = ckalloc(wb->coinb1len + wb->enonce1constlen + wb->enonce1varlen + wb->enonce2varlen + wb->coinb2len
                        + GENERATOR_MAX_CSCRIPT_LEN + 1u /* for user scriptbin, if any (SOLO mode only) */
@@ -7118,7 +7120,8 @@ static double submission_diff(const stratum_instance_t *client, const workbase_t
     ret = share_diff(client, coinbase, client->enonce1bin, wb, nonce2, ntime32, version_mask, nonce, hash, swap, &cblen);
 
     /* Test we haven't solved a block regardless of share status */
-    test_blocksolve(client, wb, swap, hash, ret, coinbase, cblen, nonce2, nonce, ntime32, version_mask, stale);
+    sol = test_blocksolve(client, wb, swap, hash, ret, coinbase, cblen, nonce2, nonce, ntime32, version_mask, stale);
+    if (solved) *solved = sol;
 
     free(coinbase);
 
@@ -7166,20 +7169,8 @@ static void submit_share(stratum_instance_t *client, const int64_t jobid, const 
     generator_add_send(ckp, json_msg);
 }
 
-static void check_pool_best_diff(sdata_t *sdata, const double sdiff)
-{
-    mutex_lock(&sdata->stats_lock);
-    /* Don't set pool best diff if it's a block since we will have reset it to zero. */
-    if (sdiff > sdata->stats.best_diff && sdiff < sdata->current_workbase->network_diff)
-        sdata->stats.best_diff = sdiff;
-    /* But DO set all-time best diff regardless -- since we count solutions as part of the all-time best! */
-    if (sdiff > sdata->stats.best_diff_alltime)
-        sdata->stats.best_diff_alltime = sdiff;
-    mutex_unlock(&sdata->stats_lock);
-}
-
 static void check_best_diff(pool_t *ckp, sdata_t *sdata, user_instance_t *user,
-                            worker_instance_t *worker, const double sdiff, stratum_instance_t *client)
+                            worker_instance_t *worker, const double sdiff, stratum_instance_t *client, bool solved)
 {
     char buf[512];
     const char *best_str = "worker";
@@ -7187,22 +7178,32 @@ static void check_best_diff(pool_t *ckp, sdata_t *sdata, user_instance_t *user,
     (void)ckp;
 
     mutex_lock(&user->stats_lock);
-    if (sdiff > worker->best_diff) {
+    /* worker */
+    if (sdiff > worker->best_diff && !solved) {
         worker->best_diff = floor(sdiff);
-        if (worker->best_diff > worker->best_diff_alltime)
-            worker->best_diff_alltime = worker->best_diff;
         best_worker = true;
     }
-    if (sdiff > user->best_diff) {
+    if (sdiff > worker->best_diff_alltime)
+        worker->best_diff_alltime = floor(sdiff);
+    /* user */
+    if (sdiff > user->best_diff && !solved) {
         user->best_diff = floor(sdiff);
-        if (user->best_diff > user->best_diff_alltime)
-            user->best_diff_alltime = user->best_diff;
         best_user = true;
         best_str = "user";
     }
+    if (sdiff > user->best_diff_alltime)
+        user->best_diff_alltime = floor(sdiff);
     mutex_unlock(&user->stats_lock);
 
-    check_pool_best_diff(sdata, sdiff);
+    /* Enforce pool-wide best_diff and best_diff_alltime */
+    mutex_lock(&sdata->stats_lock);
+    /* Don't set pool best diff if it's a solved block since we will have reset it to zero. */
+    if (sdiff > sdata->stats.best_diff && !solved)
+        sdata->stats.best_diff = sdiff;
+    /* But DO set all-time best diff regardless -- since we count solutions as part of the all-time best! */
+    if (sdiff > sdata->stats.best_diff_alltime)
+        sdata->stats.best_diff_alltime = sdiff;
+    mutex_unlock(&sdata->stats_lock);
 
     if (likely((!best_user && !best_worker) || !client))
         return;
@@ -7216,7 +7217,7 @@ static void check_best_diff(pool_t *ckp, sdata_t *sdata, user_instance_t *user,
 static json_t *parse_submit(stratum_instance_t *client, json_t *json_msg,
                             const json_t *params_val, json_t **err_val)
 {
-    bool share = false, result = false, invalid = true, submit = false, stale = false;
+    bool share = false, result = false, invalid = true, submit = false, stale = false, solved = false;
     const char *workername, *job_id, *ntime, *nonce, *version_mask;
     double diff = client->diff, wdiff = 0, sdiff = -1;
     char hexhash[68] = {0}, sharehash[32], cdfield[64];
@@ -7335,20 +7336,17 @@ static json_t *parse_submit(stratum_instance_t *client, json_t *json_msg,
     }
     if (id < sdata->blockchange_id)
         stale = true;
-    sdiff = submission_diff(client, wb, nonce2, ntime32, version_mask32, nonce, hash, stale);
+    sdiff = submission_diff(client, wb, nonce2, ntime32, version_mask32, nonce, hash, stale, &solved);
     if (sdiff > client->best_diff) {
         worker_instance_t *worker = client->worker_instance;
 
-        client->best_diff = floor(sdiff);
-        if (client->best_diff > client->best_diff_alltime)
-            client->best_diff_alltime = client->best_diff;
-        LOGINFO("User %s worker %s client %s new best diff %lf", user->username,
-                worker->workername, client->identity, sdiff);
-        check_best_diff(ckp, sdata, user, worker, sdiff, client);
-    } else {
-        /* Workaround to some race here where client->best_diff is sometimes stale, but we still want to properly update
-         * pool-wide best_diff */
-        check_pool_best_diff(sdata, sdiff);
+        if (!solved) {
+            client->best_diff = floor(sdiff);
+            LOGINFO("User %s worker %s client %s new best diff %lf", user->username, worker->workername, client->identity, sdiff);
+        }
+        if (sdiff > client->best_diff_alltime)
+            client->best_diff_alltime = floor(sdiff);
+        check_best_diff(ckp, sdata, user, worker, sdiff, client, solved);
     }
     bswap_256(sharehash, hash);
     bin2hex__(hexhash, sharehash, 32);
@@ -8122,7 +8120,7 @@ static void parse_remote_share(pool_t *ckp, sdata_t *sdata, json_t *val, const c
     user = generate_remote_user(ckp, workername);
     user->authorized = true;
     worker = get_worker(sdata, user, workername);
-    check_best_diff(ckp, sdata, user, worker, sdiff, NULL);
+    check_best_diff(ckp, sdata, user, worker, sdiff, NULL, sdiff >= network_diff);
 
     mutex_lock(&sdata->uastats_lock);
     sdata->stats.unaccounted_shares++;
