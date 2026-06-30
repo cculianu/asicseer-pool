@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Calin Culianu <calin.culianu@gmail.com>
+ * Copyright (c) 2020-present Calin Culianu <calin.culianu@gmail.com>
  * Copyright (c) 2020 ASICshack LLC https://asicshack.com
  * Copyright 2014-2018 Con Kolivas
  *
@@ -119,7 +119,7 @@ bool gen_gbtbase(connsock_t *cs, gbtbase_t *gbt)
     char hash_swap[32], tmp[32];
     uint64_t coinbasevalue;
     const char *target;
-    const char *flags;
+    const char *flags = NULL;
     const char *bits;
     const char *rule;
     int version;
@@ -159,11 +159,11 @@ bool gen_gbtbase(connsock_t *cs, gbtbase_t *gbt)
     bits = json_string_value(json_object_get(res_val, "bits"));
     height = json_integer_value(json_object_get(res_val, "height"));
     coinbasevalue = json_integer_value(json_object_get(res_val, "coinbasevalue"));
-    coinbase_aux = json_object_get(res_val, "coinbaseaux");
-    flags = json_string_value(json_object_get(coinbase_aux, "flags"));
+    if ((coinbase_aux = json_object_get(res_val, "coinbaseaux"))) // optional key; doesn't exist on Flowee (issue #12)
+        flags = json_string_value(json_object_get(coinbase_aux, "flags"));
     if (!flags)
         flags = "";
-    if (unlikely(!previousblockhash || !target || !version || !curtime || !bits || !coinbase_aux)) {
+    if (unlikely(!previousblockhash || !target || !version || !curtime || !bits)) {
         LOGERR("JSON failed to decode GBT %s %s %d %d %s %s", previousblockhash, target, version, curtime, bits, flags);
         goto out;
     }
