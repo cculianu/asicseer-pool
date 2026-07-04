@@ -134,6 +134,11 @@ struct server_instance {
     atomic_bool notify; // this is true if either "notify": true in JSON or if this btcd has a zmq endpoint
     atomic_bool alive;
     connsock_t cs;
+    /* Dedicated connsock for submitblock/preciousblock so a block submission
+     * never queues on cs's semaphore behind an in-flight getblocktemplate:
+     * the moment a solve is submitted is exactly the moment the priority
+     * template refresh wants the main cs. Set up once in setup_servers. */
+    connsock_t cs_submit;
 };
 
 typedef struct server_instance server_instance_t;
