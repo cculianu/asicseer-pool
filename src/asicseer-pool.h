@@ -123,10 +123,6 @@ struct log_entry {
 };
 
 struct server_instance {
-    /* Hash table data */
-    UT_hash_handle hh;
-    int id;
-
     const char *url;
     const char *auth;
     const char *pass;

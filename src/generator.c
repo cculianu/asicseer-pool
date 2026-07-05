@@ -3197,14 +3197,12 @@ static void setup_servers(pool_t *ckp)
         server_instance_t *si;
         connsock_t *cs;
 
-        ckp->servers[i] = ckzalloc(sizeof(server_instance_t));
-        si = ckp->servers[i];
+        si = ckp->servers[i] = ckzalloc(sizeof(server_instance_t));
         si->url = ckp->btcdurl[i];
         si->auth = ckp->btcdauth[i];
         si->pass = ckp->btcdpass[i];
         si->notify = ckp->btcdnotify[i];
         si->zmqendpoint = ckp->btcdzmqblock[i];
-        si->id = i;
         cs = &si->cs;
         cs->ckp = ckp;
         cksem_init(&cs->sem);
