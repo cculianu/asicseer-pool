@@ -346,23 +346,51 @@ bool generator_submitblock(pool_t *ckp, const char *buf, const size_t len)
         warn = true;
         cksleep_ms(10);
     }
-    cs = &si->cs;
+    /* Use the dedicated submission connsock: the main cs is very likely busy
+     * with the priority getblocktemplate triggered by this very block, and
+     * queueing behind it on cs->sem used to delay the submission (and the
+     * subsequent first template broadcast) by hundreds of ms. */
+    cs = &si->cs_submit;
     LOGNOTICE("Submitting block data!");
     return submit_block(cs, buf, len);
 }
 
+struct precious_ctx {
+    pool_t *ckp;
+    char hash[68];
+};
+
+static void *precious_thread(void *arg)
+{
+    struct precious_ctx *ctx = (struct precious_ctx *)arg;
+    gdata_t *gdata = ctx->ckp->gdata;
+    server_instance_t *si;
+
+    pthread_detach(pthread_self());
+    /* Delay the hint past the priority template rebuild: preciousblock takes
+     * cs_main in bitcoind, and issuing it synchronously right after a solve
+     * makes the post-block getblocktemplate contend with it, adding tens of
+     * ms to the first template broadcast. The same-height race it protects
+     * against plays out over seconds, so a small delay costs nothing. */
+    cksleep_ms(400);
+    si = get_current_si_threadsafe(gdata);
+    if (likely(si))
+        precious_block(&si->cs_submit, ctx->hash);
+    else
+        LOGWARNING("No live current server in precious_thread");
+    free(ctx);
+    return NULL;
+}
+
 void generator_preciousblock(pool_t *ckp, const char *hash)
 {
-    gdata_t *gdata = ckp->gdata;
-    server_instance_t *si;
-    connsock_t *cs;
+    struct precious_ctx *ctx = ckzalloc(sizeof(struct precious_ctx));
+    pthread_t pth;
 
-    if (unlikely(!(si = gdata->current_si))) {
-        LOGWARNING("No live current server in generator_get_blockhash");
-        return;
-    }
-    cs = &si->cs;
-    precious_block(cs, hash);
+    ctx->ckp = ckp;
+    strncpy(ctx->hash, hash, sizeof(ctx->hash) - 1);
+    ctx->hash[sizeof(ctx->hash) - 1] = '\0';
+    create_pthread(&pth, precious_thread, ctx);
 }
 
 bool generator_get_blockhash(pool_t *ckp, int height, char *hash)
@@ -470,7 +498,7 @@ retry:
         bool ret;
 
         LOGNOTICE("Submitting block data!");
-        ret = submit_block(cs, buf + 12 + 64 + 1, 0);
+        ret = submit_block(&si->cs_submit, buf + 12 + 64 + 1, 0);
         memset(buf + 12 + 64, 0, 1);
         sprintf(blockmsg, "%sblock:%s", ret ? "" : "no", buf + 12);
         send_proc(ckp->stratifier, blockmsg);
@@ -3127,7 +3155,7 @@ retry:
         bool ret;
 
         LOGNOTICE("Submitting likely block solve share from upstream pool");
-        ret = submit_block(cs, buf + 12 + 64 + 1, 0);
+        ret = submit_block(&si->cs_submit, buf + 12 + 64 + 1, 0);
         memset(buf + 12 + 64, 0, 1);
         sprintf(blockmsg, "%sblock:%s", ret ? "" : "no", buf + 12);
         send_proc(ckp->stratifier, blockmsg);
@@ -3207,6 +3235,28 @@ static void setup_servers(pool_t *ckp)
         cs->ckp = ckp;
         cksem_init(&cs->sem);
         cksem_post(&cs->sem);
+
+        /* Set up the dedicated block submission connsock once from static
+         * config so submitblock/preciousblock never wait on cs's semaphore
+         * behind an in-flight getblocktemplate. */
+        cs = &si->cs_submit;
+        cs->ckp = ckp;
+        /* Connections are opened per call — mark permanently usable so
+         * cs->alive gates (e.g. precious_block) never skip submissions. */
+        cs->alive = true;
+        cksem_init(&cs->sem);
+        cksem_post(&cs->sem);
+        if (extract_sockaddr(si->url, &cs->url, &cs->port)) {
+            char *userpass = strdup(si->auth);
+
+            realloc_strcat(&userpass, ":");
+            realloc_strcat(&userpass, si->pass);
+            cs->auth = http_base64(userpass);
+            dealloc(userpass);
+            if (!cs->auth)
+                LOGWARNING("Failed to create base64 auth for submit connsock of %s", si->url);
+        } else
+            LOGWARNING("Failed to extract address from %s for submit connsock", si->url);
     }
 
     create_pthread(&pth_watchdog, server_watchdog, ckp);
