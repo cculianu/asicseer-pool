@@ -2006,12 +2006,16 @@ static int feenableexcept(unsigned int excepts)
     if (fegetenv(&fenv)) {
         return -1;
     }
+#if defined(__arm) || defined(__arm64) || defined(__aarch64__)
+    old_excepts = fenv.__fpcr;
+    fenv.__fpcr |= (new_excepts << 8);
+#else /* x86 */
     old_excepts = fenv.__control & FE_ALL_EXCEPT;
 
     // unmask
     fenv.__control &= ~new_excepts;
     fenv.__mxcsr   &= ~(new_excepts << 7);
-
+#endif
     return fesetenv(&fenv) ? -1 : old_excepts;
 }
 #endif
