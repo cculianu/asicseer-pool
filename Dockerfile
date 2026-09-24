@@ -8,7 +8,6 @@ RUN apt-get install -y build-essential libzmq3-dev cmake
 WORKDIR /build
 
 COPY cmake/ ./cmake/
-COPY CMakeFiles/ ./CMakeFiles/
 COPY src/ ./src/
 COPY CMakeLists.txt .
 
