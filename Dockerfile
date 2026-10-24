@@ -1,4 +1,4 @@
-FROM debian:12-slim AS builder
+FROM debian:13-slim AS builder
 
 RUN apt-get update
 RUN apt-get dist-upgrade -y
@@ -8,7 +8,6 @@ RUN apt-get install -y build-essential libzmq3-dev cmake
 WORKDIR /build
 
 COPY cmake/ ./cmake/
-COPY CMakeFiles/ ./CMakeFiles/
 COPY src/ ./src/
 COPY CMakeLists.txt .
 
@@ -17,18 +16,19 @@ RUN mkdir out && cd out && cmake -DCMAKE_BUILD_TYPE=Release .. && make
 RUN apt-get download \
 	libzmq5 \
 	libgssapi-krb5-2 \
-	libnorm1 \
-	libpgm-5.3-0 \
+	libnorm1t64 \
+	libpgm-5.3-0t64 \
 	libsodium23 \
 	libbsd0 \
 	libk5crypto3 \
 	libkrb5-3 \
 	libkrb5support0 \
 	libkeyutils1 \
-	libssl3 \
+	libcom-err2 \
+	libssl3t64 \
 	netcat-traditional
 
-FROM debian:12-slim AS asicseer
+FROM debian:13-slim AS asicseer
 
 COPY --from=builder /build/*.deb /tmp/
 RUN dpkg -i /tmp/*.deb
